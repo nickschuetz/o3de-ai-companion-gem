@@ -1,0 +1,38 @@
+{
+    "ContainerEntity": {
+        "Id": "Pickup_Health",
+        "Name": "HealthPickup",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 0.5],
+                "Rotation": [0.0, 0.0, 0.0],
+                "Scale": [0.5, 0.5, 0.5]
+            },
+            "MeshComponent": {
+                "$type": "MeshComponent",
+                "MeshAsset": "primitive_sphere"
+            },
+            "PhysXCollider": {
+                "$type": "PhysXCollider",
+                "ShapeType": "Sphere",
+                "IsTrigger": true
+            },
+            "LuaScript": {
+                "$type": "LuaScript",
+                "ScriptAsset": "Scripts/Lua/health_pickup.lua",
+                "Properties": {
+                    "HealAmount": 25.0,
+                    "RespawnTime": 10.0,
+                    "RotationSpeed": 90.0
+                }
+            },
+            "Tag": {
+                "$type": "Tag",
+                "Tags": ["Pickup", "Health"]
+            }
+        }
+    },
+    "Description": "Health pickup that heals on contact and respawns after a delay.",
+    "Version": "1.0.0"
+}

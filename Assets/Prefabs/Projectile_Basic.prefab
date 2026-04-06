@@ -1,0 +1,45 @@
+{
+    "ContainerEntity": {
+        "Id": "Projectile_Basic",
+        "Name": "Projectile",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 0.0],
+                "Rotation": [0.0, 0.0, 0.0],
+                "Scale": [0.2, 0.2, 0.2]
+            },
+            "MeshComponent": {
+                "$type": "MeshComponent",
+                "MeshAsset": "primitive_sphere"
+            },
+            "PhysXCollider": {
+                "$type": "PhysXCollider",
+                "ShapeType": "Sphere",
+                "IsTrigger": true
+            },
+            "PhysXRigidBody": {
+                "$type": "PhysXRigidBody",
+                "BodyType": "Dynamic",
+                "Mass": 0.1,
+                "GravityEnabled": false,
+                "LinearDamping": 0.0
+            },
+            "LuaScript": {
+                "$type": "LuaScript",
+                "ScriptAsset": "Scripts/Lua/damage_on_contact.lua",
+                "Properties": {
+                    "Damage": 10.0,
+                    "DestroyOnContact": true,
+                    "Lifetime": 5.0
+                }
+            },
+            "Tag": {
+                "$type": "Tag",
+                "Tags": ["Projectile"]
+            }
+        }
+    },
+    "Description": "Basic projectile with damage on contact and auto-destroy lifetime.",
+    "Version": "1.0.0"
+}

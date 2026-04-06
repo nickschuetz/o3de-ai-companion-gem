@@ -1,0 +1,48 @@
+{
+    "ContainerEntity": {
+        "Id": "Enemy_Chaser",
+        "Name": "EnemyChaser",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 1.0],
+                "Rotation": [0.0, 0.0, 0.0],
+                "Scale": [1.0, 1.0, 1.0]
+            },
+            "MeshComponent": {
+                "$type": "MeshComponent",
+                "MeshAsset": "primitive_cube"
+            },
+            "PhysXCollider": {
+                "$type": "PhysXCollider",
+                "ShapeType": "Box",
+                "IsTrigger": false
+            },
+            "PhysXRigidBody": {
+                "$type": "PhysXRigidBody",
+                "BodyType": "Dynamic",
+                "Mass": 1.0,
+                "LinearDamping": 1.0,
+                "GravityEnabled": false
+            },
+            "LuaScript": {
+                "$type": "LuaScript",
+                "ScriptAsset": "Scripts/Lua/enemy_chase_ai.lua",
+                "Properties": {
+                    "TargetTag": "Player",
+                    "ChaseSpeed": 3.0,
+                    "DetectionRadius": 50.0,
+                    "AttackRange": 2.0,
+                    "AttackDamage": 10.0,
+                    "AttackCooldown": 1.0
+                }
+            },
+            "Tag": {
+                "$type": "Tag",
+                "Tags": ["Enemy"]
+            }
+        }
+    },
+    "Description": "Enemy entity that chases the player and attacks when in range.",
+    "Version": "1.0.0"
+}

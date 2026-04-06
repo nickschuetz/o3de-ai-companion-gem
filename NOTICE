@@ -1,0 +1,12 @@
+AI Companion for O3DE
+Copyright Contributors to the AI Companion for O3DE Project
+
+This product includes software developed as part of the AI Companion for O3DE
+project (https://github.com/nickschuetz/o3de-ai-companion-gem).
+
+This project is designed to work with the Open 3D Engine (O3DE), which is
+licensed under the Apache License, Version 2.0 or MIT License at your option.
+
+Third-party dependencies:
+  - Open 3D Engine (O3DE): Apache-2.0 OR MIT
+    https://github.com/o3de/o3de

@@ -1,0 +1,28 @@
+{
+    "ContainerEntity": {
+        "Id": "Environment_Ground",
+        "Name": "Ground",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 0.0],
+                "Rotation": [0.0, 0.0, 0.0],
+                "Scale": [50.0, 50.0, 0.1]
+            },
+            "MeshComponent": {
+                "$type": "MeshComponent",
+                "MeshAsset": "primitive_cube"
+            },
+            "PhysXCollider": {
+                "$type": "PhysXCollider",
+                "ShapeType": "Box",
+                "IsTrigger": false
+            },
+            "PhysXStaticRigidBody": {
+                "$type": "PhysXStaticRigidBody"
+            }
+        }
+    },
+    "Description": "Flat ground plane with static physics collision.",
+    "Version": "1.0.0"
+}

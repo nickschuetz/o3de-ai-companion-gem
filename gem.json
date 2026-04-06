@@ -1,0 +1,28 @@
+{
+    "gem_name": "AiCompanion",
+    "version": "1.1.0",
+    "display_name": "AI Companion",
+    "license": "Apache-2.0 Or MIT",
+    "license_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/LICENSE.txt",
+    "origin": "Nick Schuetz",
+    "origin_url": "https://github.com/nickschuetz/o3de-ai-companion-gem",
+    "type": "Code",
+    "summary": "Makes O3DE AI-agent-friendly with high-level Python APIs, Lua gameplay scripts, prefabs, and safety guardrails for AI-driven game development via o3de-mcp.",
+    "canonical_tags": [
+        "Gem"
+    ],
+    "user_tags": [
+        "AI",
+        "Scripting",
+        "Utility",
+        "Automation"
+    ],
+    "icon_path": "preview.png",
+    "requirements": "Requires EditorPythonBindings gem to be enabled for full functionality. Includes a built-in AgentServer for AI agent communication.",
+    "documentation_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/Docs/README.md",
+    "dependencies": [],
+    "compatible_engines": [
+        "o3de >= 2305.0"
+    ],
+    "engine_api_dependencies": []
+}

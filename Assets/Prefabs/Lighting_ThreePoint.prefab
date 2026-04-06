@@ -1,0 +1,66 @@
+{
+    "ContainerEntity": {
+        "Id": "Lighting_ThreePoint",
+        "Name": "LightingRig",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 0.0]
+            }
+        },
+        "Children": [
+            {
+                "Id": "KeyLight",
+                "Name": "KeyLight",
+                "Components": {
+                    "TransformComponent": {
+                        "$type": "TransformComponent",
+                        "Translation": [0.0, 0.0, 10.0],
+                        "Rotation": [-45.0, -30.0, 0.0]
+                    },
+                    "DirectionalLight": {
+                        "$type": "DirectionalLight",
+                        "Intensity": 5.0,
+                        "Color": [1.0, 0.95, 0.9]
+                    }
+                }
+            },
+            {
+                "Id": "FillLight",
+                "Name": "FillLight",
+                "Components": {
+                    "TransformComponent": {
+                        "$type": "TransformComponent",
+                        "Translation": [-10.0, -5.0, 8.0]
+                    },
+                    "PointLight": {
+                        "$type": "PointLight",
+                        "Intensity": 2.0,
+                        "AttenuationRadius": 30.0,
+                        "Color": [0.8, 0.85, 1.0]
+                    }
+                }
+            },
+            {
+                "Id": "RimLight",
+                "Name": "RimLight",
+                "Components": {
+                    "TransformComponent": {
+                        "$type": "TransformComponent",
+                        "Translation": [5.0, 10.0, 10.0],
+                        "Rotation": [45.0, 0.0, 0.0]
+                    },
+                    "SpotLight": {
+                        "$type": "SpotLight",
+                        "Intensity": 3.0,
+                        "InnerConeAngle": 20.0,
+                        "OuterConeAngle": 45.0,
+                        "Color": [1.0, 1.0, 0.95]
+                    }
+                }
+            }
+        ]
+    },
+    "Description": "Three-point lighting rig with key (directional), fill (point), and rim (spot) lights.",
+    "Version": "1.0.0"
+}

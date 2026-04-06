@@ -1,0 +1,23 @@
+{
+    "ContainerEntity": {
+        "Id": "Camera_TopDown",
+        "Name": "TopDownCamera",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 20.0],
+                "Rotation": [-90.0, 0.0, 0.0],
+                "Scale": [1.0, 1.0, 1.0]
+            },
+            "Camera": {
+                "$type": "Camera",
+                "FieldOfView": 60.0,
+                "NearClipDistance": 0.1,
+                "FarClipDistance": 1000.0,
+                "MakeActiveViewOnActivation": true
+            }
+        }
+    },
+    "Description": "Top-down camera positioned above the scene looking straight down.",
+    "Version": "1.0.0"
+}

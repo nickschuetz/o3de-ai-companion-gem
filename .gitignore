@@ -1,0 +1,22 @@
+# Build
+build/
+Bin/
+*.pyc
+__pycache__/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Test/cache
+.pytest_cache/

@@ -1,0 +1,41 @@
+{
+    "ContainerEntity": {
+        "Id": "Enemy_Turret",
+        "Name": "EnemyTurret",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 1.0],
+                "Rotation": [0.0, 0.0, 0.0],
+                "Scale": [1.5, 1.5, 1.5]
+            },
+            "MeshComponent": {
+                "$type": "MeshComponent",
+                "MeshAsset": "primitive_cylinder"
+            },
+            "PhysXCollider": {
+                "$type": "PhysXCollider",
+                "ShapeType": "Cylinder",
+                "IsTrigger": false
+            },
+            "PhysXStaticRigidBody": {
+                "$type": "PhysXStaticRigidBody"
+            },
+            "LuaScript": {
+                "$type": "LuaScript",
+                "ScriptAsset": "Scripts/Lua/projectile_launcher.lua",
+                "Properties": {
+                    "FireRate": 1.0,
+                    "ProjectileSpeed": 15.0,
+                    "Damage": 15.0
+                }
+            },
+            "Tag": {
+                "$type": "Tag",
+                "Tags": ["Enemy", "Turret"]
+            }
+        }
+    },
+    "Description": "Stationary turret enemy that fires projectiles at the player.",
+    "Version": "1.0.0"
+}

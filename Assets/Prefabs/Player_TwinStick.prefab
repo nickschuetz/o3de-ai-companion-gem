@@ -1,0 +1,45 @@
+{
+    "ContainerEntity": {
+        "Id": "Player_TwinStick",
+        "Name": "Player",
+        "Components": {
+            "TransformComponent": {
+                "$type": "TransformComponent",
+                "Translation": [0.0, 0.0, 1.0],
+                "Rotation": [0.0, 0.0, 0.0],
+                "Scale": [1.0, 1.0, 1.0]
+            },
+            "MeshComponent": {
+                "$type": "MeshComponent",
+                "MeshAsset": "primitive_capsule"
+            },
+            "PhysXCollider": {
+                "$type": "PhysXCollider",
+                "ShapeType": "Capsule",
+                "IsTrigger": false
+            },
+            "PhysXRigidBody": {
+                "$type": "PhysXRigidBody",
+                "BodyType": "Dynamic",
+                "Mass": 1.0,
+                "LinearDamping": 2.0,
+                "GravityEnabled": false
+            },
+            "LuaScript": {
+                "$type": "LuaScript",
+                "ScriptAsset": "Scripts/Lua/twin_stick_movement.lua",
+                "Properties": {
+                    "MoveSpeed": 8.0,
+                    "RotationSpeed": 10.0,
+                    "InputScheme": "keyboard"
+                }
+            },
+            "Tag": {
+                "$type": "Tag",
+                "Tags": ["Player"]
+            }
+        }
+    },
+    "Description": "Player entity with twin-stick movement, capsule mesh, physics, and input handling.",
+    "Version": "1.0.0"
+}
