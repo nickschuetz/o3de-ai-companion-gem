@@ -1,4 +1,4 @@
-# Copyright Contributors to the AI Companion for O3DE Project.
+# Copyright (c) Contributors to the Open 3D Engine Project.
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
 """Component name registry for O3DE. Maps human-readable names to component

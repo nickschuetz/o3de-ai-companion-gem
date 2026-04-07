@@ -8,9 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Initial GitHub publication
+- Architecture document with Mermaid diagram (`Docs/architecture.md`)
+- Architecture link in README documentation section
+- CycloneDX SBOM (`sbom.cdx.json`) documenting all dependencies
 
-## [1.1.0] - 2026-04-06
+### Changed
+- Updated all copyright notices to "Copyright (c) Contributors to the Open 3D Engine Project"
+- Adopted 0.x.y versioning to reflect alpha status (1.0.0 → 0.1.0, 1.1.0 → 0.2.0)
+
+## [0.2.0] - 2026-04-06
 
 ### Added
 
@@ -47,7 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - RemoteConsole gem dependency — no longer required
 
-## [1.0.0] - 2026-04-06
+## [0.1.0] - 2026-04-06
 
 ### Added
 
@@ -136,5 +142,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-platform support (Linux, Windows, macOS)
 - Apache-2.0 OR MIT dual license
 
-[1.1.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v1.1.0
-[1.0.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v1.0.0
+[0.2.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.2.0
+[0.1.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.1.0

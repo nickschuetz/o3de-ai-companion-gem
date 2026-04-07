@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) Contributors to the AI Companion for O3DE Project
+Copyright (c) Contributors to the Open 3D Engine Project
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -68,6 +68,7 @@ complete game built with ~10 API calls.
 
 ## Documentation
 
+- [Architecture](Docs/architecture.md)
 - [Getting Started](Docs/README.md)
 - [API Reference](Docs/api-reference.md)
 - [Prefab Catalog](Docs/prefab-catalog.md)
@@ -87,6 +88,12 @@ complete game built with ~10 API calls.
 - Linux
 - Windows
 - macOS
+
+## SBOM
+
+A [CycloneDX Software Bill of Materials](sbom.cdx.json) is maintained for this
+project. It documents all runtime and build dependencies. Update it when adding
+or removing dependencies.
 
 ## License
 

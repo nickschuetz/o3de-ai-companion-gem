@@ -172,7 +172,7 @@ Use `get_api_version` to discover server capabilities in one call:
 
 ```json
 {"id": "init-1", "type": "get_api_version"}
-→ {"id": "init-1", "status": "ok", "output": "{\"protocol_version\": 1, \"gem_version\": \"1.1.0\", ...}", ...}
+→ {"id": "init-1", "status": "ok", "output": "{\"protocol_version\": 1, \"gem_version\": \"0.2.0\", ...}", ...}
 ```
 
 The response includes `secure_mode` and `tls_enabled` flags so agents can adapt.

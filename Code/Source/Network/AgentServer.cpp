@@ -1,5 +1,5 @@
 /*
- * Copyright Contributors to the AI Companion for O3DE Project.
+ * Copyright (c) Contributors to the Open 3D Engine Project.
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
@@ -882,8 +882,8 @@ namespace AiCompanion
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
         w.Key("protocol_version"); w.Int(1);
-        w.Key("gem_version"); w.String("1.1.0");
-        w.Key("api_version"); w.String("1.0.0");
+        w.Key("gem_version"); w.String("0.2.0");
+        w.Key("api_version"); w.String("0.1.0");
         w.Key("secure_mode"); w.Bool(m_secureMode.load());
         w.Key("tls_enabled"); w.Bool(m_tlsEnabled);
         w.EndObject();

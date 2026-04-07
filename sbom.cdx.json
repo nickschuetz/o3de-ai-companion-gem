@@ -1,0 +1,239 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:ai-companion-o3de-sbom",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-04-07T00:00:00Z",
+    "component": {
+      "type": "library",
+      "bom-ref": "ai-companion-gem",
+      "name": "AiCompanion",
+      "version": "0.2.0",
+      "description": "O3DE Gem that makes game development accessible to AI agents via high-level Python APIs, Lua gameplay scripts, prefabs, and safety guardrails.",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "supplier": {
+        "name": "Nick Schuetz",
+        "url": [
+          "https://github.com/nickschuetz/o3de-ai-companion-gem"
+        ]
+      },
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/nickschuetz/o3de-ai-companion-gem"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/nickschuetz/o3de-ai-companion-gem.git"
+        },
+        {
+          "type": "documentation",
+          "url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/Docs/README.md"
+        },
+        {
+          "type": "license",
+          "url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/LICENSE.txt"
+        }
+      ],
+      "purl": "pkg:github/nickschuetz/o3de-ai-companion-gem@0.2.0"
+    },
+    "tools": [
+      {
+        "name": "manual",
+        "version": "N/A"
+      }
+    ],
+    "authors": [
+      {
+        "name": "Nick Schuetz"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "framework",
+      "bom-ref": "o3de-engine",
+      "name": "Open 3D Engine (O3DE)",
+      "version": "2305.0+",
+      "description": "Open-source, real-time 3D engine. Provides AzCore, AzFramework, AzToolsFramework, and the component/EBus runtime.",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://o3de.org"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/o3de/o3de.git"
+        }
+      ],
+      "purl": "pkg:github/o3de/o3de"
+    },
+    {
+      "type": "library",
+      "bom-ref": "az-azcore",
+      "name": "AZ::AzCore",
+      "description": "O3DE core library providing memory management, serialization, RTTI, EBus, containers, threading, and JSON utilities.",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "az-azframework",
+      "name": "AZ::AzFramework",
+      "description": "O3DE application framework providing component entities, networking, asset management, and platform abstraction.",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "az-aztoolsframework",
+      "name": "AZ::AzToolsFramework",
+      "description": "O3DE editor tools framework providing editor APIs, Python runner integration, and tooling infrastructure. Used by editor module only.",
+      "scope": "optional",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "az-aztest",
+      "name": "AZ::AzTest",
+      "description": "O3DE test framework wrapping Google Test. Used for C++ unit tests only.",
+      "scope": "optional",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "rapidjson",
+      "name": "RapidJSON",
+      "description": "Fast JSON parser/generator for C++. Bundled with O3DE. Used by AgentServer for protocol message serialization and by SceneSnapshotProvider for scene state serialization.",
+      "scope": "required",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://rapidjson.org"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/Tencent/rapidjson.git"
+        }
+      ],
+      "purl": "pkg:github/Tencent/rapidjson"
+    },
+    {
+      "type": "library",
+      "bom-ref": "o3de-gem-editorpythonbindings",
+      "name": "EditorPythonBindings",
+      "description": "O3DE Gem that exposes the Editor Python Bindings (azlmbr) API. Required for the AI Companion Python API layer to function.",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "python-stdlib",
+      "name": "Python Standard Library",
+      "description": "Python standard library modules used: json, typing, math, re, functools, copy, time. No third-party Python packages are required.",
+      "scope": "required",
+      "licenses": [
+        {
+          "license": {
+            "id": "PSF-2.0"
+          }
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "ai-companion-gem",
+      "dependsOn": [
+        "o3de-engine",
+        "az-azcore",
+        "az-azframework",
+        "az-aztoolsframework",
+        "rapidjson",
+        "o3de-gem-editorpythonbindings",
+        "python-stdlib"
+      ]
+    },
+    {
+      "ref": "o3de-engine",
+      "dependsOn": []
+    },
+    {
+      "ref": "az-azcore",
+      "dependsOn": [
+        "o3de-engine"
+      ]
+    },
+    {
+      "ref": "az-azframework",
+      "dependsOn": [
+        "az-azcore"
+      ]
+    },
+    {
+      "ref": "az-aztoolsframework",
+      "dependsOn": [
+        "az-azcore",
+        "az-azframework"
+      ]
+    },
+    {
+      "ref": "az-aztest",
+      "dependsOn": [
+        "az-azcore"
+      ]
+    },
+    {
+      "ref": "rapidjson",
+      "dependsOn": []
+    },
+    {
+      "ref": "o3de-gem-editorpythonbindings",
+      "dependsOn": [
+        "o3de-engine"
+      ]
+    },
+    {
+      "ref": "python-stdlib",
+      "dependsOn": []
+    }
+  ]
+}

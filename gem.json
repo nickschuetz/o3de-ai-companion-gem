@@ -1,6 +1,6 @@
 {
     "gem_name": "AiCompanion",
-    "version": "1.1.0",
+    "version": "0.2.0",
     "display_name": "AI Companion",
     "license": "Apache-2.0 Or MIT",
     "license_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/LICENSE.txt",

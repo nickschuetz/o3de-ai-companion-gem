@@ -1,5 +1,5 @@
-# Copyright Contributors to the AI Companion for O3DE Project.
+# Copyright (c) Contributors to the Open 3D Engine Project.
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
-__version__ = "1.0.0"
-API_VERSION = "1.0.0"
+__version__ = "0.2.0"
+API_VERSION = "0.1.0"
