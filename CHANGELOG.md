@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Architecture link in README documentation section
 - CycloneDX SBOM (`sbom.cdx.json`) documenting all dependencies
 - `AGENTS.md` with coding conventions, project layout, and token efficiency best practices for AI agents
+- `CONTRIBUTING.md` with contribution guidelines for human and AI-assisted contributions
 
 ### Changed
 - Updated all copyright notices to "Copyright (c) Contributors to the Open 3D Engine Project"

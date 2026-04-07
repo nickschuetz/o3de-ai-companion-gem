@@ -110,5 +110,5 @@ additional terms or conditions.
 
 ## Contributing
 
-Contributions are welcome. Please ensure all code includes the appropriate
-SPDX license header and follows the existing code style.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+covering code style, safety requirements, testing, and AI-assisted contributions.
