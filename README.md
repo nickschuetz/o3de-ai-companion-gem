@@ -6,32 +6,72 @@ Model Context Protocol server for O3DE.
 
 ## What It Does
 
-AI Companion provides a high-level Python API that reduces complex game creation
-tasks from 70+ raw tool calls to under 10. It includes:
+AI Companion sits between AI agents and the O3DE Editor, turning high-level
+intent into engine operations. Agents connect through
+[o3de-mcp](https://github.com/nickschuetz/o3de-mcp) (MCP tool calls) or
+directly via the built-in AgentServer (TCP with length-prefixed JSON). Both
+paths feed into a Python API layer that exposes 28+ functions for entity
+creation, scene setup, lighting, physics, cameras, and scene inspection —
+reducing what would otherwise take 70+ raw tool calls to under 10.
 
-- **Python API** for entity creation, scene setup, lighting, physics, and cameras
-- **Fluent EntityBuilder** for composable entity construction
-- **7 Lua gameplay scripts** (twin-stick movement, enemy AI, projectiles, pickups, etc.)
-- **9 prefabs** (player, enemies, projectiles, pickups, lighting, camera)
-- **Scene feedback** via C++ EBus for fast entity traversal and validation
-- **AgentServer** — Built-in TCP listener with length-prefixed JSON protocol for AI agent communication
-- **Safety layer** with input validation, operation sandboxing, and undo/rollback
-- **Twin-stick shooter example** demonstrating all capabilities
+Beneath the Python API, a C++ native layer provides fast scene introspection
+through EBus. The SceneSnapshotProvider traverses entities at engine speed and
+serializes scene state as JSON, while the InputValidator enforces the same
+safety rules in compiled code. Read-only queries like scene snapshots, entity
+trees, and validation can bypass Python entirely by going straight through the
+AgentServer's C++ request handlers.
+
+A safety layer wraps every mutation. Inputs are validated against strict
+patterns (entity names, positions, asset paths), operations are sandboxed
+with configurable limits, and every change is captured in an undo batch that
+rolls back automatically on failure. System entities are protected from
+modification, and the AgentServer supports TLS encryption and a secure mode
+that disables arbitrary code execution.
+
+See the [architecture document](Docs/architecture.md) for the full system
+diagram.
 
 ## Quick Start
 
-```bash
-# 1. Clone
-git clone https://github.com/nickschuetz/o3de-ai-companion-gem.git
+**1. Clone**
 
-# 2. Register and enable
+```bash
+git clone https://github.com/nickschuetz/o3de-ai-companion-gem.git
+```
+
+**2. Register and enable**
+
+Linux / macOS:
+```bash
 o3de register --gem-path /path/to/o3de-ai-companion-gem
 o3de enable-gem --gem-name AiCompanion --project-path /path/to/your/project
-
-# 3. Ensure required Gem is enabled
 o3de enable-gem --gem-name EditorPythonBindings --project-path /path/to/your/project
+```
 
-# 4. Build your project
+Windows:
+```powershell
+o3de register --gem-path C:\path\to\o3de-ai-companion-gem
+o3de enable-gem --gem-name AiCompanion --project-path C:\path\to\your\project
+o3de enable-gem --gem-name EditorPythonBindings --project-path C:\path\to\your\project
+```
+
+**3. Build your project**
+
+Linux / macOS:
+```bash
+cmake -B build -S . -G "Ninja Multi-Config"
+cmake --build build --target Editor --config profile
+```
+
+Windows (Visual Studio Community 2022):
+```powershell
+cmake -B build -S . -G "Visual Studio 17 2022"
+cmake --build build --target Editor --config profile
+```
+
+Windows (Visual Studio Community 2026):
+```powershell
+cmake -B build -S . -G "Visual Studio 18 2026"
 cmake --build build --target Editor --config profile
 ```
 

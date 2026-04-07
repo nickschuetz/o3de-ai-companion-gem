@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `CONTRIBUTING.md` with contribution guidelines for human and AI-assisted contributions
 
 ### Changed
+- Rewrote README "What It Does" section to reflect architecture
+- Updated Quick Start with multiplatform build instructions (Linux/macOS, Windows VS 2022/2026)
 - Updated all copyright notices to "Copyright (c) Contributors to the Open 3D Engine Project"
 - Adopted 0.x.y versioning to reflect alpha status (1.0.0 → 0.1.0, 1.1.0 → 0.2.0)
 
