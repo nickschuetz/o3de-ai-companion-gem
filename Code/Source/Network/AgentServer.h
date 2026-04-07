@@ -8,7 +8,6 @@
 #include <AiCompanion/AgentServerBus.h>
 #include <AiCompanion/AiCompanionBus.h>
 
-#include <AzCore/Component/TickBus.h>
 #include <AzCore/std/containers/deque.h>
 #include <AzCore/std/parallel/mutex.h>
 #include <AzCore/std/parallel/thread.h>
@@ -18,7 +17,10 @@
 
 #include <rapidjson/document.h>
 
-#if AZ_TRAIT_OS_PLATFORM_APPLE || AZ_TRAIT_OS_IS_LINUX
+#include <future>
+#include <memory>
+
+#if AZ_TRAIT_OS_PLATFORM_APPLE || defined(AZ_PLATFORM_LINUX)
     #include <sys/socket.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
@@ -36,7 +38,7 @@ typedef struct ssl_ctx_st SSL_CTX;
 
 namespace AiCompanion
 {
-#if AZ_TRAIT_OS_PLATFORM_APPLE || AZ_TRAIT_OS_IS_LINUX
+#if AZ_TRAIT_OS_PLATFORM_APPLE || defined(AZ_PLATFORM_LINUX)
     using SocketType = int;
     static constexpr SocketType InvalidSocket = -1;
 #elif defined(AZ_PLATFORM_WINDOWS)
@@ -58,14 +60,13 @@ namespace AiCompanion
         AZStd::string id;
         AZStd::string type;
         AZStd::string payload; // base64 script for execute_python, empty for others
-        AZStd::promise<AZStd::string> responsePromise;
+        std::promise<AZStd::string> responsePromise;
     };
 
     //! AgentServer — Purpose-built TCP listener for AI agent communication.
     //! Replaces RemoteConsole with a length-prefixed JSON protocol.
     class AgentServer
-        : public AZ::TickBus::Handler
-        , public AgentServerRequestBus::Handler
+        : public AgentServerRequestBus::Handler
     {
     public:
         AgentServer();
@@ -90,8 +91,9 @@ namespace AiCompanion
         bool IsSecureMode() const override;
         void SetSecureMode(bool enabled) override;
 
-        // -- TickBus --
-        void OnTick(float deltaTime, AZ::ScriptTimePoint time) override;
+        //! Processes pending requests queued from the client thread.
+        //! Must be called from the main thread (e.g., from a component's OnTick).
+        void ProcessMainThreadQueue();
 
     private:
         // Background threads
@@ -148,11 +150,11 @@ namespace AiCompanion
 
         // Request queue (client thread → main thread)
         AZStd::mutex m_queueMutex;
-        AZStd::deque<AZStd::shared_ptr<PendingRequest>> m_pendingRequests;
+        AZStd::deque<std::shared_ptr<PendingRequest>> m_pendingRequests;
 
         // Protocol constants
         static constexpr AZ::u32 MaxMessageSize = 16 * 1024 * 1024; // 16 MiB
-        static constexpr int PollTimeoutMs = 500;
+        static constexpr int PollTimeoutMs = 100;
         static constexpr size_t LogTruncateSize = 4096;
 
 #if defined(AZ_PLATFORM_WINDOWS)

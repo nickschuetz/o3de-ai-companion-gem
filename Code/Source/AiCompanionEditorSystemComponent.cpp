@@ -11,6 +11,7 @@
 #include <AzCore/IO/Path/Path.h>
 #include <AzCore/Utils/Utils.h>
 #include <AzFramework/API/ApplicationAPI.h>
+#include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
 
 #include <cstdlib>
 
@@ -20,7 +21,7 @@ namespace AiCompanion
     {
         if (auto* serializeContext = azrtti_cast<AZ::SerializeContext*>(context))
         {
-            serializeContext->Class<AiCompanionEditorSystemComponent, AiCompanionSystemComponent>()
+            serializeContext->Class<AiCompanionEditorSystemComponent, AZ::Component>()
                 ->Version(1);
 
             if (AZ::EditContext* editContext = serializeContext->GetEditContext())
@@ -61,6 +62,7 @@ namespace AiCompanion
     {
         AiCompanionSystemComponent::Activate();
         AzToolsFramework::EditorEvents::Bus::Handler::BusConnect();
+        AZ::SystemTickBus::Handler::BusConnect();
         RegisterPythonPaths();
         StartAgentServer();
     }
@@ -73,8 +75,17 @@ namespace AiCompanion
             m_agentServer.reset();
         }
 
+        AZ::SystemTickBus::Handler::BusDisconnect();
         AzToolsFramework::EditorEvents::Bus::Handler::BusDisconnect();
         AiCompanionSystemComponent::Deactivate();
+    }
+
+    void AiCompanionEditorSystemComponent::OnSystemTick()
+    {
+        if (m_agentServer)
+        {
+            m_agentServer->ProcessMainThreadQueue();
+        }
     }
 
     void AiCompanionEditorSystemComponent::RegisterPythonPaths()

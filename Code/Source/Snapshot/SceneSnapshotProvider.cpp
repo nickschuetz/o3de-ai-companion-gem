@@ -59,8 +59,10 @@ namespace AiCompanion
                                 quat, info.id, &AZ::TransformBus::Events::GetWorldRotationQuaternion);
                             info.rotation = quat.GetEulerDegrees();
 
+                            float uniformScale = 1.0f;
                             AZ::TransformBus::EventResult(
-                                info.scale, info.id, &AZ::TransformBus::Events::GetLocalScale);
+                                uniformScale, info.id, &AZ::TransformBus::Events::GetLocalUniformScale);
+                            info.scale = AZ::Vector3(uniformScale);
 
                             // Get parent
                             AZ::TransformBus::EventResult(

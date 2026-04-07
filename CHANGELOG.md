@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-07
+
 ### Added
 - Architecture document with Mermaid diagram (`Docs/architecture.md`)
 - Architecture link in README documentation section
@@ -14,11 +16,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AGENTS.md` with coding conventions, project layout, and token efficiency best practices for AI agents
 - `CONTRIBUTING.md` with contribution guidelines for human and AI-assisted contributions
 
+### Fixed
+- AgentServer listen socket inherited by AssetProcessor/AssetBuilder child processes via `fork()`, causing non-deterministic `accept()` across processes and request timeouts; fixed with `SOCK_CLOEXEC` on Linux, `fcntl(FD_CLOEXEC)` on macOS, and `SetHandleInformation` on Windows for both listen and accepted sockets
+- Main-thread request dispatch used `AZ::TickBus` which throttles when the Editor window is unfocused; switched to `AZ::SystemTickBus` which fires every few milliseconds regardless of focus
+- `std::future::get()` blocked indefinitely when main-thread dispatch failed, deadlocking the client thread and preventing new connections; added 30-second `wait_for` timeout with graceful error responses
+- Stale CLOSE-WAIT connections blocked new clients due to single-client policy; added non-blocking socket liveness probe using `poll`/`WSAPoll` in `AcceptLoop` to detect and clean up dead connections on all platforms
+- `AZ_RTTI` + `AZ_CLASS_ALLOCATOR` on `AiCompanionEditorSystemComponent` prevented component activation; changed to `AZ_COMPONENT` macro
+- Serialization error "Classes deriving from AZ::Component not declaring base class" caused component deactivation; fixed `SerializeContext::Class` to declare `AZ::Component` as base
+- `AZ::TickBus::Handler::OnTick` never dispatched to `AgentServer` (a plain C++ class, not an `AZ::Component`); moved TickBus handling to `AiCompanionEditorSystemComponent` which calls `AgentServer::ProcessMainThreadQueue()`
+- `AZStd::promise`/`AZStd::make_shared` do not exist in O3DE's AZStd; replaced with `std::promise`/`std::make_shared`/`std::shared_ptr`
+- `AZ_TRAIT_OS_IS_LINUX` platform macro does not exist; corrected to `defined(AZ_PLATFORM_LINUX)`
+- `AZ::Utils::GetDefaultAppRootPath` API changed to return `optional<FixedMaxPathString>` with no arguments; updated call sites
+- `GetLocalScale` deprecation warning in `SceneSnapshotProvider`; replaced with `GetLocalUniformScale`
+- Missing `#include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>` for `EditorPythonRunnerRequestBus::Broadcast` calls
+- CMake error "You must provide a name for the target" due to empty `${gem_name}`; added `o3de_gem_setup("AiCompanion")` to top-level `CMakeLists.txt`
+
+### Security
+- Python script injection via triple-quote escaping bypass; replaced with injection-proof hex-escaped byte literals (`b'\xHH...'`)
+- Request IDs used in temp file paths without validation; added sanitization to alphanumeric/hyphen/underscore (max 64 chars) to prevent path traversal
+- Temp file race condition (TOCTOU) via predictable paths; now uses `O_EXCL` exclusive creation with `0600` permissions and pre-deletion of stale files
+- Removed deprecated OpenSSL initialization calls (`SSL_library_init`, `SSL_load_error_strings`, `OpenSSL_add_all_algorithms`)
+- Added strong TLS cipher suite restriction (`HIGH:!aNULL:!MD5:!RC4`)
+- Documented known security limitations (no authentication, no Python sandbox, no rate limiting) in architecture and safety-model docs
+
+### Performance
+- Eliminated JSON reparse in `ProcessMainThreadQueue`; response timing now injected via fast string replacement instead of full document parse/serialize
+- Replaced O(n) linear-search base64 decoder with O(1) 256-byte lookup table
+- Reduced `AcceptLoop` poll timeout from 500ms to 100ms for faster connection acceptance
+
 ### Changed
 - Rewrote README "What It Does" section to reflect architecture
 - Updated Quick Start with multiplatform build instructions (Linux/macOS, Windows VS 2022/2026)
 - Updated all copyright notices to "Copyright (c) Contributors to the Open 3D Engine Project"
 - Adopted 0.x.y versioning to reflect alpha status (1.0.0 → 0.1.0, 1.1.0 → 0.2.0)
+- Accepted client sockets now prevent child process inheritance: `accept4(SOCK_CLOEXEC)` on Linux, `fcntl(FD_CLOEXEC)` on macOS, `SetHandleInformation` on Windows
+- Updated `Docs/twin-stick-example.md` prerequisites to reference AgentServer instead of RemoteConsole
+- Updated `Docs/architecture.md` with main-thread dispatch details, reliability features, and known limitations
+- Updated `Docs/safety-model.md` with request ID sanitization, script encoding, temp file security, process isolation, stale connection handling, and known limitations
+- Added OpenSSL to `sbom.cdx.json` dependency graph
 
 ## [0.2.0] - 2026-04-06
 
@@ -146,5 +181,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-platform support (Linux, Windows, macOS)
 - Apache-2.0 OR MIT dual license
 
+[0.3.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.1.0

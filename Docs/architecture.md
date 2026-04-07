@@ -151,13 +151,37 @@ The AgentServer uses a length-prefixed JSON protocol over TCP:
 ```
 
 Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
-`get_entity_tree`, `validate_scene`.
+`get_entity_tree`, `validate_scene`, `execute_python`.
+
+Requests that require main-thread access (`get_scene_snapshot`, `get_entity_tree`,
+`validate_scene`, `execute_python`) are dispatched via a lock-free queue from the
+client thread to the `AZ::SystemTickBus` handler, which processes them every few
+milliseconds regardless of editor focus state. A 30-second timeout prevents
+deadlocks if the main thread is blocked.
 
 Security features:
-- Optional TLS/SSL encryption
+- Optional TLS/SSL encryption (TLS 1.2+, strong cipher suites: `HIGH:!aNULL:!MD5:!RC4`)
 - Configurable audit logging (Minimal, Standard, Verbose)
 - Maximum message size: 16 MiB
 - `execute_python` disabled in secure mode
+- Request ID sanitization (alphanumeric only, prevents path traversal)
+- Injection-proof Python script encoding (hex-escaped byte literals)
+- Exclusive temp file creation (`O_EXCL`) with restrictive permissions (`0600`)
+
+Reliability features:
+- Socket inheritance prevention (`SOCK_CLOEXEC` / `FD_CLOEXEC` / `SetHandleInformation`)
+  ensures only the Editor process owns the listen socket
+- Stale connection detection via non-blocking socket probing in the accept loop
+- Platform-specific `accept` hardening: `accept4` on Linux, `fcntl` on macOS,
+  `SetHandleInformation` on Windows
+
+### Known Limitations
+
+- **No authentication**: The server does not require API keys or tokens. Bind to
+  localhost (the default) and rely on OS-level access control.
+- **No Python sandbox**: `execute_python` runs arbitrary code with full editor
+  privileges. Use secure mode to disable it in untrusted environments.
+- **Single client**: Only one TCP connection is accepted at a time.
 
 ## Safety Architecture
 

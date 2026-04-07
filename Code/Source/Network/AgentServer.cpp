@@ -15,11 +15,12 @@
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 
+#include <chrono>
 #include <cstdarg>
 #include <cstring>
 
 // TLS support via OpenSSL (linked through AzFramework)
-#if AZ_TRAIT_OS_PLATFORM_APPLE || AZ_TRAIT_OS_IS_LINUX || defined(AZ_PLATFORM_WINDOWS)
+#if AZ_TRAIT_OS_PLATFORM_APPLE || defined(AZ_PLATFORM_LINUX) || defined(AZ_PLATFORM_WINDOWS)
     #include <openssl/ssl.h>
     #include <openssl/err.h>
     #define AI_COMPANION_TLS_AVAILABLE 1
@@ -90,8 +91,15 @@ namespace AiCompanion
             m_tlsEnabled = true;
         }
 
-        // Create listening socket
+        // Create listening socket.
+        // Prevent child processes (AssetProcessor, AssetBuilder) from inheriting
+        // this socket. Without this, multiple processes share the listen socket
+        // and accept() becomes non-deterministic across processes.
+#if defined(AZ_PLATFORM_LINUX)
+        m_listenSocket = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+#else
         m_listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#endif
         if (m_listenSocket == InvalidSocket)
         {
             AZ_Error("AiCompanion", false, "[AgentServer] Failed to create socket");
@@ -102,6 +110,14 @@ namespace AiCompanion
 #endif
             return false;
         }
+
+#if AZ_TRAIT_OS_PLATFORM_APPLE
+        // macOS lacks SOCK_CLOEXEC; set FD_CLOEXEC after creation
+        fcntl(m_listenSocket, F_SETFD, FD_CLOEXEC);
+#elif defined(AZ_PLATFORM_WINDOWS)
+        // On Windows, prevent socket handle inheritance by child processes
+        SetHandleInformation(reinterpret_cast<HANDLE>(m_listenSocket), HANDLE_FLAG_INHERIT, 0);
+#endif
 
         // Allow address reuse
         int optVal = 1;
@@ -156,7 +172,6 @@ namespace AiCompanion
 
         // Connect to buses
         AgentServerRequestBus::Handler::BusConnect();
-        AZ::TickBus::Handler::BusConnect();
 
         // Start accept thread
         m_acceptThread = AZStd::thread([this]() { AcceptLoop(); });
@@ -201,7 +216,6 @@ namespace AiCompanion
         }
 
         // Disconnect from buses
-        AZ::TickBus::Handler::BusDisconnect();
         AgentServerRequestBus::Handler::BusDisconnect();
 
         // Drain any pending requests with error
@@ -276,12 +290,18 @@ namespace AiCompanion
     // TickBus — Process pending requests on main thread
     // -------------------------------------------------------------------------
 
-    void AgentServer::OnTick([[maybe_unused]] float deltaTime, [[maybe_unused]] AZ::ScriptTimePoint time)
+    void AgentServer::ProcessMainThreadQueue()
     {
-        AZStd::deque<AZStd::shared_ptr<PendingRequest>> localQueue;
+        AZStd::deque<std::shared_ptr<PendingRequest>> localQueue;
         {
             AZStd::lock_guard<AZStd::mutex> lock(m_queueMutex);
             localQueue.swap(m_pendingRequests);
+        }
+
+        if (!localQueue.empty())
+        {
+            LogMinimal("[AgentServer] Processing %zu pending request(s) on main thread",
+                       localQueue.size());
         }
 
         for (auto& req : localQueue)
@@ -289,20 +309,19 @@ namespace AiCompanion
             auto startTime = AZStd::chrono::steady_clock::now();
             AZStd::string response = HandleRequest(req->payload);
             auto endTime = AZStd::chrono::steady_clock::now();
-            auto durationMs = AZStd::chrono::duration_cast<AZStd::chrono::milliseconds>(endTime - startTime).count();
+            auto durationMs = static_cast<AZ::s64>(
+                AZStd::chrono::duration_cast<AZStd::chrono::milliseconds>(endTime - startTime).count());
 
-            // Inject timing into the response
-            rapidjson::Document doc;
-            doc.Parse(response.c_str());
-            if (!doc.HasParseError() && doc.IsObject())
+            // Replace the placeholder duration_ms=0 with actual timing.
+            // HandleRequest already builds complete JSON via BuildResponse with duration_ms=0,
+            // so we do a fast string replacement instead of re-parsing the entire JSON.
+            const AZStd::string placeholder = "\"duration_ms\":0}";
+            size_t pos = response.rfind(placeholder);
+            if (pos != AZStd::string::npos)
             {
-                doc.RemoveMember("duration_ms");
-                doc.AddMember("duration_ms", rapidjson::Value(durationMs), doc.GetAllocator());
-
-                rapidjson::StringBuffer buffer;
-                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-                doc.Accept(writer);
-                response = buffer.GetString();
+                AZStd::string replacement = AZStd::string::format("\"duration_ms\":%lld}",
+                    static_cast<long long>(durationMs));
+                response.replace(pos, placeholder.size(), replacement);
             }
 
             LogStandard("[AgentServer] req=%s type=%s duration=%lldms",
@@ -341,13 +360,28 @@ namespace AiCompanion
 
             sockaddr_in clientAddr{};
             socklen_t addrLen = sizeof(clientAddr);
+#if defined(AZ_PLATFORM_LINUX)
+            // Use accept4 with SOCK_CLOEXEC to prevent child process inheritance
+            SocketType clientSock = accept4(m_listenSocket,
+                                            reinterpret_cast<sockaddr*>(&clientAddr), &addrLen,
+                                            SOCK_CLOEXEC);
+#else
             SocketType clientSock = accept(m_listenSocket,
                                            reinterpret_cast<sockaddr*>(&clientAddr), &addrLen);
+#endif
 
             if (clientSock == InvalidSocket)
             {
                 continue; // likely shutting down
             }
+
+#if AZ_TRAIT_OS_PLATFORM_APPLE
+            // macOS lacks accept4; set FD_CLOEXEC after accept to prevent child inheritance
+            fcntl(clientSock, F_SETFD, FD_CLOEXEC);
+#elif defined(AZ_PLATFORM_WINDOWS)
+            // Prevent accepted socket from being inherited by child processes
+            SetHandleInformation(reinterpret_cast<HANDLE>(clientSock), HANDLE_FLAG_INHERIT, 0);
+#endif
 
             // Extract client address for logging
             char addrBuf[INET_ADDRSTRLEN] = {};
@@ -356,14 +390,61 @@ namespace AiCompanion
             AZStd::string clientAddrStr(addrBuf);
 
             // Single-client policy: reject if another client is connected
+            // But first check if the existing connection is stale (CLOSE-WAIT)
             {
                 AZStd::lock_guard<AZStd::mutex> lock(m_clientMutex);
-                if (m_clientSocket.load() != InvalidSocket)
+                SocketType existingSocket = m_clientSocket.load();
+                if (existingSocket != InvalidSocket)
                 {
-                    LogMinimal("[AgentServer] Rejected connection from %s:%u — another client is connected",
-                               clientAddrStr.c_str(), clientPort);
-                    CloseSocket(clientSock);
-                    continue;
+                    // Probe the existing socket to detect stale connections.
+                    // Use poll with zero timeout (non-blocking) to avoid blocking the accept loop.
+                    bool isStale = false;
+#if defined(AZ_PLATFORM_WINDOWS)
+                    WSAPOLLFD probePfd{};
+                    probePfd.fd = existingSocket;
+                    probePfd.events = POLLIN;
+                    int pollRet = WSAPoll(&probePfd, 1, 0);
+#else
+                    pollfd probePfd{};
+                    probePfd.fd = existingSocket;
+                    probePfd.events = POLLIN;
+                    int pollRet = poll(&probePfd, 1, 0);
+#endif
+                    if (pollRet > 0)
+                    {
+                        if (probePfd.revents & (POLLERR | POLLHUP | POLLNVAL))
+                        {
+                            isStale = true;
+                        }
+                        else if (probePfd.revents & POLLIN)
+                        {
+                            // Data or FIN available — peek to distinguish
+                            char probeBuf;
+                            int probeResult;
+#if defined(AZ_PLATFORM_WINDOWS)
+                            probeResult = recv(existingSocket, &probeBuf, 1, MSG_PEEK);
+#else
+                            probeResult = static_cast<int>(recv(existingSocket, &probeBuf, 1, MSG_PEEK | MSG_DONTWAIT));
+#endif
+                            if (probeResult == 0)
+                            {
+                                isStale = true; // FIN received — peer closed
+                            }
+                        }
+                    }
+                    if (!isStale)
+                    {
+                        LogMinimal("[AgentServer] Rejected connection from %s:%u — another client is connected",
+                                   clientAddrStr.c_str(), clientPort);
+                        CloseSocket(clientSock);
+                        continue;
+                    }
+
+                    // Stale connection detected — force cleanup
+                    LogMinimal("[AgentServer] Detected stale connection, cleaning up for new client");
+                    SocketType staleSock = existingSocket;
+                    CloseSocket(staleSock);
+                    m_clientSocket.store(InvalidSocket);
                 }
             }
 
@@ -449,6 +530,21 @@ namespace AiCompanion
             AZStd::string type = doc.HasMember("type") && doc["type"].IsString()
                 ? doc["type"].GetString() : "";
 
+            // Sanitize request ID: allow only alphanumeric, hyphen, underscore (max 64 chars).
+            // Prevents path traversal when IDs are used in temp file paths or format strings.
+            if (id.size() > 64)
+            {
+                id.resize(64);
+            }
+            for (char& c : id)
+            {
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '-' || c == '_'))
+                {
+                    c = '_';
+                }
+            }
+
             if (type.empty())
             {
                 AZStd::string errorResp = BuildErrorResponse(id, "Missing 'type' field");
@@ -472,7 +568,7 @@ namespace AiCompanion
             else if (type == "get_scene_snapshot" || type == "get_entity_tree" || type == "validate_scene")
             {
                 // Safe EBus calls — dispatch to main thread
-                auto pending = AZStd::make_shared<PendingRequest>();
+                auto pending = std::make_shared<PendingRequest>();
                 pending->id = id;
                 pending->type = type;
                 pending->payload = requestJson;
@@ -483,7 +579,21 @@ namespace AiCompanion
                     m_pendingRequests.push_back(pending);
                 }
 
-                response = future.get();
+                // Wait with timeout to prevent deadlock if main thread doesn't process
+                auto waitStatus = future.wait_for(std::chrono::seconds(30));
+                if (waitStatus == std::future_status::ready)
+                {
+                    response = future.get();
+                }
+                else
+                {
+                    response = BuildErrorResponse(id,
+                        "Request timed out waiting for main thread dispatch. "
+                        "Ensure the editor is running and not blocked.");
+                    AZ_Warning("AiCompanion", false,
+                        "[AgentServer] Request %s (type=%s) timed out waiting for main thread",
+                        id.c_str(), type.c_str());
+                }
             }
             else if (type == "execute_python")
             {
@@ -499,7 +609,7 @@ namespace AiCompanion
                 else
                 {
                     // Dispatch to main thread
-                    auto pending = AZStd::make_shared<PendingRequest>();
+                    auto pending = std::make_shared<PendingRequest>();
                     pending->id = id;
                     pending->type = type;
                     pending->payload = requestJson;
@@ -510,7 +620,21 @@ namespace AiCompanion
                         m_pendingRequests.push_back(pending);
                     }
 
-                    response = future.get();
+                    // Wait with timeout to prevent deadlock if main thread doesn't process
+                    auto waitStatus = future.wait_for(std::chrono::seconds(30));
+                    if (waitStatus == std::future_status::ready)
+                    {
+                        response = future.get();
+                    }
+                    else
+                    {
+                        response = BuildErrorResponse(id,
+                            "Request timed out waiting for main thread dispatch. "
+                            "Ensure the editor is running and not blocked.");
+                        AZ_Warning("AiCompanion", false,
+                            "[AgentServer] Request %s (type=execute_python) timed out waiting for main thread",
+                            id.c_str());
+                    }
                 }
             }
             else
@@ -709,10 +833,25 @@ namespace AiCompanion
 
             AZStd::string b64Script = doc["script"].GetString();
 
-            // Decode base64
-            // Using a simple base64 decode implementation
-            static const AZStd::string base64Chars =
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            // Decode base64 using a 256-byte lookup table for O(1) per character
+            static const AZ::s8 b64Lookup[] = {
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, // 0-15
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, // 16-31
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63, // 32-47 (+,/)
+                52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1, // 48-63 (0-9)
+                -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14, // 64-79 (A-O)
+                15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1, // 80-95 (P-Z)
+                -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40, // 96-111 (a-o)
+                41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1, // 112-127 (p-z)
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, // 128-255
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            };
 
             AZStd::string decoded;
             decoded.reserve(b64Script.size() * 3 / 4);
@@ -721,16 +860,12 @@ namespace AiCompanion
             int bits = -8;
             for (char c : b64Script)
             {
-                if (c == '=' || c == '\n' || c == '\r')
+                AZ::s8 idx = b64Lookup[static_cast<AZ::u8>(c)];
+                if (idx < 0)
                 {
-                    continue;
+                    continue; // skip '=', whitespace, invalid chars
                 }
-                size_t pos = base64Chars.find(c);
-                if (pos == AZStd::string::npos)
-                {
-                    continue;
-                }
-                val = (val << 6) + static_cast<AZ::u32>(pos);
+                val = (val << 6) + static_cast<AZ::u32>(idx);
                 bits += 6;
                 if (bits >= 0)
                 {
@@ -744,8 +879,22 @@ namespace AiCompanion
                 return BuildErrorResponse(id, "Failed to decode base64 script");
             }
 
+            // Encode the decoded script as a Python bytes literal using hex escaping.
+            // This is injection-proof: every byte becomes \xHH, so no character in the
+            // user script can break out of the string literal.
+            AZStd::string hexScript;
+            hexScript.reserve(decoded.size() * 4 + 2);
+            hexScript += "b'";
+            static const char hexDigits[] = "0123456789abcdef";
+            for (char c : decoded)
+            {
+                hexScript += "\\x";
+                hexScript += hexDigits[static_cast<AZ::u8>(c) >> 4];
+                hexScript += hexDigits[static_cast<AZ::u8>(c) & 0x0F];
+            }
+            hexScript += "'.decode('utf-8')";
+
             // Wrap the script to capture stdout/stderr
-            // We use a unique global variable keyed by request ID to retrieve output
             AZStd::string wrappedScript = AZStd::string::format(
                 "import sys, io as _io\n"
                 "_ac_buf = _io.StringIO()\n"
@@ -762,36 +911,10 @@ namespace AiCompanion
                 "    sys.stdout, sys.stderr = _ac_old_stdout, _ac_old_stderr\n"
                 "    import json as _ac_json\n"
                 "    _ac_result = {'output': _ac_buf.getvalue(), 'error': _ac_error}\n"
-                "    # Store result for C++ retrieval\n"
                 "    if not hasattr(sys, '_ai_companion_results'):\n"
                 "        sys._ai_companion_results = {}\n"
                 "    sys._ai_companion_results['%s'] = _ac_json.dumps(_ac_result)\n",
-                // Pass the decoded script as a repr'd string literal
-                AZStd::string::format("'''%s'''",
-                    // Escape triple quotes in the script
-                    [&decoded]() -> AZStd::string {
-                        AZStd::string escaped;
-                        escaped.reserve(decoded.size() + 64);
-                        for (size_t i = 0; i < decoded.size(); ++i)
-                        {
-                            if (decoded[i] == '\'' && i + 2 < decoded.size() &&
-                                decoded[i+1] == '\'' && decoded[i+2] == '\'')
-                            {
-                                escaped += "'''\"'''\"'''";
-                                i += 2;
-                            }
-                            else if (decoded[i] == '\\')
-                            {
-                                escaped += "\\\\";
-                            }
-                            else
-                            {
-                                escaped += decoded[i];
-                            }
-                        }
-                        return escaped;
-                    }().c_str()
-                ).c_str(),
+                hexScript.c_str(),
                 id.c_str()
             );
 
@@ -809,19 +932,24 @@ namespace AiCompanion
                 "    print('{\"output\": \"\", \"error\": \"No result captured\"}')\n",
                 id.c_str(), id.c_str());
 
-            // We need to capture the print output from the retrieve script
-            // Use a file-based approach for reliable retrieval
-            AZ::IO::FixedMaxPath tempDir;
-            AZ::Utils::GetDefaultAppRootPath(tempDir);
+            // Retrieve results via file. Use project root (not /tmp) to avoid
+            // shared temp directory attacks. Request ID is pre-sanitized to
+            // alphanumeric/hyphen/underscore so path traversal is not possible.
+            auto tempDirOpt = AZ::Utils::GetDefaultAppRootPath();
+            AZStd::string tempDir = tempDirOpt.has_value() ? AZStd::string(tempDirOpt->c_str()) : AZStd::string("/tmp");
             AZStd::string resultPath = AZStd::string::format("%s/_ai_companion_result_%s.json",
                 tempDir.c_str(), id.c_str());
 
+            // Remove any pre-existing file at this path (mitigates symlink attacks)
+            remove(resultPath.c_str());
+
             AZStd::string fileRetrieveScript = AZStd::string::format(
-                "import sys, json\n"
+                "import sys, json, os\n"
                 "result = '{\"output\": \"\", \"error\": \"No result captured\"}'\n"
                 "if hasattr(sys, '_ai_companion_results') and '%s' in sys._ai_companion_results:\n"
                 "    result = sys._ai_companion_results.pop('%s')\n"
-                "with open(r'%s', 'w') as f:\n"
+                "fd = os.open(r'%s', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)\n"
+                "with os.fdopen(fd, 'w') as f:\n"
                 "    f.write(result)\n",
                 id.c_str(), id.c_str(), resultPath.c_str());
 
@@ -862,6 +990,8 @@ namespace AiCompanion
             else
             {
                 error = "Failed to retrieve script execution result";
+                // Ensure cleanup even if fopen failed
+                remove(resultPath.c_str());
             }
 
             const char* status = error.empty() ? "ok" : "error";
@@ -882,7 +1012,7 @@ namespace AiCompanion
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
         w.Key("protocol_version"); w.Int(1);
-        w.Key("gem_version"); w.String("0.2.0");
+        w.Key("gem_version"); w.String("0.3.0");
         w.Key("api_version"); w.String("0.1.0");
         w.Key("secure_mode"); w.Bool(m_secureMode.load());
         w.Key("tls_enabled"); w.Bool(m_tlsEnabled);
@@ -1012,9 +1142,8 @@ namespace AiCompanion
         [[maybe_unused]] const AZStd::string& keyPath)
     {
 #if AI_COMPANION_TLS_AVAILABLE
-        SSL_library_init();
-        SSL_load_error_strings();
-        OpenSSL_add_all_algorithms();
+        // Note: SSL_library_init/SSL_load_error_strings/OpenSSL_add_all_algorithms
+        // are deprecated no-ops in OpenSSL 1.1.0+. OpenSSL auto-initializes.
 
         const SSL_METHOD* method = TLS_server_method();
         m_sslCtx = SSL_CTX_new(method);
@@ -1026,6 +1155,9 @@ namespace AiCompanion
 
         // Set minimum TLS version to 1.2
         SSL_CTX_set_min_proto_version(m_sslCtx, TLS1_2_VERSION);
+
+        // Restrict to strong cipher suites
+        SSL_CTX_set_cipher_list(m_sslCtx, "HIGH:!aNULL:!MD5:!RC4");
 
         if (SSL_CTX_use_certificate_file(m_sslCtx, certPath.c_str(), SSL_FILETYPE_PEM) <= 0)
         {

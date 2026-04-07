@@ -125,15 +125,59 @@ This limits the attack surface when the server is exposed beyond localhost.
 ### TLS Encryption
 
 Optional TLS encryption is available for non-localhost connections. When
-enabled, all communication is encrypted using OpenSSL (TLS 1.2 minimum).
-Self-signed certificates are supported for local development. See the
+enabled, all communication is encrypted using OpenSSL (TLS 1.2 minimum,
+cipher suite restricted to `HIGH:!aNULL:!MD5:!RC4`). Self-signed certificates
+are supported for local development. See the
 [integration guide](integration-with-o3de-mcp.md) for configuration details.
+
+### Request ID Sanitization
+
+All request IDs received from clients are sanitized to alphanumeric characters,
+hyphens, and underscores only (max 64 characters). This prevents path traversal
+attacks when IDs are used in temporary file paths for Python result retrieval.
+
+### Script Encoding
+
+Python scripts submitted via `execute_python` are base64-decoded and then
+re-encoded as hex-escaped byte literals (`b'\x48\x65\x6c...'`) before being
+passed to `exec()`. This encoding is injection-proof: no character in the user
+script can break out of the byte string literal.
+
+### Temp File Security
+
+Result files from `execute_python` are created with `O_EXCL` (exclusive create)
+and permissions `0600` (owner read/write only). Any pre-existing file at the
+result path is removed before creation to mitigate symlink attacks. Files are
+cleaned up immediately after reading, including on error paths.
 
 ### Single Client
 
 The AgentServer accepts only one connection at a time, preventing concurrent
-mutation conflicts from multiple agents.
+mutation conflicts from multiple agents. Stale connections (CLOSE-WAIT state)
+are detected via non-blocking socket probing and automatically cleaned up so
+new clients can connect.
+
+### Process Isolation
+
+The AgentServer listen socket uses `SOCK_CLOEXEC` (Linux), `FD_CLOEXEC` (macOS),
+or `SetHandleInformation` (Windows) to prevent child processes (AssetProcessor,
+AssetBuilder) from inheriting the socket. This ensures only the Editor process
+accepts connections and processes requests with proper main-thread dispatch.
 
 ### Message Size Limits
 
 Incoming messages are limited to 16 MiB to prevent memory exhaustion attacks.
+
+### Known Limitations
+
+- **No authentication**: The AgentServer does not implement API keys, tokens,
+  or client certificates. Security relies on binding to localhost (the default)
+  and OS-level access control. Do not expose to untrusted networks without
+  additional protection (SSH tunnel, VPN, firewall).
+- **No Python sandbox**: `execute_python` runs arbitrary Python code with full
+  editor privileges. It can access the filesystem, network, and all O3DE APIs.
+  The `OperationSandbox` only limits entity creation counts and timeouts, not
+  Python language features. Use secure mode to disable `execute_python` entirely
+  in untrusted environments.
+- **No rate limiting**: The server does not limit request frequency. A malicious
+  client could flood the server with requests to degrade editor performance.

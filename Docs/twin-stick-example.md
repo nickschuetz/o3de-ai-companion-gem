@@ -5,8 +5,8 @@ AI Companion API. The entire game is created in ~10 API calls.
 
 ## Prerequisites
 
-1. O3DE project with AI Companion, EditorPythonBindings, and RemoteConsole enabled
-2. Project built and editor running
+1. O3DE project with AI Companion and EditorPythonBindings gems enabled
+2. Project built and editor running (AgentServer auto-starts on port 4600)
 3. o3de-mcp connected (or editor Python console available)
 
 ## Step 1: Create the Arena

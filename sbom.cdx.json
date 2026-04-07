@@ -10,7 +10,7 @@
       "type": "library",
       "bom-ref": "ai-companion-gem",
       "name": "AiCompanion",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "O3DE Gem that makes game development accessible to AI agents via high-level Python APIs, Lua gameplay scripts, prefabs, and safety guardrails.",
       "licenses": [
         {
@@ -41,7 +41,7 @@
           "url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/LICENSE.txt"
         }
       ],
-      "purl": "pkg:github/nickschuetz/o3de-ai-companion-gem@0.2.0"
+      "purl": "pkg:github/nickschuetz/o3de-ai-companion-gem@0.3.0"
     },
     "tools": [
       {
@@ -177,6 +177,27 @@
           }
         }
       ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "openssl",
+      "name": "OpenSSL",
+      "description": "TLS/SSL cryptography library. Bundled with O3DE. Used by AgentServer for optional TLS encryption of non-localhost connections.",
+      "scope": "optional",
+      "licenses": [
+        {
+          "license": {
+            "id": "OpenSSL"
+          }
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://www.openssl.org"
+        }
+      ],
+      "purl": "pkg:generic/openssl"
     }
   ],
   "dependencies": [
@@ -189,7 +210,8 @@
         "az-aztoolsframework",
         "rapidjson",
         "o3de-gem-editorpythonbindings",
-        "python-stdlib"
+        "python-stdlib",
+        "openssl"
       ]
     },
     {
@@ -233,6 +255,10 @@
     },
     {
       "ref": "python-stdlib",
+      "dependsOn": []
+    },
+    {
+      "ref": "openssl",
       "dependsOn": []
     }
   ]

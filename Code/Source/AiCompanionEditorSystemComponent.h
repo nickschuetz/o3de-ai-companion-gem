@@ -8,6 +8,7 @@
 #include "AiCompanionSystemComponent.h"
 #include "Network/AgentServer.h"
 
+#include <AzCore/Component/TickBus.h>
 #include <AzCore/std/smart_ptr/unique_ptr.h>
 #include <AzToolsFramework/API/ToolsApplicationAPI.h>
 
@@ -16,10 +17,10 @@ namespace AiCompanion
     class AiCompanionEditorSystemComponent
         : public AiCompanionSystemComponent
         , private AzToolsFramework::EditorEvents::Bus::Handler
+        , public AZ::SystemTickBus::Handler
     {
     public:
-        AZ_RTTI(AiCompanionEditorSystemComponent, "{D4F3B5A7-8E9C-4DBB-CF6A-AB4C3E5D7A9F}", AiCompanionSystemComponent);
-        AZ_CLASS_ALLOCATOR(AiCompanionEditorSystemComponent, AZ::SystemAllocator);
+        AZ_COMPONENT(AiCompanionEditorSystemComponent, "{D4F3B5A7-8E9C-4DBB-CF6A-AB4C3E5D7A9F}", AiCompanionSystemComponent);
 
         static void Reflect(AZ::ReflectContext* context);
 
@@ -32,6 +33,9 @@ namespace AiCompanion
         // AZ::Component overrides
         void Activate() override;
         void Deactivate() override;
+
+        // AZ::SystemTickBus::Handler
+        void OnSystemTick() override;
 
     private:
         //! Registers the Editor/Scripts/ directory so the ai_companion Python package is importable.
