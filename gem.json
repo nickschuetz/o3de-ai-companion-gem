@@ -22,7 +22,9 @@
     "documentation_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/Docs/README.md",
     "dependencies": [],
     "compatible_engines": [
-        "o3de >= 2305.0"
+        "o3de >= 2305.0",
+        "o3de >= 24.09",
+        "o3de >= 26.05.0"
     ],
     "engine_api_dependencies": []
 }
