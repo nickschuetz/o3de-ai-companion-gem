@@ -109,7 +109,7 @@ function EnemyChaseAI:Chase(deltaTime)
     if len > 0.01 then
         direction = direction / len
         local velocity = direction * self.Properties.ChaseSpeed
-        PhysicsRigidBodyRequestBus.Event.SetLinearVelocity(
+        RigidBodyRequestBus.Event.SetLinearVelocity(
             self.entityId, Vector3(velocity.x, velocity.y, 0))
 
         -- Face the target

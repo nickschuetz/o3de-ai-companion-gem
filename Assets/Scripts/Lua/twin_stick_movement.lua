@@ -98,12 +98,12 @@ function TwinStickMovement:OnTick(deltaTime, scriptTime)
 
         -- Apply velocity via physics
         local entityId = self.entityId
-        PhysicsRigidBodyRequestBus.Event.SetLinearVelocity(entityId, velocity)
+        RigidBodyRequestBus.Event.SetLinearVelocity(entityId, velocity)
     else
         -- Stop horizontal movement but preserve vertical velocity
-        local currentVel = PhysicsRigidBodyRequestBus.Event.GetLinearVelocity(self.entityId)
+        local currentVel = RigidBodyRequestBus.Event.GetLinearVelocity(self.entityId)
         if currentVel then
-            PhysicsRigidBodyRequestBus.Event.SetLinearVelocity(
+            RigidBodyRequestBus.Event.SetLinearVelocity(
                 self.entityId, Vector3(0, 0, currentVel.z))
         end
     end
