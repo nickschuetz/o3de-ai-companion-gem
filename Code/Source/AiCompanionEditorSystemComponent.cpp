@@ -48,7 +48,10 @@ namespace AiCompanion
         if (auto* behaviorContext = azrtti_cast<AZ::BehaviorContext*>(context))
         {
             behaviorContext->EBus<AiCompanionEditorRequestBus>("AiCompanionEditorRequestBus")
+                ->Attribute(AZ::Script::Attributes::Scope, AZ::Script::Attributes::ScopeFlags::Automation)
                 ->Attribute(AZ::Script::Attributes::Category, "AiCompanion")
+                ->Attribute(AZ::Script::Attributes::Module, "editor")
+                ->Attribute(AZ::Script::Attributes::ExcludeFrom, AZ::Script::Attributes::ExcludeFlags::All)
                 ->Event("SetComponentPropertyUnwrapped",
                         &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped);
         }
