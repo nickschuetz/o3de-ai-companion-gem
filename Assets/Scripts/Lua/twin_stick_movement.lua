@@ -23,11 +23,19 @@ function TwinStickMovement:OnActivate()
     -- returns the handler in one call.
     self.tickHandler = TickBus.Connect(self)
 
-    -- Connect to input notifications
-    self.inputHandler = InputEventNotificationBus.Connect(self, InputEventNotificationId("move_x"))
-    self.inputHandlerY = InputEventNotificationBus.Connect(self, InputEventNotificationId("move_y"))
-    self.inputHandlerAimX = InputEventNotificationBus.Connect(self, InputEventNotificationId("aim_x"))
-    self.inputHandlerAimY = InputEventNotificationBus.Connect(self, InputEventNotificationId("aim_y"))
+    -- Connect to input notifications.
+    -- O3DE 26050: InputEventNotificationId no longer exposes :GetName(); we stash
+    -- the IDs and compare via the reflected ::Equal operator (Lua '==') in the
+    -- OnPressed/OnHeld/OnReleased handlers.
+    self.idMoveX = InputEventNotificationId("move_x")
+    self.idMoveY = InputEventNotificationId("move_y")
+    self.idAimX = InputEventNotificationId("aim_x")
+    self.idAimY = InputEventNotificationId("aim_y")
+
+    self.inputHandler = InputEventNotificationBus.Connect(self, self.idMoveX)
+    self.inputHandlerY = InputEventNotificationBus.Connect(self, self.idMoveY)
+    self.inputHandlerAimX = InputEventNotificationBus.Connect(self, self.idAimX)
+    self.inputHandlerAimY = InputEventNotificationBus.Connect(self, self.idAimY)
 
     self.moveX = 0
     self.moveY = 0
@@ -54,14 +62,14 @@ function TwinStickMovement:OnDeactivate()
 end
 
 function TwinStickMovement:OnPressed(value)
-    local inputName = InputEventNotificationBus.GetCurrentBusId():GetName()
-    if inputName == "move_x" then
+    local busId = InputEventNotificationBus.GetCurrentBusId()
+    if busId == self.idMoveX then
         self.moveX = value
-    elseif inputName == "move_y" then
+    elseif busId == self.idMoveY then
         self.moveY = value
-    elseif inputName == "aim_x" then
+    elseif busId == self.idAimX then
         self.aimX = value
-    elseif inputName == "aim_y" then
+    elseif busId == self.idAimY then
         self.aimY = value
     end
 end
@@ -71,14 +79,14 @@ function TwinStickMovement:OnHeld(value)
 end
 
 function TwinStickMovement:OnReleased(value)
-    local inputName = InputEventNotificationBus.GetCurrentBusId():GetName()
-    if inputName == "move_x" then
+    local busId = InputEventNotificationBus.GetCurrentBusId()
+    if busId == self.idMoveX then
         self.moveX = 0
-    elseif inputName == "move_y" then
+    elseif busId == self.idMoveY then
         self.moveY = 0
-    elseif inputName == "aim_x" then
+    elseif busId == self.idAimX then
         self.aimX = 0
-    elseif inputName == "aim_y" then
+    elseif busId == self.idAimY then
         self.aimY = 0
     end
 end
@@ -108,17 +116,24 @@ function TwinStickMovement:OnTick(deltaTime, scriptTime)
         end
     end
 
-    -- Aim direction (rotation)
-    local aimLen = math.sqrt(self.aimX * self.aimX + self.aimY * self.aimY)
-    if aimLen > 0.1 then
-        local angle = math.atan2(self.aimX, self.aimY)
-        local targetRotation = Quaternion.CreateRotationZ(-angle)
-        local currentRotation = TransformBus.Event.GetWorldRotationQuaternion(self.entityId)
-
-        local newRotation = currentRotation:Slerp(targetRotation,
-            math.min(1.0, self.Properties.RotationSpeed * deltaTime))
-        TransformBus.Event.SetWorldRotationQuaternion(self.entityId, newRotation)
+    -- Aim (yaw). The Player is a dynamic rigid body, so PhysX overwrites any
+    -- direct TransformBus rotation we set. Drive yaw via angular velocity on
+    -- the rigid body instead. Horizontal mouse delta (per-frame pixel delta)
+    -- maps to yaw rate around Z; gamepad right-stick X would land here too as
+    -- a sustained value.
+    if math.abs(self.aimX) > 0.001 then
+        local turnSpeed = -self.aimX * self.Properties.RotationSpeed
+        RigidBodyRequestBus.Event.SetAngularVelocity(
+            self.entityId, Vector3(0, 0, turnSpeed))
+    else
+        -- No aim input: stop spinning so we don't drift after a flick.
+        RigidBodyRequestBus.Event.SetAngularVelocity(
+            self.entityId, Vector3(0, 0, 0))
     end
+    -- Mouse deltas are one-shot per frame; gamepad stick values get re-set
+    -- on every tick anyway.
+    self.aimX = 0
+    self.aimY = 0
 end
 
 return TwinStickMovement
