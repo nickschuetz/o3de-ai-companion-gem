@@ -43,7 +43,7 @@ class TestEntityBuilder(unittest.TestCase):
             .with_physics(body_type="dynamic", mass=2.0)
             .build()
         )
-        self.assertIn("PhysX Rigid Body", result["data"]["component_ids"])
+        self.assertIn("PhysX Dynamic Rigid Body", result["data"]["component_ids"])
 
     def test_with_static_physics(self):
         result = json.loads(
@@ -59,7 +59,7 @@ class TestEntityBuilder(unittest.TestCase):
             .with_collider(shape="sphere")
             .build()
         )
-        self.assertIn("PhysX Collider", result["data"]["component_ids"])
+        self.assertIn("PhysX Primitive Collider", result["data"]["component_ids"])
 
     def test_with_lua_script(self):
         result = json.loads(

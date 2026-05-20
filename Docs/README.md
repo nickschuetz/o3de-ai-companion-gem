@@ -94,7 +94,7 @@ Every API function returns a JSON string for reliable parsing:
     "data": {
         "entity_id": 12345,
         "name": "Player",
-        "component_ids": {"Mesh": 1, "PhysX Collider": 2}
+        "component_ids": {"Mesh": 1, "PhysX Primitive Collider": 2}
     }
 }
 ```
@@ -123,10 +123,11 @@ All inputs are validated before reaching O3DE APIs:
 
 ## Further Reading
 
-- [API Reference](api-reference.md) — Complete function documentation
-- [Prefab Catalog](prefab-catalog.md) — Available prefabs
-- [Lua Scripts](lua-scripts.md) — Gameplay script documentation
-- [Safety Model](safety-model.md) — Security architecture
-- [Twin-Stick Example](twin-stick-example.md) — Example walkthrough
-- [o3de-mcp Integration](integration-with-o3de-mcp.md) — Using with o3de-mcp
-- [Agent Best Practices](agent-best-practices.md) — Token efficiency & performance
+- [API Reference](api-reference.md), complete function documentation
+- [Prefab Catalog](prefab-catalog.md), available prefabs
+- [Lua Scripts](lua-scripts.md), gameplay script documentation
+- [Safety Model](safety-model.md), security architecture
+- [Twin-Stick Example](twin-stick-example.md), example walkthrough
+- [Agent Mode](agent-mode.md), suppress human-only UI for unattended sessions
+- [o3de-mcp Integration](integration-with-o3de-mcp.md), using with o3de-mcp
+- [Agent Best Practices](agent-best-practices.md), token efficiency and performance

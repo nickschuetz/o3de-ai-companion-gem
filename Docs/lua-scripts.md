@@ -17,7 +17,7 @@ Top-down twin-stick movement controller.
 - `move_x` / `move_y` — Movement (WASD or left stick)
 - `aim_x` / `aim_y` — Aim direction (mouse or right stick)
 
-**Requirements:** PhysX Rigid Body (dynamic, no gravity recommended)
+**Requirements:** PhysX Dynamic Rigid Body (no gravity recommended)
 
 ## projectile_launcher.lua
 
@@ -49,7 +49,7 @@ Simple chase-and-attack AI with state machine.
 
 **States:** Idle -> Chase -> Attack
 
-**Requirements:** PhysX Rigid Body, Tag component on target entity
+**Requirements:** PhysX Dynamic Rigid Body, Tag component on target entity
 
 ## health_pickup.lua
 
@@ -61,7 +61,7 @@ Pickup that heals on contact and optionally respawns.
 | `RespawnTime` | 10.0 | Seconds before respawn (0 = no respawn) |
 | `RotationSpeed` | 90.0 | Visual rotation (degrees/sec) |
 
-**Requirements:** PhysX Collider set as trigger
+**Requirements:** PhysX Primitive Collider set as trigger
 
 ## damage_on_contact.lua
 
@@ -74,7 +74,7 @@ Applies damage on collision. Used for projectiles and hazards.
 | `CooldownTime` | 0.5 | Cooldown between damage ticks |
 | `Lifetime` | 5.0 | Auto-destroy after N seconds (0 = never) |
 
-**Requirements:** PhysX Collider
+**Requirements:** PhysX Primitive Collider
 
 ## score_tracker.lua
 

@@ -72,7 +72,7 @@ class TestComponentRegistry(unittest.TestCase):
 
     def test_alias_match(self):
         canonical, err = resolve_component("RigidBody")
-        self.assertEqual(canonical, "PhysX Rigid Body")
+        self.assertEqual(canonical, "PhysX Dynamic Rigid Body")
 
     def test_unknown_with_suggestion(self):
         canonical, err = resolve_component("Mesh Component")
