@@ -18,22 +18,16 @@ function TwinStickMovement:OnActivate()
     self.moveDirection = Vector3(0, 0, 0)
     self.aimDirection = Vector3(0, 1, 0)
 
-    -- Connect to tick bus for per-frame updates
-    self.tickHandler = TickBusHandler()
-    self.tickHandler:Connect(self)
+    -- Connect to tick bus for per-frame updates.
+    -- O3DE 26050 dropped the BusName + 'Handler' constructor; Bus.Connect(self [, busId])
+    -- returns the handler in one call.
+    self.tickHandler = TickBus.Connect(self)
 
     -- Connect to input notifications
-    self.inputHandler = InputEventNotificationBusHandler()
-    self.inputHandler:Connect(self, InputEventNotificationId("move_x"))
-
-    self.inputHandlerY = InputEventNotificationBusHandler()
-    self.inputHandlerY:Connect(self, InputEventNotificationId("move_y"))
-
-    self.inputHandlerAimX = InputEventNotificationBusHandler()
-    self.inputHandlerAimX:Connect(self, InputEventNotificationId("aim_x"))
-
-    self.inputHandlerAimY = InputEventNotificationBusHandler()
-    self.inputHandlerAimY:Connect(self, InputEventNotificationId("aim_y"))
+    self.inputHandler = InputEventNotificationBus.Connect(self, InputEventNotificationId("move_x"))
+    self.inputHandlerY = InputEventNotificationBus.Connect(self, InputEventNotificationId("move_y"))
+    self.inputHandlerAimX = InputEventNotificationBus.Connect(self, InputEventNotificationId("aim_x"))
+    self.inputHandlerAimY = InputEventNotificationBus.Connect(self, InputEventNotificationId("aim_y"))
 
     self.moveX = 0
     self.moveY = 0

@@ -19,8 +19,7 @@ function GameOverTrigger:OnActivate()
     self.isGameOver = false
     self.playerEntityId = nil
 
-    self.tickHandler = TickBusHandler()
-    self.tickHandler:Connect(self)
+    self.tickHandler = TickBus.Connect(self)
 
     -- Find the player entity
     local taggedEntities = TagGlobalRequestBus.Event.RequestTaggedEntities(
@@ -29,12 +28,9 @@ function GameOverTrigger:OnActivate()
         self.playerEntityId = taggedEntities[1]
 
         -- Listen for damage events on the player
-        self.damageHandler = GameplayNotificationBusHandler()
-        self.damageHandler:Connect(self,
+        self.damageHandler = GameplayNotificationBus.Connect(self,
             GameplayNotificationId(self.playerEntityId, "TakeDamage"))
-
-        self.healHandler = GameplayNotificationBusHandler()
-        self.healHandler:Connect(self,
+        self.healHandler = GameplayNotificationBus.Connect(self,
             GameplayNotificationId(self.playerEntityId, "Heal"))
     end
 

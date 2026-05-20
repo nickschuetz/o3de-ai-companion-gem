@@ -18,12 +18,15 @@ function HealthPickup:OnActivate()
     self.isActive = true
     self.respawnTimer = 0
 
-    self.tickHandler = TickBusHandler()
-    self.tickHandler:Connect(self)
+    self.tickHandler = TickBus.Connect(self)
 
-    -- Listen for trigger enter events
-    self.triggerHandler = PhysicsComponentNotificationBusHandler()
-    self.triggerHandler:Connect(self, self.entityId)
+    -- Listen for trigger enter events.
+    -- TODO: PhysicsComponentNotificationBus has no Lua binding in O3DE 26050;
+    -- needs migration to the PhysX5 trigger event API (likely
+    -- TriggerNotificationBus). Until then, the script will not receive
+    -- OnTriggerEnter callbacks. Tracked separately from the o3de/o3de#19770
+    -- workaround.
+    -- self.triggerHandler = PhysicsComponentNotificationBus.Connect(self, self.entityId)
 end
 
 function HealthPickup:OnDeactivate()

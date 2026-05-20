@@ -28,8 +28,7 @@ function EnemyChaseAI:OnActivate()
     self.attackTimer = 0
     self.targetEntityId = nil
 
-    self.tickHandler = TickBusHandler()
-    self.tickHandler:Connect(self)
+    self.tickHandler = TickBus.Connect(self)
 end
 
 function EnemyChaseAI:OnDeactivate()

@@ -19,12 +19,13 @@ function DamageOnContact:OnActivate()
     self.cooldownTimer = 0
     self.lifetimeTimer = self.Properties.Lifetime
 
-    self.tickHandler = TickBusHandler()
-    self.tickHandler:Connect(self)
+    self.tickHandler = TickBus.Connect(self)
 
-    -- Listen for collision events
-    self.collisionHandler = PhysicsComponentNotificationBusHandler()
-    self.collisionHandler:Connect(self, self.entityId)
+    -- TODO: PhysicsComponentNotificationBus has no Lua binding in O3DE 26050;
+    -- needs migration to the PhysX5 collision event API. Until then, the
+    -- script will not receive collision callbacks. See health_pickup.lua for
+    -- the same caveat.
+    -- self.collisionHandler = PhysicsComponentNotificationBus.Connect(self, self.entityId)
 end
 
 function DamageOnContact:OnDeactivate()

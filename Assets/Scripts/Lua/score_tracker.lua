@@ -17,11 +17,8 @@ function ScoreTracker:OnActivate()
     self.score = 0
 
     -- Listen for score events
-    self.scoreHandler = GameplayNotificationBusHandler()
-    self.scoreHandler:Connect(self, GameplayNotificationId(self.entityId, "AddScore"))
-
-    self.killHandler = GameplayNotificationBusHandler()
-    self.killHandler:Connect(self, GameplayNotificationId(self.entityId, "EnemyDefeated"))
+    self.scoreHandler = GameplayNotificationBus.Connect(self, GameplayNotificationId(self.entityId, "AddScore"))
+    self.killHandler = GameplayNotificationBus.Connect(self, GameplayNotificationId(self.entityId, "EnemyDefeated"))
 
     Debug.Log("[ScoreTracker] Activated. Score: 0")
 end

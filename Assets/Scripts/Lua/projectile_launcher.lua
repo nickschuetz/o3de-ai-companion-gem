@@ -20,11 +20,8 @@ function ProjectileLauncher:OnActivate()
     self.fireCooldown = 0
     self.isFiring = false
 
-    self.tickHandler = TickBusHandler()
-    self.tickHandler:Connect(self)
-
-    self.inputHandler = InputEventNotificationBusHandler()
-    self.inputHandler:Connect(self, InputEventNotificationId("fire"))
+    self.tickHandler = TickBus.Connect(self)
+    self.inputHandler = InputEventNotificationBus.Connect(self, InputEventNotificationId("fire"))
 end
 
 function ProjectileLauncher:OnDeactivate()
