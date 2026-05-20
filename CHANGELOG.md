@@ -7,6 +7,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Agent Mode for AI-driven editor workflows. Two layers: persistent editor preferences (welcome dialog off, auto-load last level on) via `configure_editor_prefs_for_agent()`, and runtime dialog suppression via a JSON sidecar at `$XDG_STATE_HOME/o3de-ai-companion/agent_mode.json`. The editor system component polls the sidecar on `SystemTickBus` and installs a Qt event filter on `qApp` when enabled. Sidecar contract documented in `Docs/agent-mode.md`. New API: `set_agent_mode`, `get_agent_mode`, `configure_editor_prefs_for_agent`, `get_agent_mode_status`.
+- `EntityBuilder.with_input(bindings_path)` for attaching an Input component bound to an `.inputbindings` asset.
+- Asset-wiring pass on `EntityBuilder.build()`: freshly-attached components have their `Mesh.Model Asset`, `Lua Script.Script`, and Input bindings populated automatically.
+- `utils.asset_paths` module: maps placeholder primitive names (e.g. `primitive_cube`) to product asset paths under the project cache.
+- `utils.id_helpers` module: stable JSON-safe ID serialization for O3DE 2310+ `PythonProxyObject` wrappers (whose default `str()` includes a heap address).
+- `Assets/Input/twin_stick.inputbindings`; the player template wires it for the `twin_stick` movement preset.
+- TwinStickShooter example reorganized into discrete step functions (`Examples/TwinStickShooter/steps.py`) plus a recommended external batched driver (`Examples/TwinStickShooter/run_batched.py`) that sends each step through `o3de-mcp`'s AgentServer transport, avoiding the single-call `SetName` race.
+- `AiCompanionEditorRequestBus` C++ bus with `SetComponentPropertyUnwrapped`: gem-internal workaround for [o3de/o3de#19770](https://github.com/o3de/o3de/issues/19770). Routes `Asset<T>` writes on non-`EditorComponentBase` components (Input) through a path that unwraps `GenericComponentWrapper` before constructing `PropertyTreeEditor`, the same fix shape proposed upstream in [o3de/o3de#19771](https://github.com/o3de/o3de/pull/19771).
+- Camera template enforces a single active rendering camera: makes the new entity the editor's view and disables "Make active camera on activation?" on every other Camera so it wins on game-mode entry.
+
+### Changed
+- `COMPONENT_CATALOG`: PhysX component names updated to match the 26050 editor display names (`PhysX Primitive Collider`, `PhysX Dynamic Rigid Body`, `PhysX Mesh Collider`); pre-rename names kept as aliases. Added `Input` component entry.
+- `transform_helpers`: Quaternion factory uses module-level `Quaternion_CreateFromEulerAnglesDegrees` when available (2310+), falls back to the class-static form. Scale handling uses `SetLocalUniformScale`; non-uniform scale falls back to the largest axis as uniform when the Non-uniform Scale component is unavailable.
+- `feedback.scene_snapshot`: new `_enumerate_all_entities` helper tries `ToolsApplicationRequestBus.GetAllEntities` first, falls back to `entity.SearchBus.SearchEntities("*")` on builds where `GetAllEntities` was removed. `feedback.validation_report` uses the same helper.
+- `feedback.entity_inspector`, `feedback.validation_report`: switch raw `int()` casts to `id_to_jsonable` for stable proxy-aware output.
+- `safety.rollback`: undo-batch begin/end/undo prefer `ToolsApplicationRequestBus` (2310+) and fall back to `azlmbr.legacy.general`.
+- `gem.json` `compatible_engines`: declare `24.09` and `26.05.0` alongside the legacy `2305.0` entry.
+- Docs and tests updated for the renamed PhysX components; README adds Agent Mode link to Further Reading.
+
+### Fixed
+- Editor crash when scripting set `Asset<T>` properties on components that don't inherit from `EditorComponentBase` (e.g. the Input component's `Asset<InputEventBindingsAsset>` slot). Worked around by routing the set through `AiCompanionEditorRequestBus.SetComponentPropertyUnwrapped`, which performs the same wrapper unwrap proposed upstream in [o3de/o3de#19771](https://github.com/o3de/o3de/pull/19771). Tracking issue: [o3de/o3de#19770](https://github.com/o3de/o3de/issues/19770). Drop the workaround once #19771 lands.
+
 ## [0.3.0] - 2026-04-07
 
 ### Added
