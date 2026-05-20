@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Editor crash when scripting set `Asset<T>` properties on components that don't inherit from `EditorComponentBase` (e.g. the Input component's `Asset<InputEventBindingsAsset>` slot). Worked around by routing the set through `AiCompanionEditorRequestBus.SetComponentPropertyUnwrapped`, which performs the same wrapper unwrap proposed upstream in [o3de/o3de#19771](https://github.com/o3de/o3de/pull/19771). Tracking issue: [o3de/o3de#19770](https://github.com/o3de/o3de/issues/19770). Drop the workaround once #19771 lands.
+- `AiCompanionEditorRequestBus` was reflected to `BehaviorContext` but missing the `Scope=Automation`, `Module="editor"`, and `ExcludeFrom=All` attributes that `EditorPythonBindings` requires, so `azlmbr.editor.AiCompanionEditorRequestBus` came back as `None` and the gem-side workaround for `#19770` silently routed through nothing. Added the missing attributes (matching the engine's own `EditorComponentAPIBus`). Verified end to end: `create_player_entity(movement="twin_stick")` produces a Player whose saved prefab contains the correct `assetId`/`assetHint` for `Assets/Input/twin_stick.inputbindings` on the wrapped `InputConfigurationComponent.m_template`.
 
 ## [0.3.0] - 2026-04-07
 
