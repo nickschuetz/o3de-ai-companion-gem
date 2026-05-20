@@ -5,6 +5,7 @@ set(FILES
     Include/AiCompanion/AiCompanionBus.h
     Include/AiCompanion/AiCompanionTypeIds.h
     Include/AiCompanion/AgentServerBus.h
+    Include/AiCompanion/AiCompanionEditorRequestBus.h
     Source/AiCompanionEditorModule.cpp
     Source/AiCompanionEditorSystemComponent.h
     Source/AiCompanionEditorSystemComponent.cpp
