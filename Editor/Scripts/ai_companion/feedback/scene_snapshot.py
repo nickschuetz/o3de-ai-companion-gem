@@ -1,8 +1,9 @@
 # Copyright (c) Contributors to the Open 3D Engine Project.
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
-"""Scene snapshot feedback — calls the C++ SceneSnapshotProvider via EBus."""
+"""Scene snapshot feedback. Calls the C++ SceneSnapshotProvider via EBus."""
 
+from ..utils.id_helpers import id_to_jsonable
 from ..utils.json_output import success, error
 
 
@@ -55,6 +56,30 @@ def get_entity_tree() -> str:
     return _python_fallback_tree()
 
 
+def _enumerate_all_entities():
+    """Return a list of entity ids in the current level.
+
+    Tries `ToolsApplicationRequestBus.GetAllEntities` first (older builds),
+    falls back to `entity.SearchBus.SearchEntities` with a wildcard filter
+    (O3DE 2310+). Returns an empty list if both paths fail.
+    """
+    import azlmbr.editor as editor
+    import azlmbr.bus as bus
+
+    result = editor.ToolsApplicationRequestBus(bus.Broadcast, "GetAllEntities")
+    if result:
+        return result
+
+    try:
+        import azlmbr.entity as entity_api
+        search_filter = entity_api.SearchFilter()
+        search_filter.names = ["*"]
+        ids = entity_api.SearchBus(bus.Broadcast, "SearchEntities", search_filter)
+        return ids or []
+    except (ImportError, AttributeError):
+        return []
+
+
 def _python_fallback_snapshot() -> str:
     """Fallback snapshot using pure Python azlmbr calls."""
     try:
@@ -63,10 +88,7 @@ def _python_fallback_snapshot() -> str:
         import azlmbr.components as components
         import json
 
-        # Get all entity IDs
-        entity_ids = editor.ToolsApplicationRequestBus(
-            bus.Broadcast, "GetAllEntities"
-        )
+        entity_ids = _enumerate_all_entities()
 
         entities = []
         for eid in entity_ids:
@@ -79,7 +101,7 @@ def _python_fallback_snapshot() -> str:
             )
 
             entity_data = {
-                "id": int(eid),
+                "id": id_to_jsonable(eid),
                 "name": name or "",
                 "position": [pos.x, pos.y, pos.z] if pos else [0, 0, 0],
             }
@@ -102,9 +124,7 @@ def _python_fallback_tree() -> str:
         import azlmbr.bus as bus
         import json
 
-        entity_ids = editor.ToolsApplicationRequestBus(
-            bus.Broadcast, "GetAllEntities"
-        )
+        entity_ids = _enumerate_all_entities()
 
         nodes = []
         for eid in entity_ids:
@@ -114,10 +134,16 @@ def _python_fallback_tree() -> str:
             parent = editor.EditorEntityInfoRequestBus(
                 bus.Event, "GetParent", eid
             )
+            parent_valid = False
+            if parent is not None:
+                try:
+                    parent_valid = parent.IsValid()
+                except AttributeError:
+                    parent_valid = bool(parent)
             nodes.append({
-                "id": int(eid),
+                "id": id_to_jsonable(eid),
                 "name": name or "",
-                "parent_id": int(parent) if parent and parent.IsValid() else None,
+                "parent_id": id_to_jsonable(parent) if parent_valid else None,
             })
 
         return success({"roots": nodes, "source": "python_fallback"})

@@ -7,34 +7,63 @@ Every high-level API function should be wrapped with @with_undo_batch
 to ensure that failed operations are automatically rolled back."""
 
 import functools
-import traceback
 
 from .sandbox import reset_sandbox, get_sandbox
 
-# Track whether we're inside an undo batch to avoid nesting
 _batch_depth = 0
 
 
-def _begin_undo(label: str):
-    """Begin an O3DE undo batch."""
+def _begin_undo(label: str) -> None:
+    """Begin an O3DE undo batch.
+
+    Tries the modern ToolsApplicationRequestBus.BeginUndoBatch path first
+    (O3DE 2310+), then falls back to the legacy azlmbr.legacy.general API
+    if it exists. Silently no-ops outside the editor.
+    """
+    try:
+        import azlmbr.editor as editor
+        import azlmbr.bus as bus
+        editor.ToolsApplicationRequestBus(bus.Broadcast, "BeginUndoBatch", label)
+        return
+    except (ImportError, AttributeError):
+        pass
+
     try:
         import azlmbr.legacy.general as general
-        general.begin_undo_batch(label)
-    except ImportError:
-        pass  # Running outside editor (tests)
-
-
-def _end_undo():
-    """End the current O3DE undo batch."""
-    try:
-        import azlmbr.legacy.general as general
-        general.end_undo_batch()
+        if hasattr(general, "begin_undo_batch"):
+            general.begin_undo_batch(label)
     except ImportError:
         pass
 
 
-def _undo():
-    """Undo the last operation."""
+def _end_undo() -> None:
+    """End the current O3DE undo batch."""
+    try:
+        import azlmbr.editor as editor
+        import azlmbr.bus as bus
+        editor.ToolsApplicationRequestBus(bus.Broadcast, "EndUndoBatch")
+        return
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import azlmbr.legacy.general as general
+        if hasattr(general, "end_undo_batch"):
+            general.end_undo_batch()
+    except ImportError:
+        pass
+
+
+def _undo() -> None:
+    """Undo the last operation (rolls back the most recent batch)."""
+    try:
+        import azlmbr.editor as editor
+        import azlmbr.bus as bus
+        editor.ToolsApplicationRequestBus(bus.Broadcast, "Undo")
+        return
+    except (ImportError, AttributeError):
+        pass
+
     try:
         import azlmbr.legacy.general as general
         general.undo()
@@ -68,11 +97,11 @@ def with_undo_batch(label: str):
                 if is_outermost:
                     _end_undo()
                 return result
-            except Exception as e:
+            except Exception:
                 _batch_depth -= 1
                 if is_outermost:
                     _end_undo()
-                    _undo()  # Roll back the entire batch
+                    _undo()
                 raise
         return wrapper
     return decorator

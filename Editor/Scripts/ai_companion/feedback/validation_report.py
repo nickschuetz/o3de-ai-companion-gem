@@ -1,8 +1,9 @@
 # Copyright (c) Contributors to the Open 3D Engine Project.
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
-"""Scene validation — checks for common issues in AI-created scenes."""
+"""Scene validation. Checks for common issues in AI-created scenes."""
 
+from ..utils.id_helpers import id_to_jsonable
 from ..utils.json_output import success, error
 
 
@@ -45,9 +46,8 @@ def _python_validate() -> str:
         import azlmbr.bus as bus
         import azlmbr.components as components
 
-        entity_ids = editor.ToolsApplicationRequestBus(
-            bus.Broadcast, "GetAllEntities"
-        )
+        from .scene_snapshot import _enumerate_all_entities
+        entity_ids = _enumerate_all_entities()
 
         warnings = []
 
@@ -57,7 +57,7 @@ def _python_validate() -> str:
             if not name:
                 warnings.append({
                     "type": "unnamed_entity",
-                    "entity_id": int(eid),
+                    "entity_id": id_to_jsonable(eid),
                     "message": "Entity has no name",
                 })
 
@@ -65,7 +65,7 @@ def _python_validate() -> str:
             if pos and abs(pos.x) < 0.001 and abs(pos.y) < 0.001 and abs(pos.z) < 0.001:
                 warnings.append({
                     "type": "at_origin",
-                    "entity_id": int(eid),
+                    "entity_id": id_to_jsonable(eid),
                     "entity_name": name or "",
                     "message": "Entity is positioned at the origin",
                 })

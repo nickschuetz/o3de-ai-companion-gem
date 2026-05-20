@@ -3,7 +3,7 @@
 
 """Deep entity inspection — detailed component and property information."""
 
-import json
+from ..utils.id_helpers import id_to_jsonable
 from ..utils.json_output import success, error
 
 
@@ -42,7 +42,7 @@ def inspect_entity(entity_id: int) -> str:
                     bus.Broadcast, "GetComponentName", comp_id
                 )
                 comp_details.append({
-                    "component_id": int(comp_id) if comp_id else 0,
+                    "component_id": id_to_jsonable(comp_id) if comp_id else 0,
                     "type": comp_type or "Unknown",
                 })
 
@@ -50,7 +50,7 @@ def inspect_entity(entity_id: int) -> str:
         children = editor.EditorEntityInfoRequestBus(
             bus.Event, "GetChildren", eid
         )
-        child_ids = [int(c) for c in children] if children else []
+        child_ids = [id_to_jsonable(c) for c in children] if children else []
 
         return success({
             "entity_id": entity_id,
