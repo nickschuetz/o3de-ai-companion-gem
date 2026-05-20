@@ -1,100 +1,73 @@
 # Copyright (c) Contributors to the Open 3D Engine Project.
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
-"""
-Twin-Stick Shooter Example — Full Game Setup
+"""Twin-Stick Shooter Example, full game setup (all-in-one).
 
-Run this script via o3de-mcp's run_editor_python() to build a complete
-twin-stick shooter game in a single call:
+This is the quick-demo entry point. It calls every step function from
+`steps.py` in order, in a single editor Python invocation.
 
     run_editor_python(open("path/to/setup.py").read())
 
-Or import and call from within the editor Python console:
+Known limitation: on builds where `EditorEntityAPIBus.SetName` races with
+the prefab system finalizing newly-created entities, the first batch of
+entities created in `build_arena()` (Ground, walls, KeyLight, FillLight)
+may end up with default `EntityN` names in the Outliner. The script logs
+report the intended names correctly, only the in-editor names are lost.
 
-    from ai_companion.examples import twin_stick_shooter
-    twin_stick_shooter.setup()
+To avoid the race entirely, drive setup as multiple `run_editor_python`
+calls. See `run_batched.py` for the recommended invocation pattern.
 """
 
-from ai_companion.api import (
-    bootstrap_twin_stick_arena,
-    create_player,
-    create_enemy,
-    create_pickup,
-    create_camera,
-    get_scene_snapshot,
-)
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import steps
 
 
 def setup():
     """Build the complete twin-stick shooter example."""
-
     print("=== Twin-Stick Shooter Setup ===")
     print()
 
-    # 1. Create the arena (ground + walls + lighting)
+    print("[0/6] Preparing level...")
+    print(steps.ensure_level_open())
+    print()
+
     print("[1/6] Creating arena...")
-    arena = bootstrap_twin_stick_arena(size=30, wall_height=3)
-    print(arena)
+    print(steps.build_arena(size=30, wall_height=3))
     print()
 
-    # 2. Create the player at the center
     print("[2/6] Creating player...")
-    player = create_player(
-        name="Player",
-        position=[0, 0, 1],
-        movement="twin_stick",
-        health=100,
-    )
-    print(player)
+    print(steps.add_player(position=(0, 0, 1), health=100))
     print()
 
-    # 3. Set up the top-down camera
     print("[3/6] Creating camera...")
-    camera = create_camera(
-        name="MainCamera",
-        camera_type="top_down",
-        follow_target="Player",
-        offset=[0, 0, 25],
-    )
-    print(camera)
+    print(steps.add_camera(offset=(0, 0, 25)))
     print()
 
-    # 4. Spawn enemies
     print("[4/6] Creating enemies...")
-    enemies = [
-        create_enemy("Chaser1", position=[10, 10, 1], ai_type="chaser", speed=4),
-        create_enemy("Chaser2", position=[-10, 10, 1], ai_type="chaser", speed=3),
-        create_enemy("Chaser3", position=[10, -10, 1], ai_type="chaser", speed=3.5),
-        create_enemy("Turret1", position=[0, 12, 1], ai_type="turret"),
-    ]
-    for e in enemies:
+    for e in steps.add_enemies():
         print(e)
     print()
 
-    # 5. Place pickups
     print("[5/6] Placing pickups...")
-    pickups = [
-        create_pickup("HealthPack1", position=[5, 5, 0.5], pickup_type="health", value=25),
-        create_pickup("HealthPack2", position=[-5, -5, 0.5], pickup_type="health", value=25),
-        create_pickup("AmmoPack1", position=[-7, 7, 0.5], pickup_type="ammo", value=10),
-    ]
-    for p in pickups:
+    for p in steps.add_pickups():
         print(p)
     print()
 
-    # 6. Verify the scene
     print("[6/6] Verifying scene...")
-    snapshot = get_scene_snapshot()
-    print(snapshot)
+    print(steps.verify_scene())
     print()
 
     print("=== Twin-Stick Shooter Ready! ===")
     print("Enter game mode to play.")
 
 
-# Auto-run when executed as a script
-if __name__ == "__main__":
-    setup()
-else:
-    # Also auto-run when loaded via run_editor_python()
-    setup()
+# Auto-run on load so both supported entry points work:
+#   1. run_editor_python(open(...).read()), which execs the body
+#   2. import setup, from the editor Python console
+setup()
