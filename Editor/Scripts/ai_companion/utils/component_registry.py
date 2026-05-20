@@ -69,14 +69,22 @@ COMPONENT_CATALOG: Dict[str, Dict] = {
         "description": "HDR skybox rendering.",
     },
     # --- Physics ---
-    "PhysX Collider": {
+    # Canonical names match the editor display names on stabilization/26050.
+    # Pre-rename names (e.g. "PhysX Collider", "PhysX Rigid Body") are kept as
+    # aliases so existing scripts keep resolving.
+    "PhysX Primitive Collider": {
         "category": "Physics",
-        "aliases": ["Collider", "PhysXCollider"],
-        "description": "Adds collision detection to an entity.",
+        "aliases": ["PhysX Collider", "Collider", "PhysXCollider", "PrimitiveCollider"],
+        "description": "Adds collision detection using primitive shapes (box, sphere, capsule).",
     },
-    "PhysX Rigid Body": {
+    "PhysX Mesh Collider": {
         "category": "Physics",
-        "aliases": ["RigidBody", "PhysXRigidBody", "PhysX Dynamic Rigid Body"],
+        "aliases": ["MeshCollider", "PhysXMeshCollider"],
+        "description": "Adds collision detection using a mesh asset.",
+    },
+    "PhysX Dynamic Rigid Body": {
+        "category": "Physics",
+        "aliases": ["RigidBody", "PhysXRigidBody", "PhysX Rigid Body"],
         "description": "Adds physics simulation (dynamic rigid body).",
     },
     "PhysX Static Rigid Body": {
@@ -104,6 +112,12 @@ COMPONENT_CATALOG: Dict[str, Dict] = {
         "category": "Scripting",
         "aliases": ["ScriptCanvas", "VisualScript"],
         "description": "Attaches a Script Canvas visual script.",
+    },
+    # --- Gameplay ---
+    "Input": {
+        "category": "Gameplay",
+        "aliases": ["InputConfiguration", "InputComponent"],
+        "description": "Binds physical inputs to named events via an .inputbindings asset.",
     },
     # --- Camera ---
     "Camera": {

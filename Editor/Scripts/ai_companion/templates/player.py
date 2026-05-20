@@ -13,6 +13,10 @@ MOVEMENT_SCRIPTS = {
     "twin_stick": "Scripts/Lua/twin_stick_movement.lua",
 }
 
+MOVEMENT_INPUT_BINDINGS = {
+    "twin_stick": "Assets/Input/twin_stick.inputbindings",
+}
+
 
 def create_player_entity(
     name: str = "Player",
@@ -49,6 +53,9 @@ def create_player_entity(
 
     if movement and movement in MOVEMENT_SCRIPTS:
         builder.with_lua_script(MOVEMENT_SCRIPTS[movement])
+        bindings = MOVEMENT_INPUT_BINDINGS.get(movement)
+        if bindings:
+            builder.with_input(bindings)
     elif movement:
         raise ValueError(
             f"Unknown movement preset '{movement}'. "
