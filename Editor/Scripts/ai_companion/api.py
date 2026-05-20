@@ -65,6 +65,10 @@ def get_available_functions() -> str:
         {"name": "begin_undo_batch", "args": ["label?"], "description": "Start a manual undo batch"},
         {"name": "end_undo_batch", "args": [], "description": "End the current undo batch"},
         {"name": "rollback_last_batch", "args": [], "description": "Undo the last batch"},
+        {"name": "set_agent_mode", "args": ["enabled?", "suppress_dialogs?"], "description": "Enable runtime agent-mode dialog suppression"},
+        {"name": "get_agent_mode", "args": [], "description": "Get current agent-mode runtime state"},
+        {"name": "configure_editor_prefs_for_agent", "args": ["enabled?"], "description": "Apply persistent agent-friendly editor preferences"},
+        {"name": "get_agent_mode_status", "args": [], "description": "Snapshot of runtime + persistent agent-mode state"},
     ]
     return success(functions)
 
@@ -502,6 +506,44 @@ def list_prefabs() -> str:
         {"name": "Camera_TopDown", "description": "Top-down camera", "category": "Camera"},
     ]
     return success(prefabs)
+
+
+# ---------------------------------------------------------------------------
+# Agent Mode
+# ---------------------------------------------------------------------------
+
+
+def set_agent_mode(enabled: bool = True, suppress_dialogs: bool = True) -> str:
+    """Enable or disable runtime agent-mode dialog suppression.
+
+    Writes to the AiCompanion settings registry keys that the C++ editor
+    system component reads. See ``ai_companion.agent_mode`` for details.
+    """
+    from .agent_mode import set_agent_mode as _set
+    return _set(enabled=enabled, suppress_dialogs=suppress_dialogs)
+
+
+def get_agent_mode() -> str:
+    """Return the current runtime agent-mode state."""
+    from .agent_mode import get_agent_mode as _get
+    return _get()
+
+
+def configure_editor_prefs_for_agent(enabled: bool = True) -> str:
+    """Update the per-user editor preferences for an agent-driven workflow.
+
+    Sets ``LoadLastLevelAtStartup`` and ``ShowWelcomeScreenAtStartup`` so the
+    editor skips the welcome dialog and auto-loads the last level on next
+    launch. The editor must not be running when this is called.
+    """
+    from .agent_mode import configure_editor_prefs
+    return configure_editor_prefs(enabled=enabled)
+
+
+def get_agent_mode_status() -> str:
+    """Return a snapshot of both runtime and persistent agent-mode state."""
+    from .agent_mode import get_status
+    return get_status()
 
 
 @with_undo_batch("Spawn Prefab")

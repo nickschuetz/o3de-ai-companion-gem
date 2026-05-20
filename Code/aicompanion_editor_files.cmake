@@ -10,6 +10,10 @@ set(FILES
     Source/AiCompanionEditorSystemComponent.cpp
     Source/AiCompanionSystemComponent.h
     Source/AiCompanionSystemComponent.cpp
+    Source/AgentMode/AgentModeFilter.h
+    Source/AgentMode/AgentModeFilter.cpp
+    Source/AgentMode/AgentModeState.h
+    Source/AgentMode/AgentModeState.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
     Source/Snapshot/SceneSnapshotProvider.h
