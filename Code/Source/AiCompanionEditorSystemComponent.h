@@ -43,6 +43,8 @@ namespace AiCompanion
             AZStd::string propertyPath,
             AZStd::any value) override;
 
+        AZStd::string GetBusSchema(AZStd::string busName) override;
+
     protected:
         // AZ::Component overrides
         void Activate() override;
