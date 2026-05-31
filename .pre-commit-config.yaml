@@ -1,0 +1,20 @@
+# Local pre-commit hooks mirroring the CI gates (lint.yml), so violations are
+# caught before push. Install once with: pre-commit install
+#
+# Run on demand with: pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  # C++ formatting. Pinned to match the CI clang-format version exactly; output
+  # is not stable across major versions. Uses the repository .clang-format.
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
+    hooks:
+      - id: clang-format
+        files: ^Code/.*\.(cpp|h|inl)$
