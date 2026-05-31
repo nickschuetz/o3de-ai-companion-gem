@@ -1,0 +1,63 @@
+name: lint
+
+# Lightweight, engine-free checks that run in seconds on standard runners.
+# Building the gem's C++ or running its C++ unit tests requires the full O3DE
+# SDK, which GitHub-hosted runners do not have; that is handled separately by
+# build-test.yml on a self-hosted runner. These checks are the always-on gate.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spdx-headers:
+    name: spdx-headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SPDX license headers
+        run: bash scripts/check_spdx_headers.sh
+
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Trailing whitespace and EOF newlines
+        run: |
+          status=0
+          while IFS= read -r f; do
+            case "$f" in
+              *.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
+            esac
+            if [ -f "$f" ] && grep -nIE ' +$' "$f"; then
+              echo "::error file=$f::trailing whitespace"; status=1
+            fi
+            if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then
+              echo "::error file=$f::missing newline at end of file"; status=1
+            fi
+          done < <(git ls-files)
+          exit $status
+
+  python-tests:
+    name: python-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run Python unit tests
+        # The ai_companion Python package is pure logic (validators, builders,
+        # templates, agent-mode) with no azlmbr dependency, so these run on a
+        # standard runner. The tests add Editor/Scripts to sys.path themselves.
+        run: python -m pytest Tests/ -q
