@@ -79,6 +79,14 @@ pip install clang-format==18.1.8
 git ls-files 'Code/*.cpp' 'Code/*.h' 'Code/*.inl' | xargs -d '\n' clang-format -i
 ```
 
+Better, install the [pre-commit](https://pre-commit.com) hooks so formatting and
+whitespace are checked automatically on every commit (they mirror the CI gates):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
 ### Safety Rules
 
 These are non-negotiable:
