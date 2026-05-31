@@ -106,8 +106,10 @@ namespace AiCompanion
 
             for (const AZStd::string& eventName : eventNames)
             {
+                // eventName came from m_events just above, so the lookup always hits.
                 const AZ::BehaviorEBusEventSender& sender = ebus.m_events.find(eventName)->second;
-                // Prefer the addressable Event method; fall back to Broadcast.
+                // Prefer the addressable Event method; fall back to Broadcast (used
+                // by buses with no address, e.g. AddressPolicy::Single).
                 const AZ::BehaviorMethod* method = sender.m_event != nullptr ? sender.m_event : sender.m_broadcast;
                 if (method == nullptr)
                 {

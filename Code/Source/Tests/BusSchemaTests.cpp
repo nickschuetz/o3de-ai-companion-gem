@@ -26,6 +26,18 @@ namespace UnitTest
     };
     using SchemaProbeRequestBus = AZ::EBus<SchemaProbeRequests>;
 
+    // A broadcast-only bus (no address) so its events reflect as Broadcast with
+    // no leading bus-id argument. Exercises the m_broadcast path in WriteBus.
+    class BroadcastProbeRequests : public AZ::EBusTraits
+    {
+    public:
+        static const AZ::EBusHandlerPolicy HandlerPolicy = AZ::EBusHandlerPolicy::Single;
+        static const AZ::EBusAddressPolicy AddressPolicy = AZ::EBusAddressPolicy::Single;
+
+        virtual void Ping(int code) = 0;
+    };
+    using BroadcastProbeRequestBus = AZ::EBus<BroadcastProbeRequests>;
+
     class BusSchemaTestFixture : public LeakDetectionFixture
     {
     protected:
@@ -43,6 +55,11 @@ namespace UnitTest
                     &SchemaProbeRequestBus::Events::Toggle,
                     { { { "on", "enable flag" } } })
                 ->Event("Query", &SchemaProbeRequestBus::Events::Query);
+            m_behaviorContext->EBus<BroadcastProbeRequestBus>("BroadcastProbeRequestBus")
+                ->Event(
+                    "Ping",
+                    &BroadcastProbeRequestBus::Events::Ping,
+                    { { { "code", "status code" } } });
         }
 
         void TearDown() override
@@ -116,6 +133,7 @@ namespace UnitTest
         ASSERT_TRUE(move["args"].IsArray());
         ASSERT_EQ(move["args"].Size(), 2u);
         EXPECT_STREQ(move["args"][0]["name"].GetString(), "dx");
+        EXPECT_STREQ(move["args"][0]["type"].GetString(), "float");
         EXPECT_STREQ(move["args"][0]["tooltip"].GetString(), "delta x");
         EXPECT_STREQ(move["args"][1]["name"].GetString(), "dy");
         EXPECT_STREQ(move["args"][1]["tooltip"].GetString(), "delta y");
@@ -128,18 +146,39 @@ namespace UnitTest
         rapidjson::Document doc;
         ASSERT_FALSE(doc.Parse(result.c_str()).HasParseError());
 
-        // "Toggle" is events[2]; one bool arg, bool return.
+        // "Toggle" is events[2]; one bool arg, bool return. Type names are the
+        // engine's canonical reflected names on 26.05.0 (verified, then pinned).
         const auto& toggle = doc["events"][2];
         ASSERT_STREQ(toggle["name"].GetString(), "Toggle");
         ASSERT_EQ(toggle["args"].Size(), 1u);
         EXPECT_STREQ(toggle["args"][0]["name"].GetString(), "on");
+        EXPECT_STREQ(toggle["args"][0]["type"].GetString(), "bool");
         EXPECT_STREQ(toggle["args"][0]["tooltip"].GetString(), "enable flag");
-        // Return type is a non-empty reflected type name (not "void").
-        EXPECT_STRNE(toggle["returns"].GetString(), "void");
+        EXPECT_STREQ(toggle["returns"].GetString(), "bool");
 
-        // "Query" takes no arguments.
+        // "Query" takes no arguments and returns int.
         const auto& query = doc["events"][1];
         ASSERT_STREQ(query["name"].GetString(), "Query");
         EXPECT_EQ(query["args"].Size(), 0u);
+        EXPECT_STREQ(query["returns"].GetString(), "int");
+    }
+
+    TEST_F(BusSchemaTestFixture, BroadcastBus_NoAddressArgument)
+    {
+        const AZStd::string result = AiCompanion::BuildBusSchemaJson(m_behaviorContext, "BroadcastProbeRequestBus");
+        rapidjson::Document doc;
+        ASSERT_FALSE(doc.Parse(result.c_str()).HasParseError());
+
+        ASSERT_TRUE(doc["events"].IsArray());
+        ASSERT_EQ(doc["events"].Size(), 1u);
+        const auto& ping = doc["events"][0];
+        EXPECT_STREQ(ping["name"].GetString(), "Ping");
+        // No address policy, so the event reflects as a Broadcast with no leading
+        // bus-id argument: the single user argument is the only one.
+        EXPECT_STREQ(ping["call_type"].GetString(), "Broadcast");
+        ASSERT_EQ(ping["args"].Size(), 1u);
+        EXPECT_STREQ(ping["args"][0]["name"].GetString(), "code");
+        EXPECT_STREQ(ping["args"][0]["type"].GetString(), "int");
+        EXPECT_STREQ(ping["args"][0]["tooltip"].GetString(), "status code");
     }
 } // namespace UnitTest
