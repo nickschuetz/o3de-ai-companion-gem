@@ -49,5 +49,4 @@ AICOMPANION_PROJECT=/path/to/project \
 bash scripts/ci_build_test.sh
 ```
 
-The default test filter excludes `AgentServerProtocolTest` while issue #2 (a
-Base64 decode memory leak) is open; add it back once that is fixed.
+The default test filter runs the full suite (`*`).

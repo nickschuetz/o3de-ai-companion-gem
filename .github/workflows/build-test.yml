@@ -44,9 +44,5 @@ jobs:
           O3DE_ENGINE_PATH: ${{ vars.O3DE_ENGINE_PATH }}
           AICOMPANION_PROJECT: ${{ vars.AICOMPANION_PROJECT }}
           BUILD_CONFIG: profile
-          # All suites except AgentServerProtocolTest, whose two Base64Decode
-          # cases fail under leak detection (tracked in issue #2). Add
-          # AgentServerProtocolTest.* back to this filter once #2 is fixed so the
-          # full suite gates again.
-          TEST_FILTER: "BusSchemaTestFixture.*:SceneSnapshotTestFixture.*:InputValidatorTestFixture.*:AiCompanionTestFixture.*"
+          TEST_FILTER: "*"
         run: bash scripts/ci_build_test.sh
