@@ -35,9 +35,10 @@ namespace AiCompanion
             return AZStd::string(buffer.GetString(), buffer.GetSize());
         }
 
-        //! Write the argument array for one event method, skipping the implicit
-        //! this/bus-id pointer. GetArgument and GetArgumentName share an index,
-        //! so types and names stay paired regardless of any leading pointer.
+        //! Write the argument array for one event method, skipping the leading
+        //! EBus address argument (present when the bus is addressed by id) and
+        //! any implicit this pointer. GetArgument and GetArgumentName share an
+        //! index, so types and names stay paired once those are excluded.
         void WriteArgs(JsonWriter& writer, const AZ::BehaviorMethod& method)
         {
             writer.Key("args");
@@ -47,6 +48,12 @@ namespace AiCompanion
             {
                 const AZ::BehaviorParameter* parameter = method.GetArgument(index);
                 if (parameter == nullptr)
+                {
+                    continue;
+                }
+                // For an EBus addressed by id, argument 0 is the bus id, not a
+                // user argument; the .pyi stub excludes it too.
+                if (method.HasBusId() && index == 0)
                 {
                     continue;
                 }
