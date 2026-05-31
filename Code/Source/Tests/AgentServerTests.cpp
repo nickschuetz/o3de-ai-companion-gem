@@ -5,6 +5,7 @@
 
 #include <AzTest/AzTest.h>
 #include <AzCore/UnitTest/TestTypes.h>
+#include <AzCore/std/string/string_view.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/writer.h>
@@ -254,7 +255,10 @@ namespace UnitTest
     {
         // "print('hello')" = "cHJpbnQoJ2hlbGxvJyk="
         AZStd::string b64 = "cHJpbnQoJ2hlbGxvJyk=";
-        static const AZStd::string base64Chars =
+        // string_view over the literal: no heap allocation, so nothing for the
+        // leak-detection fixture to flag (a function-local static AZStd::string
+        // allocates on first use and outlives the test, reported as a leak).
+        constexpr AZStd::string_view base64Chars =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
         AZStd::string decoded;
@@ -280,7 +284,10 @@ namespace UnitTest
     TEST_F(AgentServerProtocolTest, Base64Decode_EmptyString)
     {
         AZStd::string b64 = "";
-        static const AZStd::string base64Chars =
+        // string_view over the literal: no heap allocation, so nothing for the
+        // leak-detection fixture to flag (a function-local static AZStd::string
+        // allocates on first use and outlives the test, reported as a leak).
+        constexpr AZStd::string_view base64Chars =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
         AZStd::string decoded;
