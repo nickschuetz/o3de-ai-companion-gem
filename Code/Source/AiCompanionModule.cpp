@@ -18,9 +18,11 @@ namespace AiCompanion
 
         AiCompanionModule()
         {
-            m_descriptors.insert(m_descriptors.end(), {
-                AiCompanionSystemComponent::CreateDescriptor(),
-            });
+            m_descriptors.insert(
+                m_descriptors.end(),
+                {
+                    AiCompanionSystemComponent::CreateDescriptor(),
+                });
         }
 
         AZ::ComponentTypeList GetRequiredSystemComponents() const override

@@ -7,9 +7,9 @@
 #include "Snapshot/SceneSnapshotProvider.h"
 #include "Validation/InputValidator.h"
 
-#include <AzCore/Serialization/SerializeContext.h>
-#include <AzCore/Serialization/EditContext.h>
 #include <AzCore/RTTI/BehaviorContext.h>
+#include <AzCore/Serialization/EditContext.h>
+#include <AzCore/Serialization/SerializeContext.h>
 
 namespace AiCompanion
 {
@@ -17,13 +17,13 @@ namespace AiCompanion
     {
         if (auto* serializeContext = azrtti_cast<AZ::SerializeContext*>(context))
         {
-            serializeContext->Class<AiCompanionSystemComponent, AZ::Component>()
-                ->Version(1);
+            serializeContext->Class<AiCompanionSystemComponent, AZ::Component>()->Version(1);
 
             if (AZ::EditContext* editContext = serializeContext->GetEditContext())
             {
-                editContext->Class<AiCompanionSystemComponent>(
-                    "AiCompanion", "Provides AI-agent-friendly APIs for scene inspection and validation.")
+                editContext
+                    ->Class<AiCompanionSystemComponent>(
+                        "AiCompanion", "Provides AI-agent-friendly APIs for scene inspection and validation.")
                     ->ClassElement(AZ::Edit::ClassElements::EditorData, "")
                     ->Attribute(AZ::Edit::Attributes::AppearsInAddComponentMenu, AZ_CRC("System"))
                     ->Attribute(AZ::Edit::Attributes::AutoExpand, true);
@@ -52,13 +52,11 @@ namespace AiCompanion
         incompatible.push_back(AZ_CRC("AiCompanionService"));
     }
 
-    void AiCompanionSystemComponent::GetRequiredServices(
-        [[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& required)
+    void AiCompanionSystemComponent::GetRequiredServices([[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& required)
     {
     }
 
-    void AiCompanionSystemComponent::GetDependentServices(
-        [[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& dependent)
+    void AiCompanionSystemComponent::GetDependentServices([[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& dependent)
     {
     }
 

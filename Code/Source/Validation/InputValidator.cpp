@@ -30,8 +30,7 @@ namespace AiCompanion
             }
             else
             {
-                if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-                      (c >= '0' && c <= '9') || c == '_' || c == '-'))
+                if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
                 {
                     return false;
                 }
@@ -51,9 +50,8 @@ namespace AiCompanion
         // Component types may contain letters, digits, spaces, hyphens, underscores, parentheses
         for (const char c : componentType)
         {
-            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-                  (c >= '0' && c <= '9') || c == ' ' || c == '-' ||
-                  c == '_' || c == '(' || c == ')'))
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == ' ' || c == '-' || c == '_' ||
+                  c == '(' || c == ')'))
             {
                 return false;
             }
@@ -78,9 +76,7 @@ namespace AiCompanion
         }
 
         // Check bounds
-        if (std::fabs(x) > MaxPositionBound ||
-            std::fabs(y) > MaxPositionBound ||
-            std::fabs(z) > MaxPositionBound)
+        if (std::fabs(x) > MaxPositionBound || std::fabs(y) > MaxPositionBound || std::fabs(z) > MaxPositionBound)
         {
             return false;
         }

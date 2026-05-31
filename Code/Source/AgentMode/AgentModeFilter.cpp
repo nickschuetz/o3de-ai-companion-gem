@@ -42,22 +42,17 @@ namespace AiCompanion::AgentMode
 
         if (title.startsWith(QStringLiteral("Welcome to O3DE")))
         {
-            AZ_Printf("AiCompanion",
-                "[AgentMode] Auto-dismissing '%s' dialog\n",
-                title.toUtf8().constData());
+            AZ_Printf("AiCompanion", "[AgentMode] Auto-dismissing '%s' dialog\n", title.toUtf8().constData());
             // Defer close to the next event-loop iteration so Qt finishes
             // its show machinery before the widget tears itself down.
             QMetaObject::invokeMethod(widget, "close", Qt::QueuedConnection);
             return false;
         }
 
-        if (title.startsWith(QStringLiteral("Unsaved files detected")) ||
-            title.startsWith(QStringLiteral("Error Log")) ||
+        if (title.startsWith(QStringLiteral("Unsaved files detected")) || title.startsWith(QStringLiteral("Error Log")) ||
             title.startsWith(QStringLiteral("Startup Errors")))
         {
-            AZ_Printf("AiCompanion",
-                "[AgentMode] Observed modal '%s' (auto-dismiss not configured)\n",
-                title.toUtf8().constData());
+            AZ_Printf("AiCompanion", "[AgentMode] Observed modal '%s' (auto-dismiss not configured)\n", title.toUtf8().constData());
         }
 
         return QObject::eventFilter(watched, event);

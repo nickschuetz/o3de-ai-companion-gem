@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#include <AzTest/AzTest.h>
 #include <AzCore/UnitTest/TestTypes.h>
+#include <AzTest/AzTest.h>
 
 #include <AzCore/Component/ComponentBus.h>
-#include <AzCore/RTTI/BehaviorContext.h>
 #include <AzCore/JSON/document.h>
+#include <AzCore/RTTI/BehaviorContext.h>
 
 #include "Introspection/BusSchema.h"
 
@@ -46,20 +46,11 @@ namespace UnitTest
             LeakDetectionFixture::SetUp();
             m_behaviorContext = aznew AZ::BehaviorContext();
             m_behaviorContext->EBus<SchemaProbeRequestBus>("SchemaProbeRequestBus")
-                ->Event(
-                    "Move",
-                    &SchemaProbeRequestBus::Events::Move,
-                    { { { "dx", "delta x" }, { "dy", "delta y" } } })
-                ->Event(
-                    "Toggle",
-                    &SchemaProbeRequestBus::Events::Toggle,
-                    { { { "on", "enable flag" } } })
+                ->Event("Move", &SchemaProbeRequestBus::Events::Move, { { { "dx", "delta x" }, { "dy", "delta y" } } })
+                ->Event("Toggle", &SchemaProbeRequestBus::Events::Toggle, { { { "on", "enable flag" } } })
                 ->Event("Query", &SchemaProbeRequestBus::Events::Query);
             m_behaviorContext->EBus<BroadcastProbeRequestBus>("BroadcastProbeRequestBus")
-                ->Event(
-                    "Ping",
-                    &BroadcastProbeRequestBus::Events::Ping,
-                    { { { "code", "status code" } } });
+                ->Event("Ping", &BroadcastProbeRequestBus::Events::Ping, { { { "code", "status code" } } });
         }
 
         void TearDown() override

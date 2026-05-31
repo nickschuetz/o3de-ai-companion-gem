@@ -15,6 +15,24 @@ permissions:
   contents: read
 
 jobs:
+  clang-format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install clang-format (pinned)
+        # Pin the exact version so CI and local runs format identically;
+        # clang-format output is not stable across major versions.
+        run: pip install clang-format==18.1.8
+      - name: Check C++ formatting
+        run: |
+          files=$(git ls-files 'Code/*.cpp' 'Code/*.h' 'Code/*.inl')
+          if [ -z "$files" ]; then echo "No C++ files found"; exit 0; fi
+          echo "$files" | xargs clang-format --dry-run --Werror
+
   spdx-headers:
     name: spdx-headers
     runs-on: ubuntu-latest

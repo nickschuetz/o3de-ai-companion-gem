@@ -11,11 +11,11 @@
 
 #include <AzCore/Component/ComponentApplicationBus.h>
 #include <AzCore/Component/Entity.h>
-#include <AzCore/RTTI/BehaviorContext.h>
-#include <AzCore/Serialization/SerializeContext.h>
-#include <AzCore/Serialization/EditContext.h>
-#include <AzCore/Settings/SettingsRegistryMergeUtils.h>
 #include <AzCore/IO/Path/Path.h>
+#include <AzCore/RTTI/BehaviorContext.h>
+#include <AzCore/Serialization/EditContext.h>
+#include <AzCore/Serialization/SerializeContext.h>
+#include <AzCore/Settings/SettingsRegistryMergeUtils.h>
 #include <AzCore/Utils/Utils.h>
 #include <AzFramework/API/ApplicationAPI.h>
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
@@ -32,14 +32,14 @@ namespace AiCompanion
     {
         if (auto* serializeContext = azrtti_cast<AZ::SerializeContext*>(context))
         {
-            serializeContext->Class<AiCompanionEditorSystemComponent, AZ::Component>()
-                ->Version(1);
+            serializeContext->Class<AiCompanionEditorSystemComponent, AZ::Component>()->Version(1);
 
             if (AZ::EditContext* editContext = serializeContext->GetEditContext())
             {
-                editContext->Class<AiCompanionEditorSystemComponent>(
-                    "AiCompanion Editor",
-                    "Editor-side AI Companion component that registers Python API paths and provides editor-specific functionality.")
+                editContext
+                    ->Class<AiCompanionEditorSystemComponent>(
+                        "AiCompanion Editor",
+                        "Editor-side AI Companion component that registers Python API paths and provides editor-specific functionality.")
                     ->ClassElement(AZ::Edit::ClassElements::EditorData, "")
                     ->Attribute(AZ::Edit::Attributes::AppearsInAddComponentMenu, AZ_CRC("System"))
                     ->Attribute(AZ::Edit::Attributes::AutoExpand, true);
@@ -53,12 +53,11 @@ namespace AiCompanion
                 ->Attribute(AZ::Script::Attributes::Category, "AiCompanion")
                 ->Attribute(AZ::Script::Attributes::Module, "editor")
                 ->Attribute(AZ::Script::Attributes::ExcludeFrom, AZ::Script::Attributes::ExcludeFlags::All)
-                ->Event("SetComponentPropertyUnwrapped",
-                        &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped)
-                ->Event("GetBusSchema",
-                        &AiCompanionEditorRequestBus::Events::GetBusSchema,
-                        { { { "busName",
-                              "Reflected bus name to describe, e.g. 'DioramaSpriteRequestBus'. Empty lists all bus names." } } });
+                ->Event("SetComponentPropertyUnwrapped", &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped)
+                ->Event(
+                    "GetBusSchema",
+                    &AiCompanionEditorRequestBus::Events::GetBusSchema,
+                    { { { "busName", "Reflected bus name to describe, e.g. 'DioramaSpriteRequestBus'. Empty lists all bus names." } } });
         }
     }
 
@@ -74,13 +73,11 @@ namespace AiCompanion
         incompatible.push_back(AZ_CRC("AiCompanionEditorService"));
     }
 
-    void AiCompanionEditorSystemComponent::GetRequiredServices(
-        [[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& required)
+    void AiCompanionEditorSystemComponent::GetRequiredServices([[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& required)
     {
     }
 
-    void AiCompanionEditorSystemComponent::GetDependentServices(
-        [[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& dependent)
+    void AiCompanionEditorSystemComponent::GetDependentServices([[maybe_unused]] AZ::ComponentDescriptor::DependencyArrayType& dependent)
     {
     }
 
@@ -151,8 +148,7 @@ namespace AiCompanion
             {
                 m_agentModeFilter = AZStd::make_unique<AgentMode::Filter>();
                 app->installEventFilter(m_agentModeFilter.get());
-                AZ_Printf("AiCompanion",
-                    "[AgentMode] Enabled; event filter installed on qApp.\n");
+                AZ_Printf("AiCompanion", "[AgentMode] Enabled; event filter installed on qApp.\n");
             }
         }
         else if (!wantsFilter && hasFilter)
@@ -162,8 +158,7 @@ namespace AiCompanion
                 app->removeEventFilter(m_agentModeFilter.get());
             }
             m_agentModeFilter.reset();
-            AZ_Printf("AiCompanion",
-                "[AgentMode] Disabled; event filter removed.\n");
+            AZ_Printf("AiCompanion", "[AgentMode] Disabled; event filter removed.\n");
         }
 
         m_cachedAgentMode = current;
@@ -183,8 +178,7 @@ namespace AiCompanion
         {
             // Look up the Gem's source path from the settings registry
             AZStd::string gemPath;
-            const auto gemKey = AZStd::string::format(
-                "/O3DE/Gems/AiCompanion/SourcePaths/0");
+            const auto gemKey = AZStd::string::format("/O3DE/Gems/AiCompanion/SourcePaths/0");
             if (settingsRegistry->Get(gemPath, gemKey))
             {
                 gemRoot = AZ::IO::FixedMaxPath(gemPath.c_str());
@@ -193,7 +187,9 @@ namespace AiCompanion
 
         if (gemRoot.empty())
         {
-            AZ_Warning("AiCompanion", false,
+            AZ_Warning(
+                "AiCompanion",
+                false,
                 "Could not resolve AiCompanion Gem root path. "
                 "The ai_companion Python package may not be importable.");
             return;
@@ -207,7 +203,8 @@ namespace AiCompanion
             AZStd::string::format(
                 "import sys; path = r'%s'; "
                 "sys.path.insert(0, path) if path not in sys.path else None",
-                scriptsPath.c_str()).c_str(),
+                scriptsPath.c_str())
+                .c_str(),
             false);
 
         AZ_TracePrintf("AiCompanion", "Registered Python path: %s\n", scriptsPath.c_str());
@@ -282,7 +279,9 @@ namespace AiCompanion
         // Warn if binding to non-loopback
         if (host != "127.0.0.1" && host != "::1" && host != "localhost")
         {
-            AZ_Warning("AiCompanion", false,
+            AZ_Warning(
+                "AiCompanion",
+                false,
                 "AgentServer binding to %s — this exposes the server to the network. "
                 "Best practices: enable TLS (set TlsEnabled=true with cert/key paths), "
                 "use a firewall, restrict to trusted networks, consider SSH tunneling, "
@@ -312,8 +311,7 @@ namespace AiCompanion
             keyPath = tlsKeyPath;
             if (certPath.empty() || keyPath.empty())
             {
-                AZ_Warning("AiCompanion", false,
-                    "[AgentServer] TLS enabled but cert/key paths not configured. Starting without TLS.");
+                AZ_Warning("AiCompanion", false, "[AgentServer] TLS enabled but cert/key paths not configured. Starting without TLS.");
                 certPath.clear();
                 keyPath.clear();
             }
@@ -328,13 +326,10 @@ namespace AiCompanion
     }
 
     AZ::Outcome<void, AZStd::string> AiCompanionEditorSystemComponent::SetComponentPropertyUnwrapped(
-        AZ::EntityComponentIdPair pair,
-        AZStd::string propertyPath,
-        AZStd::any value)
+        AZ::EntityComponentIdPair pair, AZStd::string propertyPath, AZStd::any value)
     {
         AZ::Entity* entity = nullptr;
-        AZ::ComponentApplicationBus::BroadcastResult(
-            entity, &AZ::ComponentApplicationRequests::FindEntity, pair.GetEntityId());
+        AZ::ComponentApplicationBus::BroadcastResult(entity, &AZ::ComponentApplicationRequests::FindEntity, pair.GetEntityId());
         if (entity == nullptr)
         {
             return AZ::Failure(AZStd::string("entity not found"));
@@ -350,8 +345,7 @@ namespace AiCompanion
         // type) pair is internally consistent. See AiCompanionEditorRequestBus.h
         // for rationale; mirrors o3de/o3de#19771 locally pending merge.
         void* instance = reinterpret_cast<void*>(component);
-        if (auto* wrapper =
-                azrtti_cast<AzToolsFramework::Components::GenericComponentWrapper*>(component))
+        if (auto* wrapper = azrtti_cast<AzToolsFramework::Components::GenericComponentWrapper*>(component))
         {
             if (AZ::Component* tmpl = wrapper->GetTemplate())
             {
@@ -359,8 +353,7 @@ namespace AiCompanion
             }
         }
 
-        AzToolsFramework::PropertyTreeEditor pte(
-            instance, component->GetUnderlyingComponentType());
+        AzToolsFramework::PropertyTreeEditor pte(instance, component->GetUnderlyingComponentType());
         const auto outcome = pte.SetProperty(propertyPath, value);
         if (!outcome.IsSuccess())
         {
@@ -372,8 +365,7 @@ namespace AiCompanion
     AZStd::string AiCompanionEditorSystemComponent::GetBusSchema(AZStd::string busName)
     {
         AZ::BehaviorContext* behaviorContext = nullptr;
-        AZ::ComponentApplicationBus::BroadcastResult(
-            behaviorContext, &AZ::ComponentApplicationRequests::GetBehaviorContext);
+        AZ::ComponentApplicationBus::BroadcastResult(behaviorContext, &AZ::ComponentApplicationRequests::GetBehaviorContext);
         return BuildBusSchemaJson(behaviorContext, busName);
     }
 

@@ -172,8 +172,7 @@ namespace AiCompanion
         const auto busIterator = behaviorContext->m_ebuses.find(AZStd::string(busName));
         if (busIterator == behaviorContext->m_ebuses.end() || busIterator->second == nullptr)
         {
-            return ErrorObject(
-                buffer, writer, AZStd::string::format("No reflected bus named '%.*s'", AZ_STRING_ARG(busName)));
+            return ErrorObject(buffer, writer, AZStd::string::format("No reflected bus named '%.*s'", AZ_STRING_ARG(busName)));
         }
 
         WriteBus(writer, *busIterator->second);

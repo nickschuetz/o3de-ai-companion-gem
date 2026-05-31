@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#include <AzTest/AzTest.h>
 #include <AzCore/UnitTest/TestTypes.h>
 #include <AzCore/std/string/string_view.h>
+#include <AzTest/AzTest.h>
 
 #include <rapidjson/document.h>
-#include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 #include <cstring>
 
@@ -29,12 +29,10 @@ namespace UnitTest
     TEST_F(AgentServerProtocolTest, EncodeFrameHeader_SmallMessage_CorrectBigEndian)
     {
         AZ::u32 length = 42;
-        AZ::u8 header[4] = {
-            static_cast<AZ::u8>((length >> 24) & 0xFF),
-            static_cast<AZ::u8>((length >> 16) & 0xFF),
-            static_cast<AZ::u8>((length >> 8) & 0xFF),
-            static_cast<AZ::u8>(length & 0xFF)
-        };
+        AZ::u8 header[4] = { static_cast<AZ::u8>((length >> 24) & 0xFF),
+                             static_cast<AZ::u8>((length >> 16) & 0xFF),
+                             static_cast<AZ::u8>((length >> 8) & 0xFF),
+                             static_cast<AZ::u8>(length & 0xFF) };
 
         EXPECT_EQ(header[0], 0);
         EXPECT_EQ(header[1], 0);
@@ -45,12 +43,10 @@ namespace UnitTest
     TEST_F(AgentServerProtocolTest, EncodeFrameHeader_LargeMessage_CorrectBigEndian)
     {
         AZ::u32 length = 0x00ABCDEF;
-        AZ::u8 header[4] = {
-            static_cast<AZ::u8>((length >> 24) & 0xFF),
-            static_cast<AZ::u8>((length >> 16) & 0xFF),
-            static_cast<AZ::u8>((length >> 8) & 0xFF),
-            static_cast<AZ::u8>(length & 0xFF)
-        };
+        AZ::u8 header[4] = { static_cast<AZ::u8>((length >> 24) & 0xFF),
+                             static_cast<AZ::u8>((length >> 16) & 0xFF),
+                             static_cast<AZ::u8>((length >> 8) & 0xFF),
+                             static_cast<AZ::u8>(length & 0xFF) };
 
         EXPECT_EQ(header[0], 0x00);
         EXPECT_EQ(header[1], 0xAB);
@@ -61,17 +57,13 @@ namespace UnitTest
     TEST_F(AgentServerProtocolTest, DecodeFrameHeader_RoundTrip)
     {
         AZ::u32 original = 123456;
-        AZ::u8 header[4] = {
-            static_cast<AZ::u8>((original >> 24) & 0xFF),
-            static_cast<AZ::u8>((original >> 16) & 0xFF),
-            static_cast<AZ::u8>((original >> 8) & 0xFF),
-            static_cast<AZ::u8>(original & 0xFF)
-        };
+        AZ::u8 header[4] = { static_cast<AZ::u8>((original >> 24) & 0xFF),
+                             static_cast<AZ::u8>((original >> 16) & 0xFF),
+                             static_cast<AZ::u8>((original >> 8) & 0xFF),
+                             static_cast<AZ::u8>(original & 0xFF) };
 
-        AZ::u32 decoded = (static_cast<AZ::u32>(header[0]) << 24) |
-                           (static_cast<AZ::u32>(header[1]) << 16) |
-                           (static_cast<AZ::u32>(header[2]) << 8) |
-                           (static_cast<AZ::u32>(header[3]));
+        AZ::u32 decoded = (static_cast<AZ::u32>(header[0]) << 24) | (static_cast<AZ::u32>(header[1]) << 16) |
+            (static_cast<AZ::u32>(header[2]) << 8) | (static_cast<AZ::u32>(header[3]));
 
         EXPECT_EQ(decoded, original);
     }
@@ -161,11 +153,16 @@ namespace UnitTest
         rapidjson::StringBuffer sb;
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
-        w.Key("id"); w.String("resp-1");
-        w.Key("status"); w.String("ok");
-        w.Key("output"); w.String("hello world");
-        w.Key("error"); w.String("");
-        w.Key("duration_ms"); w.Int64(42);
+        w.Key("id");
+        w.String("resp-1");
+        w.Key("status");
+        w.String("ok");
+        w.Key("output");
+        w.String("hello world");
+        w.Key("error");
+        w.String("");
+        w.Key("duration_ms");
+        w.Int64(42);
         w.EndObject();
 
         rapidjson::Document doc;
@@ -184,11 +181,16 @@ namespace UnitTest
         rapidjson::StringBuffer sb;
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
-        w.Key("id"); w.String("err-1");
-        w.Key("status"); w.String("error");
-        w.Key("output"); w.String("");
-        w.Key("error"); w.String("something went wrong");
-        w.Key("duration_ms"); w.Int64(0);
+        w.Key("id");
+        w.String("err-1");
+        w.Key("status");
+        w.String("error");
+        w.Key("output");
+        w.String("");
+        w.Key("error");
+        w.String("something went wrong");
+        w.Key("duration_ms");
+        w.Int64(0);
         w.EndObject();
 
         rapidjson::Document doc;
@@ -203,11 +205,16 @@ namespace UnitTest
         rapidjson::StringBuffer sb;
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
-        w.Key("protocol_version"); w.Int(1);
-        w.Key("gem_version"); w.String("0.2.0");
-        w.Key("api_version"); w.String("0.1.0");
-        w.Key("secure_mode"); w.Bool(false);
-        w.Key("tls_enabled"); w.Bool(true);
+        w.Key("protocol_version");
+        w.Int(1);
+        w.Key("gem_version");
+        w.String("0.2.0");
+        w.Key("api_version");
+        w.String("0.1.0");
+        w.Key("secure_mode");
+        w.Bool(false);
+        w.Key("tls_enabled");
+        w.Bool(true);
         w.EndObject();
 
         rapidjson::Document doc;
@@ -227,9 +234,7 @@ namespace UnitTest
 
     TEST_F(AgentServerProtocolTest, RequestTypeClassification_SafeTypes)
     {
-        AZStd::vector<AZStd::string> safeTypes = {
-            "ping", "get_api_version", "get_scene_snapshot", "get_entity_tree", "validate_scene"
-        };
+        AZStd::vector<AZStd::string> safeTypes = { "ping", "get_api_version", "get_scene_snapshot", "get_entity_tree", "validate_scene" };
 
         for (const auto& type : safeTypes)
         {
@@ -241,9 +246,9 @@ namespace UnitTest
     TEST_F(AgentServerProtocolTest, RequestTypeClassification_ExecutePython_NotSafe)
     {
         AZStd::string type = "execute_python";
-        bool isSafe = (type == "ping" || type == "get_api_version" ||
-                       type == "get_scene_snapshot" || type == "get_entity_tree" ||
-                       type == "validate_scene");
+        bool isSafe =
+            (type == "ping" || type == "get_api_version" || type == "get_scene_snapshot" || type == "get_entity_tree" ||
+             type == "validate_scene");
         EXPECT_FALSE(isSafe);
     }
 
@@ -258,17 +263,18 @@ namespace UnitTest
         // string_view over the literal: no heap allocation, so nothing for the
         // leak-detection fixture to flag (a function-local static AZStd::string
         // allocates on first use and outlives the test, reported as a leak).
-        constexpr AZStd::string_view base64Chars =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        constexpr AZStd::string_view base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
         AZStd::string decoded;
         AZ::u32 val = 0;
         int bits = -8;
         for (char c : b64)
         {
-            if (c == '=' || c == '\n' || c == '\r') continue;
+            if (c == '=' || c == '\n' || c == '\r')
+                continue;
             size_t pos = base64Chars.find(c);
-            if (pos == AZStd::string::npos) continue;
+            if (pos == AZStd::string::npos)
+                continue;
             val = (val << 6) + static_cast<AZ::u32>(pos);
             bits += 6;
             if (bits >= 0)
@@ -287,17 +293,18 @@ namespace UnitTest
         // string_view over the literal: no heap allocation, so nothing for the
         // leak-detection fixture to flag (a function-local static AZStd::string
         // allocates on first use and outlives the test, reported as a leak).
-        constexpr AZStd::string_view base64Chars =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        constexpr AZStd::string_view base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
         AZStd::string decoded;
         AZ::u32 val = 0;
         int bits = -8;
         for (char c : b64)
         {
-            if (c == '=' || c == '\n' || c == '\r') continue;
+            if (c == '=' || c == '\n' || c == '\r')
+                continue;
             size_t pos = base64Chars.find(c);
-            if (pos == AZStd::string::npos) continue;
+            if (pos == AZStd::string::npos)
+                continue;
             val = (val << 6) + static_cast<AZ::u32>(pos);
             bits += 6;
             if (bits >= 0)
