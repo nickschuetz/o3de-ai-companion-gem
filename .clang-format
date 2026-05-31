@@ -1,3 +1,6 @@
+# Requires clang-format 18.x. CI pins clang-format 18.1.8 and output is not
+# stable across major versions, so format locally with the same version:
+#   pip install clang-format==18.1.8
 Language: Cpp
 
 AccessModifierOffset: -4

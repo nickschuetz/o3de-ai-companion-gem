@@ -31,7 +31,7 @@ jobs:
         run: |
           files=$(git ls-files 'Code/*.cpp' 'Code/*.h' 'Code/*.inl')
           if [ -z "$files" ]; then echo "No C++ files found"; exit 0; fi
-          echo "$files" | xargs clang-format --dry-run --Werror
+          echo "$files" | xargs -d '\n' clang-format --dry-run --Werror
 
   spdx-headers:
     name: spdx-headers

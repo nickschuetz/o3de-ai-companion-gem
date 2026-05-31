@@ -69,6 +69,16 @@ Follow the conventions documented in [AGENTS.md](AGENTS.md#coding-conventions):
 Match the existing style of surrounding code. When in doubt, read the file you
 are modifying and follow its patterns.
 
+C++ formatting is enforced by `clang-format` using the repository
+[`.clang-format`](.clang-format), and CI fails on any deviation. Output is not
+stable across major versions, so use the pinned version locally before
+submitting:
+
+```bash
+pip install clang-format==18.1.8
+git ls-files 'Code/*.cpp' 'Code/*.h' 'Code/*.inl' | xargs -d '\n' clang-format -i
+```
+
 ### Safety Rules
 
 These are non-negotiable:
