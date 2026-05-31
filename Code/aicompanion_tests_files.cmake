@@ -6,4 +6,5 @@ set(FILES
     Source/Tests/AgentServerTests.cpp
     Source/Tests/InputValidatorTests.cpp
     Source/Tests/SceneSnapshotTests.cpp
+    Source/Tests/BusSchemaTests.cpp
 )

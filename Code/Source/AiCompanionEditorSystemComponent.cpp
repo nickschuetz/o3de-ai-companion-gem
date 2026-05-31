@@ -7,6 +7,7 @@
 
 #include "AgentMode/AgentModeFilter.h"
 #include "AgentMode/AgentModeState.h"
+#include "Introspection/BusSchema.h"
 
 #include <AzCore/Component/ComponentApplicationBus.h>
 #include <AzCore/Component/Entity.h>
@@ -53,7 +54,11 @@ namespace AiCompanion
                 ->Attribute(AZ::Script::Attributes::Module, "editor")
                 ->Attribute(AZ::Script::Attributes::ExcludeFrom, AZ::Script::Attributes::ExcludeFlags::All)
                 ->Event("SetComponentPropertyUnwrapped",
-                        &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped);
+                        &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped)
+                ->Event("GetBusSchema",
+                        &AiCompanionEditorRequestBus::Events::GetBusSchema,
+                        { { { "busName",
+                              "Reflected bus name to describe, e.g. 'DioramaSpriteRequestBus'. Empty lists all bus names." } } });
         }
     }
 
@@ -362,6 +367,14 @@ namespace AiCompanion
             return AZ::Failure(outcome.GetError());
         }
         return AZ::Success();
+    }
+
+    AZStd::string AiCompanionEditorSystemComponent::GetBusSchema(AZStd::string busName)
+    {
+        AZ::BehaviorContext* behaviorContext = nullptr;
+        AZ::ComponentApplicationBus::BroadcastResult(
+            behaviorContext, &AZ::ComponentApplicationRequests::GetBehaviorContext);
+        return BuildBusSchemaJson(behaviorContext, busName);
     }
 
 } // namespace AiCompanion

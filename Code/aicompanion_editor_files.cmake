@@ -19,6 +19,8 @@ set(FILES
     Source/Network/AgentServer.cpp
     Source/Snapshot/SceneSnapshotProvider.h
     Source/Snapshot/SceneSnapshotProvider.cpp
+    Source/Introspection/BusSchema.h
+    Source/Introspection/BusSchema.cpp
     Source/Validation/InputValidator.h
     Source/Validation/InputValidator.cpp
 )

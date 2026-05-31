@@ -41,6 +41,21 @@ namespace AiCompanion
             AZ::EntityComponentIdPair pair,
             AZStd::string propertyPath,
             AZStd::any value) = 0;
+
+        //! Returns the reflected schema of an EBus as a JSON string, read live
+        //! from the BehaviorContext. Unlike the editor's generated .pyi stub
+        //! (which lists EBus event arguments by type only), this includes each
+        //! argument's NAME and TOOLTIP, so an agent gets a fully documented API.
+        //!
+        //! Gem-agnostic: works for any reflected bus, no per-gem catalog. Pass
+        //! an empty busName to list every reflected bus name instead.
+        //!
+        //! Shape with a bus name:
+        //!   {"name": "<bus>", "events": [{"name", "call_type", "returns",
+        //!    "args": [{"name", "type", "tooltip"}]}]}
+        //! Shape with empty busName: {"buses": ["<name>", ...]}
+        //! On failure: {"error": "<message>"}
+        virtual AZStd::string GetBusSchema(AZStd::string busName) = 0;
     };
 
     using AiCompanionEditorRequestBus = AZ::EBus<AiCompanionEditorRequests>;

@@ -37,3 +37,8 @@ namespace UnitTest
         EXPECT_EQ(incompatible[0], AZ_CRC("AiCompanionService"));
     }
 } // namespace UnitTest
+
+// Generates the AzRunUnitTests entry point AzTestRunner loads. Exactly one test
+// source file in the module defines it; without it the module exports no runner
+// symbol and none of the gem's tests can execute.
+AZ_UNIT_TEST_HOOK(DEFAULT_UNIT_TEST_ENV);
