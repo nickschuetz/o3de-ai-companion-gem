@@ -5,8 +5,8 @@
 
 #pragma once
 
-#include <AzCore/Component/Component.h>
 #include <AiCompanion/AiCompanionBus.h>
+#include <AzCore/Component/Component.h>
 
 namespace AiCompanion
 {

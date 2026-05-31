@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#include <AzTest/AzTest.h>
 #include <AzCore/UnitTest/TestTypes.h>
+#include <AzTest/AzTest.h>
 
 #include "Snapshot/SceneSnapshotProvider.h"
 

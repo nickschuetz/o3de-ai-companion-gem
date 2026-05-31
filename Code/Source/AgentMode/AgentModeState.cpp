@@ -105,8 +105,7 @@ namespace AiCompanion::AgentMode
         }
 
         const auto now = std::chrono::system_clock::now();
-        const auto observedAt = std::chrono::duration_cast<std::chrono::seconds>(
-            now.time_since_epoch()).count();
+        const auto observedAt = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
 
         const std::string tmp = pathStr + ".tmp";
         FILE* f = std::fopen(tmp.c_str(), "w");
@@ -114,7 +113,8 @@ namespace AiCompanion::AgentMode
         {
             return;
         }
-        std::fprintf(f,
+        std::fprintf(
+            f,
             "{\n"
             "  \"enabled\": %s,\n"
             "  \"suppress_dialogs\": %s,\n"

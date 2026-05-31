@@ -5,8 +5,8 @@
 
 #pragma once
 
-#include "AiCompanionSystemComponent.h"
 #include "AgentMode/AgentModeState.h"
+#include "AiCompanionSystemComponent.h"
 #include "Network/AgentServer.h"
 
 #include <AiCompanion/AiCompanionEditorRequestBus.h>
@@ -17,7 +17,10 @@
 
 #include <chrono>
 
-namespace AiCompanion::AgentMode { class Filter; }
+namespace AiCompanion::AgentMode
+{
+    class Filter;
+}
 
 namespace AiCompanion
 {
@@ -39,9 +42,7 @@ namespace AiCompanion
 
         // AiCompanionEditorRequestBus::Handler
         AZ::Outcome<void, AZStd::string> SetComponentPropertyUnwrapped(
-            AZ::EntityComponentIdPair pair,
-            AZStd::string propertyPath,
-            AZStd::any value) override;
+            AZ::EntityComponentIdPair pair, AZStd::string propertyPath, AZStd::any value) override;
 
         AZStd::string GetBusSchema(AZStd::string busName) override;
 

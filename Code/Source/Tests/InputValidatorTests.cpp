@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#include <AzTest/AzTest.h>
 #include <AzCore/UnitTest/TestTypes.h>
+#include <AzTest/AzTest.h>
 
 #include "Validation/InputValidator.h"
 
@@ -90,14 +90,12 @@ namespace UnitTest
 
     TEST_F(InputValidatorTestFixture, Position_RejectsNaN)
     {
-        EXPECT_FALSE(AiCompanion::InputValidator::IsValidPosition(
-            std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsValidPosition(std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f));
     }
 
     TEST_F(InputValidatorTestFixture, Position_RejectsInfinity)
     {
-        EXPECT_FALSE(AiCompanion::InputValidator::IsValidPosition(
-            std::numeric_limits<float>::infinity(), 0.0f, 0.0f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsValidPosition(std::numeric_limits<float>::infinity(), 0.0f, 0.0f));
     }
 
     TEST_F(InputValidatorTestFixture, Position_RejectsOutOfBounds)

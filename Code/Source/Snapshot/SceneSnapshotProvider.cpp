@@ -8,13 +8,13 @@
 #include <AzCore/Component/ComponentApplicationBus.h>
 #include <AzCore/Component/Entity.h>
 #include <AzCore/Component/TransformBus.h>
-#include <AzCore/std/containers/vector.h>
-#include <AzCore/std/containers/unordered_map.h>
-#include <AzCore/std/sort.h>
 #include <AzCore/JSON/document.h>
-#include <AzCore/JSON/writer.h>
-#include <AzCore/JSON/stringbuffer.h>
 #include <AzCore/JSON/prettywriter.h>
+#include <AzCore/JSON/stringbuffer.h>
+#include <AzCore/JSON/writer.h>
+#include <AzCore/std/containers/unordered_map.h>
+#include <AzCore/std/containers/vector.h>
+#include <AzCore/std/sort.h>
 
 namespace AiCompanion
 {
@@ -51,22 +51,18 @@ namespace AiCompanion
                             info.name = entity->GetName();
 
                             // Get transform data
-                            AZ::TransformBus::EventResult(
-                                info.position, info.id, &AZ::TransformBus::Events::GetWorldTranslation);
+                            AZ::TransformBus::EventResult(info.position, info.id, &AZ::TransformBus::Events::GetWorldTranslation);
 
                             AZ::Quaternion quat = AZ::Quaternion::CreateIdentity();
-                            AZ::TransformBus::EventResult(
-                                quat, info.id, &AZ::TransformBus::Events::GetWorldRotationQuaternion);
+                            AZ::TransformBus::EventResult(quat, info.id, &AZ::TransformBus::Events::GetWorldRotationQuaternion);
                             info.rotation = quat.GetEulerDegrees();
 
                             float uniformScale = 1.0f;
-                            AZ::TransformBus::EventResult(
-                                uniformScale, info.id, &AZ::TransformBus::Events::GetLocalUniformScale);
+                            AZ::TransformBus::EventResult(uniformScale, info.id, &AZ::TransformBus::Events::GetLocalUniformScale);
                             info.scale = AZ::Vector3(uniformScale);
 
                             // Get parent
-                            AZ::TransformBus::EventResult(
-                                info.parentId, info.id, &AZ::TransformBus::Events::GetParentId);
+                            AZ::TransformBus::EventResult(info.parentId, info.id, &AZ::TransformBus::Events::GetParentId);
 
                             // Gather component type names
                             const auto& components = entity->GetComponents();
@@ -91,9 +87,7 @@ namespace AiCompanion
             return infos;
         }
 
-        static void WriteEntityJson(
-            rapidjson::Writer<rapidjson::StringBuffer>& writer,
-            const EntityInfo& info)
+        static void WriteEntityJson(rapidjson::Writer<rapidjson::StringBuffer>& writer, const EntityInfo& info)
         {
             writer.StartObject();
 

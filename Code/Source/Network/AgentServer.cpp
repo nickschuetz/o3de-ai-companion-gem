@@ -5,15 +5,15 @@
 
 #include "AgentServer.h"
 
+#include <AzCore/Utils/Utils.h>
 #include <AzCore/base.h>
 #include <AzCore/std/chrono/chrono.h>
 #include <AzCore/std/string/conversions.h>
-#include <AzCore/Utils/Utils.h>
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
 
 #include <rapidjson/document.h>
-#include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 #include <chrono>
 #include <cstdarg>
@@ -21,15 +21,15 @@
 
 // TLS support via OpenSSL (linked through AzFramework)
 #if AZ_TRAIT_OS_PLATFORM_APPLE || defined(AZ_PLATFORM_LINUX) || defined(AZ_PLATFORM_WINDOWS)
-    #include <openssl/ssl.h>
-    #include <openssl/err.h>
-    #define AI_COMPANION_TLS_AVAILABLE 1
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#define AI_COMPANION_TLS_AVAILABLE 1
 #else
-    #define AI_COMPANION_TLS_AVAILABLE 0
+#define AI_COMPANION_TLS_AVAILABLE 0
 #endif
 
 #if defined(AZ_PLATFORM_WINDOWS)
-    #pragma comment(lib, "Ws2_32.lib")
+#pragma comment(lib, "Ws2_32.lib")
 #endif
 
 namespace AiCompanion
@@ -50,9 +50,12 @@ namespace AiCompanion
     // -------------------------------------------------------------------------
 
     bool AgentServer::Start(
-        const AZStd::string& host, AZ::u16 port, bool secureMode,
+        const AZStd::string& host,
+        AZ::u16 port,
+        bool secureMode,
         AgentServerLogLevel logLevel,
-        const AZStd::string& tlsCertPath, const AZStd::string& tlsKeyPath)
+        const AZStd::string& tlsCertPath,
+        const AZStd::string& tlsKeyPath)
     {
         if (m_running.load())
         {
@@ -122,8 +125,7 @@ namespace AiCompanion
         // Allow address reuse
         int optVal = 1;
 #if defined(AZ_PLATFORM_WINDOWS)
-        setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR,
-                   reinterpret_cast<const char*>(&optVal), sizeof(optVal));
+        setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&optVal), sizeof(optVal));
 #else
         setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR, &optVal, sizeof(optVal));
 #endif
@@ -174,14 +176,21 @@ namespace AiCompanion
         AgentServerRequestBus::Handler::BusConnect();
 
         // Start accept thread
-        m_acceptThread = AZStd::thread([this]() { AcceptLoop(); });
+        m_acceptThread = AZStd::thread(
+            [this]()
+            {
+                AcceptLoop();
+            });
 
-        LogMinimal("[AgentServer] Started on %s:%u (secure=%s, tls=%s, log=%s)",
-                   m_host.c_str(), m_port,
-                   m_secureMode.load() ? "on" : "off",
-                   m_tlsEnabled ? "on" : "off",
-                   m_logLevel == AgentServerLogLevel::Minimal ? "minimal" :
-                   m_logLevel == AgentServerLogLevel::Standard ? "standard" : "verbose");
+        LogMinimal(
+            "[AgentServer] Started on %s:%u (secure=%s, tls=%s, log=%s)",
+            m_host.c_str(),
+            m_port,
+            m_secureMode.load() ? "on" : "off",
+            m_tlsEnabled ? "on" : "off",
+            m_logLevel == AgentServerLogLevel::Minimal        ? "minimal"
+                : m_logLevel == AgentServerLogLevel::Standard ? "standard"
+                                                              : "verbose");
 
         return true;
     }
@@ -300,8 +309,7 @@ namespace AiCompanion
 
         if (!localQueue.empty())
         {
-            LogMinimal("[AgentServer] Processing %zu pending request(s) on main thread",
-                       localQueue.size());
+            LogMinimal("[AgentServer] Processing %zu pending request(s) on main thread", localQueue.size());
         }
 
         for (auto& req : localQueue)
@@ -309,8 +317,7 @@ namespace AiCompanion
             auto startTime = AZStd::chrono::steady_clock::now();
             AZStd::string response = HandleRequest(req->payload);
             auto endTime = AZStd::chrono::steady_clock::now();
-            auto durationMs = static_cast<AZ::s64>(
-                AZStd::chrono::duration_cast<AZStd::chrono::milliseconds>(endTime - startTime).count());
+            auto durationMs = static_cast<AZ::s64>(AZStd::chrono::duration_cast<AZStd::chrono::milliseconds>(endTime - startTime).count());
 
             // Replace the placeholder duration_ms=0 with actual timing.
             // HandleRequest already builds complete JSON via BuildResponse with duration_ms=0,
@@ -319,13 +326,12 @@ namespace AiCompanion
             size_t pos = response.rfind(placeholder);
             if (pos != AZStd::string::npos)
             {
-                AZStd::string replacement = AZStd::string::format("\"duration_ms\":%lld}",
-                    static_cast<long long>(durationMs));
+                AZStd::string replacement = AZStd::string::format("\"duration_ms\":%lld}", static_cast<long long>(durationMs));
                 response.replace(pos, placeholder.size(), replacement);
             }
 
-            LogStandard("[AgentServer] req=%s type=%s duration=%lldms",
-                        req->id.c_str(), req->type.c_str(), static_cast<long long>(durationMs));
+            LogStandard(
+                "[AgentServer] req=%s type=%s duration=%lldms", req->id.c_str(), req->type.c_str(), static_cast<long long>(durationMs));
 
             req->responsePromise.set_value(AZStd::move(response));
         }
@@ -362,12 +368,9 @@ namespace AiCompanion
             socklen_t addrLen = sizeof(clientAddr);
 #if defined(AZ_PLATFORM_LINUX)
             // Use accept4 with SOCK_CLOEXEC to prevent child process inheritance
-            SocketType clientSock = accept4(m_listenSocket,
-                                            reinterpret_cast<sockaddr*>(&clientAddr), &addrLen,
-                                            SOCK_CLOEXEC);
+            SocketType clientSock = accept4(m_listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &addrLen, SOCK_CLOEXEC);
 #else
-            SocketType clientSock = accept(m_listenSocket,
-                                           reinterpret_cast<sockaddr*>(&clientAddr), &addrLen);
+            SocketType clientSock = accept(m_listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &addrLen);
 #endif
 
             if (clientSock == InvalidSocket)
@@ -434,8 +437,10 @@ namespace AiCompanion
                     }
                     if (!isStale)
                     {
-                        LogMinimal("[AgentServer] Rejected connection from %s:%u — another client is connected",
-                                   clientAddrStr.c_str(), clientPort);
+                        LogMinimal(
+                            "[AgentServer] Rejected connection from %s:%u — another client is connected",
+                            clientAddrStr.c_str(),
+                            clientPort);
                         CloseSocket(clientSock);
                         continue;
                     }
@@ -448,8 +453,8 @@ namespace AiCompanion
                 }
             }
 
-            LogMinimal("[AgentServer] Client connected from %s:%u (TLS: %s)",
-                       clientAddrStr.c_str(), clientPort, m_tlsEnabled ? "yes" : "no");
+            LogMinimal(
+                "[AgentServer] Client connected from %s:%u (TLS: %s)", clientAddrStr.c_str(), clientPort, m_tlsEnabled ? "yes" : "no");
 
             // Wait for any previous client thread to finish
             if (m_clientThread.joinable())
@@ -458,10 +463,11 @@ namespace AiCompanion
             }
 
             m_clientSocket.store(clientSock);
-            m_clientThread = AZStd::thread([this, clientSock, clientAddrStr, clientPort]()
-            {
-                ClientLoop(clientSock, clientAddrStr, clientPort);
-            });
+            m_clientThread = AZStd::thread(
+                [this, clientSock, clientAddrStr, clientPort]()
+                {
+                    ClientLoop(clientSock, clientAddrStr, clientPort);
+                });
         }
     }
 
@@ -488,17 +494,14 @@ namespace AiCompanion
             SSL_set_fd(ssl, static_cast<int>(clientSocket));
             if (SSL_accept(ssl) <= 0)
             {
-                AZ_Error("AiCompanion", false, "[AgentServer] TLS handshake failed with %s:%u",
-                         clientAddr.c_str(), clientPort);
-                LogVerbose("[AgentServer] TLS error: %s",
-                          ERR_error_string(ERR_get_error(), nullptr));
+                AZ_Error("AiCompanion", false, "[AgentServer] TLS handshake failed with %s:%u", clientAddr.c_str(), clientPort);
+                LogVerbose("[AgentServer] TLS error: %s", ERR_error_string(ERR_get_error(), nullptr));
                 SSL_free(ssl);
                 CloseSocket(clientSocket);
                 m_clientSocket.store(InvalidSocket);
                 return;
             }
-            LogVerbose("[AgentServer] TLS handshake complete with %s:%u, cipher=%s",
-                      clientAddr.c_str(), clientPort, SSL_get_cipher(ssl));
+            LogVerbose("[AgentServer] TLS handshake complete with %s:%u, cipher=%s", clientAddr.c_str(), clientPort, SSL_get_cipher(ssl));
         }
 #endif
 
@@ -510,9 +513,8 @@ namespace AiCompanion
                 break; // connection closed or error
             }
 
-            LogVerbose("[AgentServer] Received: %.4096s%s",
-                      requestJson.c_str(),
-                      requestJson.size() > LogTruncateSize ? "...(truncated)" : "");
+            LogVerbose(
+                "[AgentServer] Received: %.4096s%s", requestJson.c_str(), requestJson.size() > LogTruncateSize ? "...(truncated)" : "");
 
             // Parse to extract type and determine dispatch
             rapidjson::Document doc;
@@ -525,10 +527,8 @@ namespace AiCompanion
                 continue;
             }
 
-            AZStd::string id = doc.HasMember("id") && doc["id"].IsString()
-                ? doc["id"].GetString() : "";
-            AZStd::string type = doc.HasMember("type") && doc["type"].IsString()
-                ? doc["type"].GetString() : "";
+            AZStd::string id = doc.HasMember("id") && doc["id"].IsString() ? doc["id"].GetString() : "";
+            AZStd::string type = doc.HasMember("type") && doc["type"].IsString() ? doc["type"].GetString() : "";
 
             // Sanitize request ID: allow only alphanumeric, hyphen, underscore (max 64 chars).
             // Prevents path traversal when IDs are used in temp file paths or format strings.
@@ -538,8 +538,7 @@ namespace AiCompanion
             }
             for (char& c : id)
             {
-                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                      (c >= '0' && c <= '9') || c == '-' || c == '_'))
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_'))
                 {
                     c = '_';
                 }
@@ -587,24 +586,28 @@ namespace AiCompanion
                 }
                 else
                 {
-                    response = BuildErrorResponse(id,
+                    response = BuildErrorResponse(
+                        id,
                         "Request timed out waiting for main thread dispatch. "
                         "Ensure the editor is running and not blocked.");
-                    AZ_Warning("AiCompanion", false,
+                    AZ_Warning(
+                        "AiCompanion",
+                        false,
                         "[AgentServer] Request %s (type=%s) timed out waiting for main thread",
-                        id.c_str(), type.c_str());
+                        id.c_str(),
+                        type.c_str());
                 }
             }
             else if (type == "execute_python")
             {
                 if (m_secureMode.load())
                 {
-                    response = BuildErrorResponse(id,
+                    response = BuildErrorResponse(
+                        id,
                         "execute_python is disabled in secure mode. "
                         "Only ping, get_api_version, get_scene_snapshot, get_entity_tree, "
                         "and validate_scene are available.");
-                    AZ_Warning("AiCompanion", false,
-                               "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
+                    AZ_Warning("AiCompanion", false, "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
                 }
                 else
                 {
@@ -628,10 +631,13 @@ namespace AiCompanion
                     }
                     else
                     {
-                        response = BuildErrorResponse(id,
+                        response = BuildErrorResponse(
+                            id,
                             "Request timed out waiting for main thread dispatch. "
                             "Ensure the editor is running and not blocked.");
-                        AZ_Warning("AiCompanion", false,
+                        AZ_Warning(
+                            "AiCompanion",
+                            false,
                             "[AgentServer] Request %s (type=execute_python) timed out waiting for main thread",
                             id.c_str());
                     }
@@ -639,13 +645,10 @@ namespace AiCompanion
             }
             else
             {
-                response = BuildErrorResponse(id,
-                    AZStd::string::format("Unknown request type: %s", type.c_str()));
+                response = BuildErrorResponse(id, AZStd::string::format("Unknown request type: %s", type.c_str()));
             }
 
-            LogVerbose("[AgentServer] Sending: %.4096s%s",
-                      response.c_str(),
-                      response.size() > LogTruncateSize ? "...(truncated)" : "");
+            LogVerbose("[AgentServer] Sending: %.4096s%s", response.c_str(), response.size() > LogTruncateSize ? "...(truncated)" : "");
 
             if (!SendFramedMessage(clientSocket, ssl, response))
             {
@@ -689,8 +692,7 @@ namespace AiCompanion
 #endif
             {
 #if defined(AZ_PLATFORM_WINDOWS)
-                n = recv(sock, reinterpret_cast<char*>(header + headerRead),
-                         static_cast<int>(4 - headerRead), 0);
+                n = recv(sock, reinterpret_cast<char*>(header + headerRead), static_cast<int>(4 - headerRead), 0);
 #else
                 n = static_cast<int>(recv(sock, header + headerRead, 4 - headerRead, 0));
 #endif
@@ -703,15 +705,12 @@ namespace AiCompanion
             headerRead += static_cast<size_t>(n);
         }
 
-        AZ::u32 length = (static_cast<AZ::u32>(header[0]) << 24) |
-                          (static_cast<AZ::u32>(header[1]) << 16) |
-                          (static_cast<AZ::u32>(header[2]) << 8) |
-                          (static_cast<AZ::u32>(header[3]));
+        AZ::u32 length = (static_cast<AZ::u32>(header[0]) << 24) | (static_cast<AZ::u32>(header[1]) << 16) |
+            (static_cast<AZ::u32>(header[2]) << 8) | (static_cast<AZ::u32>(header[3]));
 
         if (length > MaxMessageSize)
         {
-            AZ_Error("AiCompanion", false,
-                     "[AgentServer] Message too large: %u bytes (max %u)", length, MaxMessageSize);
+            AZ_Error("AiCompanion", false, "[AgentServer] Message too large: %u bytes (max %u)", length, MaxMessageSize);
             return false;
         }
 
@@ -752,12 +751,10 @@ namespace AiCompanion
     bool AgentServer::SendFramedMessage(SocketType sock, SSL* ssl, const AZStd::string& json)
     {
         AZ::u32 length = static_cast<AZ::u32>(json.size());
-        AZ::u8 header[4] = {
-            static_cast<AZ::u8>((length >> 24) & 0xFF),
-            static_cast<AZ::u8>((length >> 16) & 0xFF),
-            static_cast<AZ::u8>((length >> 8) & 0xFF),
-            static_cast<AZ::u8>(length & 0xFF)
-        };
+        AZ::u8 header[4] = { static_cast<AZ::u8>((length >> 24) & 0xFF),
+                             static_cast<AZ::u8>((length >> 16) & 0xFF),
+                             static_cast<AZ::u8>((length >> 8) & 0xFF),
+                             static_cast<AZ::u8>(length & 0xFF) };
 
         // Send header
         auto sendBytes = [&](const void* data, int len) -> bool
@@ -806,10 +803,8 @@ namespace AiCompanion
             return BuildErrorResponse("", "Invalid JSON request");
         }
 
-        AZStd::string id = doc.HasMember("id") && doc["id"].IsString()
-            ? doc["id"].GetString() : "";
-        AZStd::string type = doc.HasMember("type") && doc["type"].IsString()
-            ? doc["type"].GetString() : "";
+        AZStd::string id = doc.HasMember("id") && doc["id"].IsString() ? doc["id"].GetString() : "";
+        AZStd::string type = doc.HasMember("type") && doc["type"].IsString() ? doc["type"].GetString() : "";
 
         if (type == "get_scene_snapshot")
         {
@@ -835,22 +830,19 @@ namespace AiCompanion
 
             // Decode base64 using a 256-byte lookup table for O(1) per character
             static const AZ::s8 b64Lookup[] = {
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, // 0-15
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, // 16-31
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63, // 32-47 (+,/)
-                52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1, // 48-63 (0-9)
-                -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14, // 64-79 (A-O)
-                15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1, // 80-95 (P-Z)
-                -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40, // 96-111 (a-o)
-                41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1, // 112-127 (p-z)
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, // 128-255
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-                -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 0-15
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 16-31
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, // 32-47 (+,/)
+                52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, // 48-63 (0-9)
+                -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, // 64-79 (A-O)
+                15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1, // 80-95 (P-Z)
+                -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, // 96-111 (a-o)
+                41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1, // 112-127 (p-z)
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, // 128-255
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
             };
 
             AZStd::string decoded;
@@ -915,13 +907,11 @@ namespace AiCompanion
                 "        sys._ai_companion_results = {}\n"
                 "    sys._ai_companion_results['%s'] = _ac_json.dumps(_ac_result)\n",
                 hexScript.c_str(),
-                id.c_str()
-            );
+                id.c_str());
 
             // Execute on main thread (we're already on main thread when called from OnTick)
             AzToolsFramework::EditorPythonRunnerRequestBus::Broadcast(
-                &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString,
-                wrappedScript.c_str(), false);
+                &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString, wrappedScript.c_str(), false);
 
             // Retrieve the result
             AZStd::string retrieveScript = AZStd::string::format(
@@ -930,15 +920,15 @@ namespace AiCompanion
                 "    print(sys._ai_companion_results.pop('%s'))\n"
                 "else:\n"
                 "    print('{\"output\": \"\", \"error\": \"No result captured\"}')\n",
-                id.c_str(), id.c_str());
+                id.c_str(),
+                id.c_str());
 
             // Retrieve results via file. Use project root (not /tmp) to avoid
             // shared temp directory attacks. Request ID is pre-sanitized to
             // alphanumeric/hyphen/underscore so path traversal is not possible.
             auto tempDirOpt = AZ::Utils::GetDefaultAppRootPath();
             AZStd::string tempDir = tempDirOpt.has_value() ? AZStd::string(tempDirOpt->c_str()) : AZStd::string("/tmp");
-            AZStd::string resultPath = AZStd::string::format("%s/_ai_companion_result_%s.json",
-                tempDir.c_str(), id.c_str());
+            AZStd::string resultPath = AZStd::string::format("%s/_ai_companion_result_%s.json", tempDir.c_str(), id.c_str());
 
             // Remove any pre-existing file at this path (mitigates symlink attacks)
             remove(resultPath.c_str());
@@ -951,11 +941,12 @@ namespace AiCompanion
                 "fd = os.open(r'%s', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)\n"
                 "with os.fdopen(fd, 'w') as f:\n"
                 "    f.write(result)\n",
-                id.c_str(), id.c_str(), resultPath.c_str());
+                id.c_str(),
+                id.c_str(),
+                resultPath.c_str());
 
             AzToolsFramework::EditorPythonRunnerRequestBus::Broadcast(
-                &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString,
-                fileRetrieveScript.c_str(), false);
+                &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString, fileRetrieveScript.c_str(), false);
 
             // Read the result file
             AZStd::string output;
@@ -1011,11 +1002,16 @@ namespace AiCompanion
         rapidjson::StringBuffer sb;
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
-        w.Key("protocol_version"); w.Int(1);
-        w.Key("gem_version"); w.String("0.3.0");
-        w.Key("api_version"); w.String("0.1.0");
-        w.Key("secure_mode"); w.Bool(m_secureMode.load());
-        w.Key("tls_enabled"); w.Bool(m_tlsEnabled);
+        w.Key("protocol_version");
+        w.Int(1);
+        w.Key("gem_version");
+        w.String("0.3.0");
+        w.Key("api_version");
+        w.String("0.1.0");
+        w.Key("secure_mode");
+        w.Bool(m_secureMode.load());
+        w.Key("tls_enabled");
+        w.Bool(m_tlsEnabled);
         w.EndObject();
 
         return BuildResponse(id, "ok", sb.GetString(), "", 0);
@@ -1024,24 +1020,21 @@ namespace AiCompanion
     AZStd::string AgentServer::HandleGetSceneSnapshot(const AZStd::string& id)
     {
         AZStd::string snapshot;
-        AiCompanionRequestBus::BroadcastResult(snapshot,
-            &AiCompanionRequestBus::Events::GetSceneSnapshot);
+        AiCompanionRequestBus::BroadcastResult(snapshot, &AiCompanionRequestBus::Events::GetSceneSnapshot);
         return BuildResponse(id, "ok", snapshot, "", 0);
     }
 
     AZStd::string AgentServer::HandleGetEntityTree(const AZStd::string& id)
     {
         AZStd::string tree;
-        AiCompanionRequestBus::BroadcastResult(tree,
-            &AiCompanionRequestBus::Events::GetEntityTree);
+        AiCompanionRequestBus::BroadcastResult(tree, &AiCompanionRequestBus::Events::GetEntityTree);
         return BuildResponse(id, "ok", tree, "", 0);
     }
 
     AZStd::string AgentServer::HandleValidateScene(const AZStd::string& id)
     {
         AZStd::string report;
-        AiCompanionRequestBus::BroadcastResult(report,
-            &AiCompanionRequestBus::Events::ValidateScene);
+        AiCompanionRequestBus::BroadcastResult(report, &AiCompanionRequestBus::Events::ValidateScene);
         return BuildResponse(id, "ok", report, "", 0);
     }
 
@@ -1050,18 +1043,21 @@ namespace AiCompanion
     // -------------------------------------------------------------------------
 
     AZStd::string AgentServer::BuildResponse(
-        const AZStd::string& id, const char* status,
-        const AZStd::string& output, const AZStd::string& error,
-        AZ::s64 durationMs)
+        const AZStd::string& id, const char* status, const AZStd::string& output, const AZStd::string& error, AZ::s64 durationMs)
     {
         rapidjson::StringBuffer sb;
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
-        w.Key("id"); w.String(id.c_str());
-        w.Key("status"); w.String(status);
-        w.Key("output"); w.String(output.c_str());
-        w.Key("error"); w.String(error.c_str());
-        w.Key("duration_ms"); w.Int64(durationMs);
+        w.Key("id");
+        w.String(id.c_str());
+        w.Key("status");
+        w.String(status);
+        w.Key("output");
+        w.String(output.c_str());
+        w.Key("error");
+        w.String(error.c_str());
+        w.Key("duration_ms");
+        w.Int64(durationMs);
         w.EndObject();
         return sb.GetString();
     }
@@ -1137,9 +1133,7 @@ namespace AiCompanion
     // TLS Helpers
     // -------------------------------------------------------------------------
 
-    bool AgentServer::InitTls(
-        [[maybe_unused]] const AZStd::string& certPath,
-        [[maybe_unused]] const AZStd::string& keyPath)
+    bool AgentServer::InitTls([[maybe_unused]] const AZStd::string& certPath, [[maybe_unused]] const AZStd::string& keyPath)
     {
 #if AI_COMPANION_TLS_AVAILABLE
         // Note: SSL_library_init/SSL_load_error_strings/OpenSSL_add_all_algorithms

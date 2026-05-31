@@ -38,9 +38,7 @@ namespace AiCompanion
         //! EditorComponentAPIBus.SetComponentProperty once #19771 lands in the
         //! engine build the gem ships against.
         virtual AZ::Outcome<void, AZStd::string> SetComponentPropertyUnwrapped(
-            AZ::EntityComponentIdPair pair,
-            AZStd::string propertyPath,
-            AZStd::any value) = 0;
+            AZ::EntityComponentIdPair pair, AZStd::string propertyPath, AZStd::any value) = 0;
 
         //! Returns the reflected schema of an EBus as a JSON string, read live
         //! from the BehaviorContext. Unlike the editor's generated .pyi stub
