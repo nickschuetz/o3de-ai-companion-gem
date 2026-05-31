@@ -21,11 +21,13 @@ function GameOverTrigger:OnActivate()
 
     self.tickHandler = TickBus.Connect(self)
 
-    -- Find the player entity
-    local taggedEntities = TagGlobalRequestBus.Event.RequestTaggedEntities(
+    -- Find the player entity. The event reflects to scripting as "Get Entity By Tag";
+    -- O3DE's Lua binding strips spaces, so the callable name is GetEntityByTag, and it
+    -- returns a single EntityId (not a list).
+    local player = TagGlobalRequestBus.Event.GetEntityByTag(
         Crc32(self.Properties.PlayerTag))
-    if taggedEntities and #taggedEntities > 0 then
-        self.playerEntityId = taggedEntities[1]
+    if player ~= nil and player:IsValid() then
+        self.playerEntityId = player
 
         -- Listen for damage events on the player
         self.damageHandler = GameplayNotificationBus.Connect(self,

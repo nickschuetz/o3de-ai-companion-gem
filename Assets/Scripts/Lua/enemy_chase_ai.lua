@@ -38,11 +38,13 @@ function EnemyChaseAI:OnDeactivate()
 end
 
 function EnemyChaseAI:FindTarget()
-    -- Find entities with the target tag
-    local taggedEntities = TagGlobalRequestBus.Event.RequestTaggedEntities(
+    -- Find the entity with the target tag. The event reflects to scripting as
+    -- "Get Entity By Tag"; O3DE's Lua binding strips spaces, so the callable name
+    -- is GetEntityByTag, and it returns a single EntityId (not a list).
+    local target = TagGlobalRequestBus.Event.GetEntityByTag(
         Crc32(self.Properties.TargetTag))
-    if taggedEntities and #taggedEntities > 0 then
-        self.targetEntityId = taggedEntities[1]
+    if target ~= nil and target:IsValid() then
+        self.targetEntityId = target
         return true
     end
     return false
