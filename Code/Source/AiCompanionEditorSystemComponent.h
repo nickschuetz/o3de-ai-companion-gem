@@ -17,6 +17,8 @@
 
 #include <chrono>
 
+class QTimer;
+
 namespace AiCompanion::AgentMode
 {
     class Filter;
@@ -61,6 +63,13 @@ namespace AiCompanion
         //! Starts the AgentServer with configuration from settings registry and env vars.
         void StartAgentServer();
 
+        //! Starts a Qt timer that drains the AgentServer's main-thread queue
+        //! independently of the editor's idle/SystemTick loop, which the editor
+        //! throttles or halts when its window is not the foreground app. Agent
+        //! automation always runs with the editor unfocused, so relying on
+        //! OnSystemTick alone starves the queue for minutes. See Deactivate.
+        void StartQueuePump();
+
         //! Refreshes agent-mode state from the JSON sidecar and installs or
         //! removes the QApplication event filter to match.
         void RefreshAgentMode();
@@ -74,5 +83,11 @@ namespace AiCompanion
         std::chrono::steady_clock::time_point m_lastAgentModePoll;
 
         AZStd::unique_ptr<AgentServer> m_agentServer;
+
+        // Drains the AgentServer queue on the main thread off the Qt event loop,
+        // so it keeps running while the editor window is unfocused (when the
+        // editor's own idle/SystemTick loop is throttled). Owned via Qt parent
+        // (qApp); cleared in Deactivate.
+        QTimer* m_queuePumpTimer = nullptr;
     };
 } // namespace AiCompanion

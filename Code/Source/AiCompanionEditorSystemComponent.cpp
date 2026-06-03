@@ -23,6 +23,7 @@
 #include <AzToolsFramework/ToolsComponents/GenericComponentWrapper.h>
 
 #include <QApplication>
+#include <QTimer>
 
 #include <cstdlib>
 
@@ -89,6 +90,7 @@ namespace AiCompanion
         AiCompanionEditorRequestBus::Handler::BusConnect();
         RegisterPythonPaths();
         StartAgentServer();
+        StartQueuePump();
 
         m_lastAgentModePoll = std::chrono::steady_clock::now();
         RefreshAgentMode();
@@ -96,6 +98,13 @@ namespace AiCompanion
 
     void AiCompanionEditorSystemComponent::Deactivate()
     {
+        if (m_queuePumpTimer)
+        {
+            m_queuePumpTimer->stop();
+            m_queuePumpTimer->deleteLater();
+            m_queuePumpTimer = nullptr;
+        }
+
         if (m_agentModeFilter)
         {
             if (QApplication* app = qApp)
@@ -119,6 +128,10 @@ namespace AiCompanion
 
     void AiCompanionEditorSystemComponent::OnSystemTick()
     {
+        // Also drain here so the queue is serviced whenever the editor IS
+        // ticking; the Qt timer in StartQueuePump() covers the unfocused case
+        // when this tick is throttled. Draining twice is harmless (the queue
+        // swap is mutex-guarded and a second call just finds it empty).
         if (m_agentServer)
         {
             m_agentServer->ProcessMainThreadQueue();
@@ -323,6 +336,45 @@ namespace AiCompanion
             AZ_Error("AiCompanion", false, "[AgentServer] Failed to start on %s:%u", host.c_str(), port);
             m_agentServer.reset();
         }
+    }
+
+    void AiCompanionEditorSystemComponent::StartQueuePump()
+    {
+        if (!m_agentServer || m_queuePumpTimer)
+        {
+            return;
+        }
+
+        QApplication* app = qApp;
+        if (app == nullptr)
+        {
+            // No Qt application (e.g., a non-GUI host); OnSystemTick remains the
+            // only pump. That path is fine when something keeps ticking the bus.
+            return;
+        }
+
+        // Parent to qApp so the timer lives on (and is driven by) the main-thread
+        // Qt event loop, which keeps firing timers even while the editor window
+        // is not the foreground app. 8 ms (~125 Hz) keeps request latency well
+        // under the client's read timeout at negligible cost (an empty-queue
+        // swap when idle). Precise so background throttling cannot stretch it.
+        m_queuePumpTimer = new QTimer(app);
+        m_queuePumpTimer->setTimerType(Qt::PreciseTimer);
+        m_queuePumpTimer->setInterval(8);
+        QObject::connect(
+            m_queuePumpTimer,
+            &QTimer::timeout,
+            m_queuePumpTimer,
+            [this]()
+            {
+                if (m_agentServer)
+                {
+                    m_agentServer->ProcessMainThreadQueue();
+                }
+            });
+        m_queuePumpTimer->start();
+
+        AZ_Printf("AiCompanion", "[AgentServer] Main-thread queue pump started (8 ms, focus-independent).\n");
     }
 
     AZ::Outcome<void, AZStd::string> AiCompanionEditorSystemComponent::SetComponentPropertyUnwrapped(
