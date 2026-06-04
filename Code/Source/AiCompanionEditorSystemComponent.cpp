@@ -137,6 +137,24 @@ namespace AiCompanion
             m_agentServer->ProcessMainThreadQueue();
         }
 
+        // While an agent is connected, keep the editor's idle loop advancing frames
+        // even when its window is unfocused -- the normal case during automation.
+        // The queue pump above makes requests dispatch, but frame-bound work (level
+        // loads, idle waits, render) is gated separately by CCryEditApp::IdleProcessing
+        // on ed_keepEditorActive. Toggle that CVar with connection state, via the same
+        // editor-Python path used for RegisterPythonPaths (the CVar is a legacy editor
+        // CVar with no AZ::Console binding). Only fires on a connect/disconnect edge.
+        const bool connected = m_agentServer && m_agentServer->HasConnectedClient();
+        if (connected != m_keepEditorActiveApplied)
+        {
+            m_keepEditorActiveApplied = connected;
+            AzToolsFramework::EditorPythonRunnerRequestBus::Broadcast(
+                &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString,
+                connected ? "import azlmbr.legacy.general as _g; _g.run_console('ed_keepEditorActive 1')"
+                          : "import azlmbr.legacy.general as _g; _g.run_console('ed_keepEditorActive 0')",
+                false);
+        }
+
         // Re-read the agent-mode state file at most once per second. The file
         // is tiny (~120 bytes) and a missing file is a cheap fast-path.
         const auto now = std::chrono::steady_clock::now();

@@ -89,5 +89,9 @@ namespace AiCompanion
         // editor's own idle/SystemTick loop is throttled). Owned via Qt parent
         // (qApp); cleared in Deactivate.
         QTimer* m_queuePumpTimer = nullptr;
+
+        //! Tracks whether ed_keepEditorActive has been set on for the current client
+        //! connection, so OnSystemTick only toggles it on a connect/disconnect edge.
+        bool m_keepEditorActiveApplied = false;
     };
 } // namespace AiCompanion
