@@ -5,6 +5,7 @@
 
 #include "AgentServer.h"
 
+#include <AzCore/IO/Path/Path.h>
 #include <AzCore/Utils/Utils.h>
 #include <AzCore/base.h>
 #include <AzCore/std/chrono/chrono.h>
@@ -18,6 +19,8 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 
 // TLS support via OpenSSL (linked through AzFramework)
 #if AZ_TRAIT_OS_PLATFORM_APPLE || defined(AZ_PLATFORM_LINUX) || defined(AZ_PLATFORM_WINDOWS)
@@ -30,6 +33,11 @@
 
 #if defined(AZ_PLATFORM_WINDOWS)
 #pragma comment(lib, "Ws2_32.lib")
+#include <direct.h>
+#define AI_COMPANION_MKDIR(path) _mkdir(path)
+#else
+#include <sys/stat.h>
+#define AI_COMPANION_MKDIR(path) ::mkdir(path, 0700)
 #endif
 
 namespace AiCompanion
@@ -886,9 +894,43 @@ namespace AiCompanion
             }
             hexScript += "'.decode('utf-8')";
 
-            // Wrap the script to capture stdout/stderr
+            // Determine result file path. Use the O3DE project temp directory.
+            AZStd::string tempDir;
+            {
+                AZ::IO::FixedMaxPathString projectRoot = AZ::Utils::GetProjectPath();
+                if (!projectRoot.empty())
+                {
+                    AZ::IO::FixedMaxPath tempPath = AZ::IO::FixedMaxPath(projectRoot.c_str()) / "user" / "temp";
+                    tempDir = tempPath.String().c_str();
+                }
+                else
+                {
+                    auto appRootOpt = AZ::Utils::GetDefaultAppRootPath();
+                    tempDir = appRootOpt.has_value() ? AZStd::string(appRootOpt->c_str()) : AZStd::string(".");
+                }
+            }
+            AZStd::string resultPath = AZStd::string::format("%s/_ai_companion_result_%s.json", tempDir.c_str(), id.c_str());
+
+            // Ensure the temp directory exists (create parent dirs one by one)
+            AZ::IO::FixedMaxPath dirPath(tempDir.c_str());
+            AZStd::string dirStr = dirPath.String().c_str();
+            for (size_t pos = dirStr.find('/'); pos != AZStd::string::npos; pos = dirStr.find('/', pos + 1))
+            {
+                AZStd::string partial = dirStr.substr(0, pos);
+                if (!partial.empty())
+                {
+                    AI_COMPANION_MKDIR(partial.c_str());
+                }
+            }
+            AI_COMPANION_MKDIR(dirStr.c_str());
+
+            // Remove any pre-existing file at this path (mitigates symlink attacks)
+            remove(resultPath.c_str());
+
+            // Single script: capture stdout/stderr, execute user script, write result to file.
+            // This avoids dependency on sys state persisting between ExecuteByString calls.
             AZStd::string wrappedScript = AZStd::string::format(
-                "import sys, io as _io\n"
+                "import sys, io as _io, json as _ac_json, os, traceback\n"
                 "_ac_buf = _io.StringIO()\n"
                 "_ac_old_stdout, _ac_old_stderr = sys.stdout, sys.stderr\n"
                 "sys.stdout = sys.stderr = _ac_buf\n"
@@ -896,74 +938,37 @@ namespace AiCompanion
                 "try:\n"
                 "    exec(compile(%s, '<agent>', 'exec'))\n"
                 "except Exception as _ac_e:\n"
-                "    import traceback\n"
                 "    _ac_error = traceback.format_exc()\n"
                 "    _ac_buf.write(_ac_error)\n"
                 "finally:\n"
                 "    sys.stdout, sys.stderr = _ac_old_stdout, _ac_old_stderr\n"
-                "    import json as _ac_json\n"
-                "    _ac_result = {'output': _ac_buf.getvalue(), 'error': _ac_error}\n"
-                "    if not hasattr(sys, '_ai_companion_results'):\n"
-                "        sys._ai_companion_results = {}\n"
-                "    sys._ai_companion_results['%s'] = _ac_json.dumps(_ac_result)\n",
+                "    _ac_result = _ac_json.dumps({'output': _ac_buf.getvalue(), 'error': _ac_error})\n"
+                "    fd = os.open(r'%s', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)\n"
+                "    with os.fdopen(fd, 'w') as _ac_f:\n"
+                "        _ac_f.write(_ac_result)\n",
                 hexScript.c_str(),
-                id.c_str());
+                resultPath.c_str());
 
             // Execute on main thread (we're already on main thread when called from OnTick)
             AzToolsFramework::EditorPythonRunnerRequestBus::Broadcast(
                 &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString, wrappedScript.c_str(), false);
 
-            // Retrieve the result
-            AZStd::string retrieveScript = AZStd::string::format(
-                "import sys\n"
-                "if hasattr(sys, '_ai_companion_results') and '%s' in sys._ai_companion_results:\n"
-                "    print(sys._ai_companion_results.pop('%s'))\n"
-                "else:\n"
-                "    print('{\"output\": \"\", \"error\": \"No result captured\"}')\n",
-                id.c_str(),
-                id.c_str());
-
-            // Retrieve results via file. Use project root (not /tmp) to avoid
-            // shared temp directory attacks. Request ID is pre-sanitized to
-            // alphanumeric/hyphen/underscore so path traversal is not possible.
-            auto tempDirOpt = AZ::Utils::GetDefaultAppRootPath();
-            AZStd::string tempDir = tempDirOpt.has_value() ? AZStd::string(tempDirOpt->c_str()) : AZStd::string("/tmp");
-            AZStd::string resultPath = AZStd::string::format("%s/_ai_companion_result_%s.json", tempDir.c_str(), id.c_str());
-
-            // Remove any pre-existing file at this path (mitigates symlink attacks)
-            remove(resultPath.c_str());
-
-            AZStd::string fileRetrieveScript = AZStd::string::format(
-                "import sys, json, os\n"
-                "result = '{\"output\": \"\", \"error\": \"No result captured\"}'\n"
-                "if hasattr(sys, '_ai_companion_results') and '%s' in sys._ai_companion_results:\n"
-                "    result = sys._ai_companion_results.pop('%s')\n"
-                "fd = os.open(r'%s', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)\n"
-                "with os.fdopen(fd, 'w') as f:\n"
-                "    f.write(result)\n",
-                id.c_str(),
-                id.c_str(),
-                resultPath.c_str());
-
-            AzToolsFramework::EditorPythonRunnerRequestBus::Broadcast(
-                &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString, fileRetrieveScript.c_str(), false);
-
             // Read the result file
             AZStd::string output;
             AZStd::string error;
 
-            FILE* resultFile = fopen(resultPath.c_str(), "r");
-            if (resultFile)
+            AZStd::string resultContent;
             {
-                char readBuf[8192];
-                AZStd::string resultContent;
-                while (size_t bytesRead = fread(readBuf, 1, sizeof(readBuf), resultFile))
+                std::ifstream resultStream(resultPath.c_str(), std::ios::binary);
+                if (resultStream.is_open())
                 {
-                    resultContent.append(readBuf, bytesRead);
+                    std::ostringstream ss;
+                    ss << resultStream.rdbuf();
+                    resultContent = ss.str().c_str();
                 }
-                fclose(resultFile);
-                remove(resultPath.c_str());
-
+            }
+            if (!resultContent.empty())
+            {
                 rapidjson::Document resultDoc;
                 resultDoc.Parse(resultContent.c_str());
                 if (!resultDoc.HasParseError() && resultDoc.IsObject())
@@ -981,9 +986,10 @@ namespace AiCompanion
             else
             {
                 error = "Failed to retrieve script execution result";
-                // Ensure cleanup even if fopen failed
-                remove(resultPath.c_str());
             }
+
+            // Clean up the result file regardless of success/failure.
+            remove(resultPath.c_str());
 
             const char* status = error.empty() ? "ok" : "error";
             return BuildResponse(id, status, output, error, 0);

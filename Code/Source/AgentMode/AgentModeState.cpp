@@ -5,33 +5,56 @@
 
 #include "AgentModeState.h"
 
+#include <AzCore/Utils/Utils.h>
+
 #include <rapidjson/document.h>
 
 #include <chrono>
-#include <cstdio>
-#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <sstream>
 #include <string>
+
+#if defined(AZ_PLATFORM_WINDOWS)
+#include <direct.h>
+#define AI_COMPANION_MKDIR(path) _mkdir(path)
+#else
 #include <sys/stat.h>
+#define AI_COMPANION_MKDIR(path) ::mkdir(path, 0700)
+#endif
 
 namespace AiCompanion::AgentMode
 {
     namespace
     {
+        std::string ReadEnv(const char* name)
+        {
+            char buffer[4096];
+            auto outcome = AZ::Utils::GetEnv(buffer, name);
+            return outcome.IsSuccess() ? std::string(outcome.GetValue().data(), outcome.GetValue().size()) : std::string();
+        }
+
         std::string GetStateDir()
         {
-            if (const char* xdg = std::getenv("XDG_STATE_HOME"); xdg && *xdg)
+#if defined(AZ_PLATFORM_WINDOWS)
+            if (auto val = ReadEnv("LOCALAPPDATA"); !val.empty())
             {
-                return std::string(xdg) + "/o3de-ai-companion";
+                return val + "/o3de-ai-companion";
             }
-            if (const char* home = std::getenv("HOME"); home && *home)
+            if (auto val = ReadEnv("USERPROFILE"); !val.empty())
             {
-                return std::string(home) + "/.local/state/o3de-ai-companion";
+                return val + "/.o3de-ai-companion";
             }
-            // No HOME, no XDG_STATE_HOME. Fall back to /tmp so we never write
-            // into the cwd, but also do not break.
+#else
+            if (auto val = ReadEnv("XDG_STATE_HOME"); !val.empty())
+            {
+                return val + "/o3de-ai-companion";
+            }
+            if (auto val = ReadEnv("HOME"); !val.empty())
+            {
+                return val + "/.local/state/o3de-ai-companion";
+            }
+#endif
             return "/tmp/o3de-ai-companion";
         }
     } // namespace
@@ -96,39 +119,31 @@ namespace AiCompanion::AgentMode
         const auto path = GetObservedStatePath();
         const auto pathStr = std::string(path.c_str());
 
-        // Make sure the parent directory exists.
-        const auto slash = pathStr.find_last_of('/');
+        const auto slash = pathStr.find_last_of("/\\");
         if (slash != std::string::npos)
         {
             const std::string dir = pathStr.substr(0, slash);
-            ::mkdir(dir.c_str(), 0700);
+            AI_COMPANION_MKDIR(dir.c_str());
         }
 
         const auto now = std::chrono::system_clock::now();
         const auto observedAt = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
 
         const std::string tmp = pathStr + ".tmp";
-        FILE* f = std::fopen(tmp.c_str(), "w");
-        if (!f)
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out.is_open())
         {
             return;
         }
-        std::fprintf(
-            f,
-            "{\n"
-            "  \"enabled\": %s,\n"
-            "  \"suppress_dialogs\": %s,\n"
-            "  \"filter_installed\": %s,\n"
-            "  \"source_updated_at\": %lld,\n"
-            "  \"observed_at\": %lld,\n"
-            "  \"version\": 1\n"
-            "}\n",
-            state.enabled ? "true" : "false",
-            state.suppressDialogs ? "true" : "false",
-            filterInstalled ? "true" : "false",
-            static_cast<long long>(state.updatedAt),
-            static_cast<long long>(observedAt));
-        std::fclose(f);
+        out << "{\n"
+            << "  \"enabled\": " << (state.enabled ? "true" : "false") << ",\n"
+            << "  \"suppress_dialogs\": " << (state.suppressDialogs ? "true" : "false") << ",\n"
+            << "  \"filter_installed\": " << (filterInstalled ? "true" : "false") << ",\n"
+            << "  \"source_updated_at\": " << static_cast<long long>(state.updatedAt) << ",\n"
+            << "  \"observed_at\": " << static_cast<long long>(observedAt) << ",\n"
+            << "  \"version\": 1\n"
+            << "}\n";
+        out.close();
         std::rename(tmp.c_str(), pathStr.c_str());
     }
 } // namespace AiCompanion::AgentMode

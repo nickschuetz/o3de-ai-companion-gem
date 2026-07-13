@@ -15,6 +15,7 @@ ly_add_target(
         PUBLIC
             AZ::AzCore
             AZ::AzFramework
+            3rdParty::OpenSSL
 )
 
 ly_add_target(
@@ -48,6 +49,7 @@ if(PAL_TRAIT_BUILD_HOST_TOOLS)
                 AZ::AzCore
                 AZ::AzFramework
                 AZ::AzToolsFramework
+                3rdParty::OpenSSL
     )
 
     ly_add_target(

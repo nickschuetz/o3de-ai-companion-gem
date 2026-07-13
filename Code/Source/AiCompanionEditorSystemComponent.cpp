@@ -247,40 +247,44 @@ namespace AiCompanion
         }
 
         // Environment variable overrides (highest priority)
-        if (const char* envEnabled = std::getenv("AI_COMPANION_SERVER_ENABLED"))
+        auto readEnv = [](const char* name) -> AZStd::string
         {
-            AZStd::string val(envEnabled);
+            char buffer[4096];
+            auto outcome = AZ::Utils::GetEnv(buffer, name);
+            return outcome.IsSuccess() ? AZStd::string(outcome.GetValue()) : AZStd::string();
+        };
+
+        if (auto val = readEnv("AI_COMPANION_SERVER_ENABLED"); !val.empty())
+        {
             enabled = (val != "0" && val != "false");
         }
-        if (const char* envHost = std::getenv("AI_COMPANION_SERVER_HOST"))
+        if (auto val = readEnv("AI_COMPANION_SERVER_HOST"); !val.empty())
         {
-            host = envHost;
+            host = val;
         }
-        if (const char* envPort = std::getenv("O3DE_EDITOR_PORT"))
+        if (auto val = readEnv("O3DE_EDITOR_PORT"); !val.empty())
         {
-            portValue = std::atoi(envPort);
+            portValue = std::atoi(val.c_str());
         }
-        if (const char* envSecure = std::getenv("AI_COMPANION_SECURE_MODE"))
+        if (auto val = readEnv("AI_COMPANION_SECURE_MODE"); !val.empty())
         {
-            AZStd::string val(envSecure);
             secureMode = (val == "1" || val == "true");
         }
-        if (const char* envTls = std::getenv("AI_COMPANION_TLS_ENABLED"))
+        if (auto val = readEnv("AI_COMPANION_TLS_ENABLED"); !val.empty())
         {
-            AZStd::string val(envTls);
             tlsEnabled = (val == "1" || val == "true");
         }
-        if (const char* envCert = std::getenv("AI_COMPANION_TLS_CERT"))
+        if (auto val = readEnv("AI_COMPANION_TLS_CERT"); !val.empty())
         {
-            tlsCertPath = envCert;
+            tlsCertPath = val;
         }
-        if (const char* envKey = std::getenv("AI_COMPANION_TLS_KEY"))
+        if (auto val = readEnv("AI_COMPANION_TLS_KEY"); !val.empty())
         {
-            tlsKeyPath = envKey;
+            tlsKeyPath = val;
         }
-        if (const char* envLog = std::getenv("AI_COMPANION_LOG_LEVEL"))
+        if (auto val = readEnv("AI_COMPANION_LOG_LEVEL"); !val.empty())
         {
-            logLevelStr = envLog;
+            logLevelStr = val;
         }
 
         if (!enabled)
