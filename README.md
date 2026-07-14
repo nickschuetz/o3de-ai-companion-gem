@@ -120,7 +120,7 @@ complete game built with ~10 API calls.
 
 ## Requirements
 
-- O3DE 2305.0 or later
+- O3DE 2305.0 or later (also supports the 2.7.0, 24.09, and 26.05.0 engine versions)
 - **EditorPythonBindings** Gem (for Python API access)
 
 ## Platform Support

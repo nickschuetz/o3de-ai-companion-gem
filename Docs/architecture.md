@@ -164,7 +164,7 @@ Security features:
 - Configurable audit logging (Minimal, Standard, Verbose)
 - Maximum message size: 16 MiB
 - `execute_python` disabled in secure mode
-- Request ID sanitization (alphanumeric only, prevents path traversal)
+- Request ID sanitization (alphanumeric, hyphen, underscore) for audit logging
 - Injection-proof Python script encoding (hex-escaped byte literals)
 - Exclusive temp file creation (`O_EXCL`) with restrictive permissions (`0600`)
 

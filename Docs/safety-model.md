@@ -132,9 +132,12 @@ are supported for local development. See the
 
 ### Request ID Sanitization
 
-All request IDs received from clients are sanitized to alphanumeric characters,
-hyphens, and underscores only (max 64 characters). This prevents path traversal
-attacks when IDs are used in temporary file paths for Python result retrieval.
+Request IDs received from clients are sanitized to alphanumeric characters,
+hyphens, and underscores only (max 64 characters) in the connection handler, and
+are used for audit logging. Note that the `execute_python` result file is not
+guarded by this sanitization: `execute_python` runs arbitrary Python by design,
+so the result path is protected instead by exclusive file creation (`O_EXCL`, see
+Temp File Security) and by disabling `execute_python` in secure mode.
 
 ### Script Encoding
 
