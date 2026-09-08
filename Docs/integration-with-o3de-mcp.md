@@ -54,6 +54,13 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `get_entity_tree` | Entity hierarchy tree | No (C++ EBus) |
 | `validate_scene` | Scene validation | No (C++ EBus) |
 
+o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
+`get_capabilities()` to confirm the gem is present, and the three C++ request
+types behind its `get_scene_snapshot`, `get_entity_tree` and `validate_scene`
+tools. Everything else goes through `execute_python`. The C++ request types
+keep working when the AgentServer runs in secure mode, which disables
+`execute_python`.
+
 ### Response format
 
 ```json
@@ -132,20 +139,56 @@ AI Companion reduces token usage by:
 | TLS Enabled | `O3DE_EDITOR_TLS` | `0` (off) |
 | TLS Verify | `O3DE_EDITOR_TLS_VERIFY` | `0` (off when TLS on) |
 | TLS CA Cert | `O3DE_EDITOR_TLS_CA` | (none) |
+| Connect timeout | `O3DE_EDITOR_CONNECT_TIMEOUT` | `5` seconds |
+| Command timeout | `O3DE_EDITOR_TIMEOUT` | `600` seconds (the editor runs each script synchronously) |
+| Project path | `O3DE_PROJECT_PATH` | (auto-detected) |
+| Viewport capture settle time | `O3DE_CAPTURE_WAIT` | (o3de-mcp default) |
+
+Enabling TLS without `O3DE_EDITOR_TLS_VERIFY=1` encrypts the channel but does
+not authenticate the peer.
 
 The Gem automatically registers its Python path when the editor starts.
 
+## o3de-mcp Tool Surface
+
+o3de-mcp exposes 66 tools in five groups: capabilities (1), editor (40),
+introspection (3), project (17) and assets (5). AI Companion sits behind the
+editor group. Tools that matter most when working with this gem:
+
+- `run_editor_python` runs a script that can `import ai_companion`.
+- `begin_session` / `exec_in_session` / `end_session` keep a Python namespace
+  alive across calls, so `ai_companion` is imported once per session instead
+  of once per request. `Examples/TwinStickShooter/run_batched.py` uses them.
+- `get_scene_snapshot`, `get_entity_tree` and `validate_scene` return the
+  gem's C++ snapshot and validation output without any editor Python.
+- `instantiate_prefab` accepts gem-shipped prefabs such as
+  `Prefabs/Player_TwinStick.prefab`; it checks the asset catalog, not only the
+  project root, before calling the prefab system.
+- `set_transform`, `set_parent`, `assign_asset`, `capture_viewport` and the
+  console and CVAR tools cover the low-level operations the builders wrap.
+
+o3de-mcp requires the `mcp` 2.x Python SDK. A stale 1.x install in the same
+interpreter makes the server fail at import time, which the MCP client reports
+as a closed connection.
+
 ## Capability Detection
 
-Use o3de-mcp's `get_capabilities()` tool to check if AI Companion is available:
+`get_capabilities()` probes the editor port and, when it answers, sends the
+AgentServer's native `get_api_version` request. The response distinguishes a
+bare socket from the gem:
 
-```python
-# In the AI agent
-capabilities = get_capabilities()
-# If AI Companion is installed, run_editor_python can import ai_companion
+```json
+"editor": {
+  "status": "connected",
+  "ai_companion_gem": true,
+  "agent_server": {"protocol_version": 1, "gem_version": "0.3.0", "api_version": "1.0"}
+}
 ```
 
-Then verify from within the editor:
+`ai_companion_gem` is `false` (with a hint) when only the legacy RemoteConsole
+answered, in which case `import ai_companion` will not work either.
+
+To confirm the Python API from within the editor:
 
 ```python
 run_editor_python('''
