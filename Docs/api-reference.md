@@ -144,6 +144,28 @@ Available prefabs: `Player_TwinStick`, `Enemy_Chaser`, `Enemy_Turret`,
 `Projectile_Basic`, `Pickup_Health`, `Pickup_Ammo`, `Environment_Ground`,
 `Lighting_ThreePoint`, `Camera_TopDown`.
 
+The prefab file is located on disk before the prefab system is asked for it.
+`PrefabPublicRequestBus.InstantiatePrefab` crashes the editor when the template
+cannot be loaded (observed on O3DE 26.10.0), and a C++ segfault cannot be caught
+from Python, so an unknown name never reaches the bus. Error responses carry a
+`details.code`:
+
+| Code | Meaning |
+|------|---------|
+| `invalid_prefab_name` | Empty name, or one containing `/`, `\` or `..` |
+| `prefab_not_found` | No `Prefabs/<name>.prefab` under the gem `Assets` folder, the project root or the engine root (`details.searched` lists them); the prefab system was not called |
+| `instantiate_failed` | The prefab system returned a failed outcome |
+
+On success `data` contains `prefab`, `path`, `position`, `spawned: true` and the
+new `entity_id`.
+
+### `find_prefab_file(prefab_name) -> dict`
+The lookup behind `spawn_prefab`, without instantiating anything. Returns a
+plain dict (not JSON) with `relative_path` (`Prefabs/<name>.prefab`), `found`
+(absolute path, or `None`) and `searched` (the roots checked, in order). Useful
+for validating a name before a batch, or for locating a gem prefab from code
+that will call the prefab bus itself.
+
 ## Undo/Rollback
 
 ### `begin_undo_batch(label="AI Operation") -> str`

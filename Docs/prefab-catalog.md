@@ -7,6 +7,14 @@ from ai_companion.api import spawn_prefab
 spawn_prefab("Player_TwinStick", position=[0, 0, 1])
 ```
 
+Names are checked against the files on disk first. An unknown name returns a
+`prefab_not_found` error and the prefab system is never called, because asking
+O3DE to instantiate a template it cannot load crashes the editor (see
+`spawn_prefab` in the [API reference](api-reference.md)). Through o3de-mcp,
+`instantiate_prefab("Prefabs/Player_TwinStick.prefab")` reaches the same prefabs;
+its guard accepts them via the asset catalog even though they live in the gem's
+`Assets` folder rather than the project.
+
 ## Player
 
 ### Player_TwinStick

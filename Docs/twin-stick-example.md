@@ -9,6 +9,18 @@ AI Companion API. The entire game is created in ~10 API calls.
 2. Project built and editor running (AgentServer auto-starts on port 4600)
 3. o3de-mcp connected (or editor Python console available)
 
+To run the whole walkthrough unattended, with the editor open, use the batched
+runner instead of pasting each step:
+
+```bash
+python Examples/TwinStickShooter/run_batched.py
+```
+
+It sends each step below as its own request inside one o3de-mcp session, so
+the editor's main thread drains between steps. See
+[Examples/TwinStickShooter/README.md](../Examples/TwinStickShooter/README.md)
+for the requirements (o3de-mcp with the `mcp` 2.x SDK).
+
 ## Step 1: Create the Arena
 
 ```python
