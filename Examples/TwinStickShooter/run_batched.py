@@ -18,8 +18,9 @@ The gem's ``Editor/Scripts`` folder and this example directory are put on
 ``sys.path`` once, the ``steps`` module is imported once, and every step
 then reuses that namespace instead of rebuilding it per request.
 
-Requires o3de-mcp with the ``mcp`` 2.x SDK (``pip install -e .`` from the
-o3de-mcp checkout, or add its ``src/`` to PYTHONPATH).
+Requires o3de-mcp 0.4.0 or later, which pulls in the ``mcp`` 2.x SDK it
+needs. Install it from PyPI (``pip install o3de-mcp``), or, to run against a
+checkout, ``pip install -e .`` there or add its ``src/`` to PYTHONPATH.
 """
 
 import asyncio
@@ -33,7 +34,8 @@ try:
 except ImportError as exc:
     sys.stderr.write(
         "Could not import o3de_mcp (needs the mcp 2.x SDK). Install it with "
-        "`pip install -e .` from the o3de-mcp checkout, or add its src/ to PYTHONPATH.\n"
+        "`pip install o3de-mcp` (0.4.0 or later), or `pip install -e .` from an "
+        "o3de-mcp checkout, or add its src/ to PYTHONPATH.\n"
         f"  Reason: {exc}\n"
     )
     raise
