@@ -121,6 +121,10 @@ safe, read-only operations via C++ EBus:
 - `validate_scene` — scene validation
 
 This limits the attack surface when the server is exposed beyond localhost.
+o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree` and
+`validate_scene` tools use only these request types, so they keep working in
+secure mode; `run_editor_python`, the session tools and the `ai_companion`
+Python API do not.
 
 ### TLS Encryption
 

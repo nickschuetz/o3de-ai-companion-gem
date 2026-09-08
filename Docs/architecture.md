@@ -23,7 +23,7 @@ flowchart TB
         direction TB
 
         subgraph PythonAPI["Python API Layer  (Editor/Scripts/ai_companion/)"]
-            API["api.py<br/>28+ public functions"]
+            API["api.py<br/>29+ public functions"]
 
             subgraph Builders["Builders"]
                 EB["EntityBuilder"]
@@ -67,7 +67,8 @@ flowchart TB
 
     Agent -->|"MCP tool calls"| MCP
     Agent -->|"TCP JSON"| AgentSrv
-    MCP -->|"run_editor_python()"| API
+    MCP -->|"run_editor_python() / sessions"| API
+    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, validate_scene"| AgentSrv
     AgentSrv --> AS
     AS -->|"request queue"| SysComp
 
@@ -152,6 +153,13 @@ The AgentServer uses a length-prefixed JSON protocol over TCP:
 
 Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
 `get_entity_tree`, `validate_scene`, `execute_python`.
+
+o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
+inside its `get_capabilities` tool to confirm the gem is present and report its
+versions, the three C++ snapshot types behind its `get_scene_snapshot`,
+`get_entity_tree` and `validate_scene` tools, and `execute_python` for
+everything else (`run_editor_python` and the `begin_session` /
+`exec_in_session` tools).
 
 Requests that require main-thread access (`get_scene_snapshot`, `get_entity_tree`,
 `validate_scene`, `execute_python`) are dispatched via a lock-free queue from the
