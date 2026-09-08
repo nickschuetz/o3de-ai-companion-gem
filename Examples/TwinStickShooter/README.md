@@ -31,8 +31,10 @@ the `SetName` race that affects the all-in-one form on some O3DE builds.
 python Examples/TwinStickShooter/run_batched.py
 ```
 
-The runner imports `o3de_mcp.tools.editor._pool` for the transport. Install
-o3de-mcp with `pip install -e .` from its checkout before running.
+The runner opens one persistent editor Python session through o3de-mcp's
+`begin_session` / `exec_in_session` tools, imports `steps` once, and runs
+each step in that namespace. It needs o3de-mcp with the `mcp` 2.x SDK;
+install it with `pip install -e .` from the o3de-mcp checkout before running.
 
 ### Quick-demo pattern, all-in-one
 

@@ -33,7 +33,7 @@ O3DE Engine (entities, components, physics, rendering)
 
 ### Prerequisites
 
-1. O3DE 2305.0 or later installed (the 2.7.0, 24.09, and 26.05.0 engine versions are also supported)
+1. O3DE 2305.0 or later installed (the 2.7.0, 24.09, 26.05.0, and 26.10.0 engine versions are also supported; 26.10.0 is what the test suites run against)
 2. A project created with O3DE
 3. The following Gem enabled in your project:
    - **EditorPythonBindings** — Provides the `azlmbr` Python API

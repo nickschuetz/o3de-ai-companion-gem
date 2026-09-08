@@ -1,95 +1,124 @@
 # Copyright (c) Contributors to the Open 3D Engine Project.
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
-"""Drive the TwinStickShooter example via discrete o3de-mcp requests.
+"""
+Batched TwinStickShooter driver.
 
-This is the recommended invocation pattern for the example. Each step is
-its own `run_editor_python` call, so the editor's main thread drains and
-the prefab system finalizes newly-created entities between batches. That
-sidesteps the `SetName` race that affects the single-call setup.py path.
+Runs the example as a sequence of separate editor requests, one per step,
+so the editor's main thread drains between them. This avoids the SetName
+race that affects the all-in-one script on some O3DE builds.
 
 Usage (from outside the editor, with the editor running):
 
     python Examples/TwinStickShooter/run_batched.py
 
-The script imports o3de-mcp's transport layer for the AgentServer protocol.
-Make sure o3de-mcp is installed and that the editor is running with the
-AiCompanion and EditorPythonBindings gems enabled.
+The steps run inside one persistent editor Python session, opened with
+o3de-mcp's ``begin_session`` tool and driven with ``exec_in_session``.
+The gem's ``Editor/Scripts`` folder and this example directory are put on
+``sys.path`` once, the ``steps`` module is imported once, and every step
+then reuses that namespace instead of rebuilding it per request.
 
-You can also use this file as a reference for building your own driver:
-each entry in STEPS is a small Python snippet that gets sent to the editor
-through one AgentServer request.
+Requires o3de-mcp with the ``mcp`` 2.x SDK (``pip install -e .`` from the
+o3de-mcp checkout, or add its ``src/`` to PYTHONPATH).
 """
 
 import asyncio
+import json
 import os
 import sys
 
-# Pull o3de-mcp's transport. We assume the user has it on the Python path or
-# installed in editable mode in a sibling repo.
 try:
-    from o3de_mcp.tools.editor import _pool  # type: ignore
+    from mcp.server import MCPServer
+    from o3de_mcp.tools.editor import register_editor_tools
 except ImportError as exc:
     sys.stderr.write(
-        "Could not import o3de_mcp. Install it with `pip install -e .` from "
-        "the o3de-mcp checkout, or add its src/ to PYTHONPATH.\n"
+        "Could not import o3de_mcp (needs the mcp 2.x SDK). Install it with "
+        "`pip install -e .` from the o3de-mcp checkout, or add its src/ to PYTHONPATH.\n"
         f"  Reason: {exc}\n"
     )
     raise
 
 
 GEM_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
-PRELUDE = (
+# Runs once, in the session namespace. Dropping cached ai_companion modules
+# lets edits on disk take effect on the next run without restarting the editor.
+SETUP = (
     "import sys, importlib\n"
     f"_scripts = r'{GEM_ROOT}/Editor/Scripts'\n"
-    f"_example = r'{os.path.dirname(os.path.abspath(__file__))}'\n"
+    f"_example = r'{EXAMPLE_DIR}'\n"
     "for _p in (_scripts, _example):\n"
     "    if _p not in sys.path:\n"
     "        sys.path.insert(0, _p)\n"
-    "# Drop cached ai_companion modules so edits on disk take effect.\n"
     "_drop = [m for m in list(sys.modules) if m == 'ai_companion' or m.startswith('ai_companion.') or m == 'steps']\n"
     "for _m in _drop:\n"
     "    del sys.modules[_m]\n"
+    "import steps\n"
+    "print('session ready')\n"
 )
 
 
 STEPS = [
-    ("open_level", PRELUDE + "import steps; print(steps.ensure_level_open())\n"),
-    ("arena", PRELUDE + "import steps; print(steps.build_arena(size=30, wall_height=3))\n"),
-    ("player", PRELUDE + "import steps; print(steps.add_player(position=(0, 0, 1), health=100))\n"),
-    ("camera", PRELUDE + "import steps; print(steps.add_camera(offset=(0, 0, 25)))\n"),
-    (
-        "enemies",
-        PRELUDE
-        + "import steps\n"
-        + "for r in steps.add_enemies():\n"
-        + "    print(r)\n",
-    ),
-    (
-        "pickups",
-        PRELUDE
-        + "import steps\n"
-        + "for r in steps.add_pickups():\n"
-        + "    print(r)\n",
-    ),
-    ("verify", PRELUDE + "import steps; print(steps.verify_scene())\n"),
+    ("open_level", "print(steps.ensure_level_open())\n"),
+    ("arena", "print(steps.build_arena(size=30, wall_height=3))\n"),
+    ("player", "print(steps.add_player(position=(0, 0, 1), health=100))\n"),
+    ("camera", "print(steps.add_camera(offset=(0, 0, 25)))\n"),
+    ("enemies", "for r in steps.add_enemies():\n    print(r)\n"),
+    ("pickups", "for r in steps.add_pickups():\n    print(r)\n"),
+    ("verify", "print(steps.verify_scene())\n"),
 ]
 
 
+def _failed(response: str) -> bool:
+    """True when a tool response is a transport error or a session error."""
+    lowered = response.lower()
+    if "could not connect" in lowered or "timed out" in lowered:
+        return True
+    stripped = response.strip()
+    if stripped.startswith("{"):
+        try:
+            parsed = json.loads(stripped.splitlines()[0])
+        except json.JSONDecodeError:
+            return False
+        return parsed.get("status") == "error" or "error" in parsed
+    return False
+
+
+async def _call(mcp: MCPServer, tool: str, **kwargs) -> str:
+    content = (await mcp.call_tool(tool, kwargs)).content
+    return content[0].text if content else ""
+
+
 async def main() -> int:
-    for step_name, script in STEPS:
-        print(f"--- step: {step_name} ---", flush=True)
-        response = await _pool.send_script(script, timeout=60.0)
-        # Truncate huge responses for readability.
-        out = response if len(response) < 2000 else response[:2000] + "...<truncated>"
-        print(out)
-        if '"status": "error"' in response or "Could not connect" in response or "timed out" in response.lower():
-            print(f"step {step_name} reported error/timeout", flush=True)
-            return 1
-        await asyncio.sleep(0.5)
-    return 0
+    # Each step is short; keep the per-request timeout well under the 600s default.
+    os.environ.setdefault("O3DE_EDITOR_TIMEOUT", "120")
+
+    mcp = MCPServer("twin-stick-runner")
+    register_editor_tools(mcp)
+
+    opened = await _call(mcp, "begin_session")
+    if _failed(opened):
+        print(opened)
+        print("could not open an editor session", flush=True)
+        return 1
+    session_id = json.loads(opened.strip().splitlines()[-1])["session_id"]
+    print(f"--- session {session_id} ---", flush=True)
+
+    try:
+        for step_name, script in (("setup", SETUP), *STEPS):
+            print(f"--- step: {step_name} ---", flush=True)
+            response = await _call(mcp, "exec_in_session", session_id=session_id, script=script)
+            # Truncate huge responses for readability.
+            out = response if len(response) < 2000 else response[:2000] + "...<truncated>"
+            print(out)
+            if _failed(response):
+                print(f"step {step_name} reported error/timeout", flush=True)
+                return 1
+            await asyncio.sleep(0.5)
+        return 0
+    finally:
+        await _call(mcp, "end_session", session_id=session_id)
 
 
 if __name__ == "__main__":
