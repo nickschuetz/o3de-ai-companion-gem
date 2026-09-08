@@ -33,8 +33,9 @@ python Examples/TwinStickShooter/run_batched.py
 
 The runner opens one persistent editor Python session through o3de-mcp's
 `begin_session` / `exec_in_session` tools, imports `steps` once, and runs
-each step in that namespace. It needs o3de-mcp with the `mcp` 2.x SDK;
-install it with `pip install -e .` from the o3de-mcp checkout before running.
+each step in that namespace. It needs o3de-mcp 0.4.0 or later. Install it
+from PyPI with `pip install o3de-mcp`, or to run against a checkout use
+`pip install -e .` there (or put its `src/` on `PYTHONPATH`).
 
 ### Quick-demo pattern, all-in-one
 

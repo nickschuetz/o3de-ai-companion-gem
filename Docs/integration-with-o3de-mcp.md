@@ -167,7 +167,10 @@ editor group. Tools that matter most when working with this gem:
 - `set_transform`, `set_parent`, `assign_asset`, `capture_viewport` and the
   console and CVAR tools cover the low-level operations the builders wrap.
 
-o3de-mcp requires the `mcp` 2.x Python SDK. A stale 1.x install in the same
+o3de-mcp 0.4.0 or later is what this page describes (native snapshot tools,
+gem detection). Install it from PyPI with `pip install o3de-mcp`, or work
+against a checkout with `pip install -e .` (or its `src/` on `PYTHONPATH`).
+Either way it requires the `mcp` 2.x Python SDK. A stale 1.x install in the same
 interpreter makes the server fail at import time, which the MCP client reports
 as a closed connection.
 
