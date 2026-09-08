@@ -546,12 +546,65 @@ def get_agent_mode_status() -> str:
     return get_status()
 
 
+def _gem_assets_root() -> str:
+    """Absolute path of the gem's ``Assets`` folder, derived from this file."""
+    import os
+
+    gem_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    return os.path.join(gem_root, "Assets")
+
+
+def _prefab_search_roots() -> List[str]:
+    """Roots the editor resolves a relative prefab path against.
+
+    ``PrefabLoader::GetFullPath`` looks a relative path up through the Asset
+    Processor, so any registered scan folder is valid. The gem's own ``Assets``
+    folder is one of them, and it sits outside the project root. The project
+    and engine roots are added when running inside the editor.
+    """
+    roots = [_gem_assets_root()]
+    try:
+        import azlmbr.paths as paths
+
+        for attr in ("projectroot", "engroot"):
+            value = getattr(paths, attr, "")
+            if value and value not in roots:
+                roots.append(value)
+    except ImportError:
+        pass
+    return roots
+
+
+def find_prefab_file(prefab_name: str) -> Dict[str, Any]:
+    """Locate ``Prefabs/<prefab_name>.prefab`` on disk without touching the prefab system.
+
+    Returns a dict with ``relative_path``, ``found`` (absolute path or ``None``)
+    and ``searched`` (the roots that were checked).
+    """
+    import os
+
+    relative_path = f"Prefabs/{prefab_name}.prefab"
+    searched = _prefab_search_roots()
+    for root in searched:
+        candidate = os.path.join(root, relative_path)
+        if os.path.isfile(candidate):
+            return {"relative_path": relative_path, "found": candidate, "searched": searched}
+    return {"relative_path": relative_path, "found": None, "searched": searched}
+
+
 @with_undo_batch("Spawn Prefab")
 def spawn_prefab(
     prefab_name: str,
     position: Optional[List[Number]] = None,
 ) -> str:
     """Instantiate an AiCompanion prefab at the given position.
+
+    The prefab file is located on disk before the prefab system is asked to
+    instantiate it. ``PrefabPublicRequestBus.InstantiatePrefab`` crashes the
+    editor when the template cannot be loaded (a null DOM is dereferenced in
+    ``PrefabDomUtils::GetTemplateSourcePaths``, observed on O3DE 26.10.0), and
+    a C++ segfault cannot be caught from Python, so an unknown name must never
+    reach the bus.
 
     Args:
         prefab_name: Name of the prefab (e.g., "Player_TwinStick").
@@ -562,28 +615,55 @@ def spawn_prefab(
     """
     pos = position or [0, 0, 0]
 
+    name = (prefab_name or "").strip()
+    if not name or any(sep in name for sep in ("/", "\\", "..")):
+        return error(f"Invalid prefab name: {prefab_name!r}", details={"code": "invalid_prefab_name"})
+
+    valid, msg = validate_position(pos)
+    if not valid:
+        return error(msg, details={"code": "invalid_position"})
+
+    located = find_prefab_file(name)
+    if located["found"] is None:
+        return error(
+            f"Prefab not found: {located['relative_path']} (searched {', '.join(located['searched'])}). "
+            "The prefab system was not called, because instantiating a missing prefab crashes the editor.",
+            details={"code": "prefab_not_found", "searched": located["searched"]},
+        )
+
     try:
         import azlmbr.prefab as prefab_api
         import azlmbr.bus as bus
+        import azlmbr.entity as entity
         from .utils.transform_helpers import to_vector3
 
-        prefab_path = f"Prefabs/{prefab_name}.prefab"
         vec = to_vector3(pos)
-
         result = prefab_api.PrefabPublicRequestBus(
-            bus.Broadcast, "InstantiatePrefab", prefab_path, None, vec
+            bus.Broadcast, "InstantiatePrefab", located["relative_path"], entity.EntityId(), vec
         )
 
-        return success({
-            "prefab": prefab_name,
+        if hasattr(result, "IsSuccess") and not result.IsSuccess():
+            err = result.GetError() if hasattr(result, "GetError") else "unknown"
+            return error(f"InstantiatePrefab failed: {err}", details={"code": "instantiate_failed"})
+
+        spawned: Dict[str, Any] = {
+            "prefab": name,
+            "path": located["relative_path"],
             "position": pos,
             "spawned": True,
-        })
+        }
+        if hasattr(result, "GetValue"):
+            from .utils.id_helpers import id_to_jsonable
+
+            spawned["entity_id"] = id_to_jsonable(result.GetValue())
+        return success(spawned)
 
     except ImportError:
         return success({
-            "prefab": prefab_name,
+            "prefab": name,
+            "path": located["relative_path"],
             "position": pos,
             "spawned": False,
             "note": "Not running inside O3DE Editor",
         })
+
