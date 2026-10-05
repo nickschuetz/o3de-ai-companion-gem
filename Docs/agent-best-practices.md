@@ -194,7 +194,6 @@ then `exec_in_session` per step, then `end_session`. Imports and variables
 persist across steps, each step is its own request so the editor's main thread
 drains between them (which avoids the entity-naming race a single long script
 can hit), and a failed step leaves the earlier ones inspectable.
-`Examples/TwinStickShooter/run_batched.py` is the reference for this pattern.
 
 For read-only checks that need no Python at all, o3de-mcp's `get_scene_snapshot`,
 `get_entity_tree` and `validate_scene` tools call the gem's C++ request types

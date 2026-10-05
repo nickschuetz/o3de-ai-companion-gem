@@ -3,6 +3,17 @@
 Gameplay Lua scripts in `Assets/Scripts/Lua/`. Attach to entities via the
 Python API or by adding a Lua Script component in the editor.
 
+> **Status: these scripts are building blocks, not a verified working game.**
+> `health_pickup.lua` and `damage_on_contact.lua` do nothing on contact: they
+> were written against `PhysicsComponentNotificationBus`, which does not exist
+> in current O3DE (26.05, 26.10), so their handler connections are commented
+> out pending a port to the PhysX 5 trigger and collision events. Mouse aim in
+> `twin_stick_movement.lua` was observed not to dispatch in the editor's Play
+> mode (May 2026); it has not been tested in a GameLauncher build. The
+> Twin-Stick Shooter example that combined these scripts was never verified
+> end to end as a playable game and has been archived (git tag
+> `archive/twin-stick-example`).
+
 ## twin_stick_movement.lua
 
 Top-down twin-stick movement controller.

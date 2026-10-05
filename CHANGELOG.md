@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+- The Twin-Stick Shooter example (`Examples/TwinStickShooter/`), its walkthrough (`Docs/twin-stick-example.md`) and the runner's smoke test. The example built its scene but was never verified end to end as a playable game: the pickup and contact-damage scripts are no-ops because `PhysicsComponentNotificationBus` does not exist in current O3DE, and mouse aim was observed not to dispatch in editor Play mode. It is preserved at the git tag `archive/twin-stick-example`. The API it used (`bootstrap_twin_stick_arena`, `create_player(movement="twin_stick")`, the prefabs and Lua scripts) is unchanged; `Docs/lua-scripts.md` now states the scripts' known limitations. References to the example and the "full game in ~10 calls" claim are removed from the README and docs.
+
 ### Added
 - `find_prefab_file(prefab_name)` in `ai_companion.api`: locates `Prefabs/<name>.prefab` on disk under the gem's `Assets` folder, then the project and engine roots, without touching the prefab system. `Tests/test_spawn_prefab.py` runs `spawn_prefab` against stub `azlmbr` modules and asserts the prefab bus is never reached for an unknown name.
 - Agent Mode for AI-driven editor workflows. Two layers: persistent editor preferences (welcome dialog off, auto-load last level on) via `configure_editor_prefs_for_agent()`, and runtime dialog suppression via a JSON sidecar at `$XDG_STATE_HOME/o3de-ai-companion/agent_mode.json`. The editor system component polls the sidecar on `SystemTickBus` and installs a Qt event filter on `qApp` when enabled. Sidecar contract documented in `Docs/agent-mode.md`. New API: `set_agent_mode`, `get_agent_mode`, `configure_editor_prefs_for_agent`, `get_agent_mode_status`.
