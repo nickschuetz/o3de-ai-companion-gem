@@ -96,7 +96,7 @@ print(create_player("Player", position=[0,0,1], movement="twin_stick"))
 ''')
 ```
 
-### Full Game Comparison
+### Per-Operation Comparison
 
 | Operation | Raw o3de-mcp | With AI Companion |
 |-----------|-------------|-------------------|
@@ -104,7 +104,6 @@ print(create_player("Player", position=[0,0,1], movement="twin_stick"))
 | Create arena | ~20 calls | 1 call |
 | Create enemy | ~6 calls | 1 call |
 | Create pickup | ~5 calls | 1 call |
-| Full twin-stick game | ~70 calls | ~10 calls |
 
 ## Token Efficiency
 
@@ -158,7 +157,7 @@ editor group. Tools that matter most when working with this gem:
 - `run_editor_python` runs a script that can `import ai_companion`.
 - `begin_session` / `exec_in_session` / `end_session` keep a Python namespace
   alive across calls, so `ai_companion` is imported once per session instead
-  of once per request. `Examples/TwinStickShooter/run_batched.py` uses them.
+  of once per request.
 - `get_scene_snapshot`, `get_entity_tree` and `validate_scene` return the
   gem's C++ snapshot and validation output without any editor Python.
 - `instantiate_prefab` accepts gem-shipped prefabs such as

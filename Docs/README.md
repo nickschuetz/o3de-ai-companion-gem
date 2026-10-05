@@ -127,7 +127,6 @@ All inputs are validated before reaching O3DE APIs:
 - [Prefab Catalog](prefab-catalog.md), available prefabs
 - [Lua Scripts](lua-scripts.md), gameplay script documentation
 - [Safety Model](safety-model.md), security architecture
-- [Twin-Stick Example](twin-stick-example.md), example walkthrough
 - [Agent Mode](agent-mode.md), suppress human-only UI for unattended sessions
 - [o3de-mcp Integration](integration-with-o3de-mcp.md), using with o3de-mcp
 - [Agent Best Practices](agent-best-practices.md), token efficiency and performance

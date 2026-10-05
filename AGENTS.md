@@ -25,7 +25,6 @@ Editor/Scripts/ai_companion/ Python API package
   utils/                    Component registry, JSON helpers, transform helpers
   version.py                Version constants (__version__, API_VERSION)
 Tests/                      Python unit tests (unittest)
-Examples/TwinStickShooter/  Example game
 Docs/                       Documentation
 ```
 

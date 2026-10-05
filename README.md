@@ -101,11 +101,6 @@ create_camera("MainCamera", camera_type="top_down")
 print(get_scene_snapshot())
 ```
 
-## Examples
-
-See the [Examples/TwinStickShooter/](Examples/TwinStickShooter/) directory for a
-complete game built with ~10 API calls.
-
 ## Documentation
 
 - [Architecture](Docs/architecture.md)
@@ -114,7 +109,6 @@ complete game built with ~10 API calls.
 - [Prefab Catalog](Docs/prefab-catalog.md)
 - [Lua Scripts](Docs/lua-scripts.md)
 - [Safety Model](Docs/safety-model.md)
-- [Twin-Stick Example](Docs/twin-stick-example.md)
 - [Integration with o3de-mcp](Docs/integration-with-o3de-mcp.md)
 - [Agent Best Practices](Docs/agent-best-practices.md)
 
