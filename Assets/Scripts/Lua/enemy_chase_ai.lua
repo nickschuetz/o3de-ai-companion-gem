@@ -83,8 +83,10 @@ function EnemyChaseAI:OnEventBegin(value)
         return
     end
     self.health = self.health - (tonumber(value) or 0)
+    Debug.Log("[AiCompanion] enemy took damage " .. tostring(value) .. " health " .. tostring(self.health))
     if self.health <= 0 then
         self.defeated = true
+        Debug.Log("[AiCompanion] enemy defeated")
         -- Tell every registered score tracker, then remove ourselves.
         for _, trackerId in pairs(bodies("ScoreTracker")) do
             GameplayNotificationBus.Event.OnEventBegin(
@@ -95,11 +97,20 @@ function EnemyChaseAI:OnEventBegin(value)
 end
 
 function EnemyChaseAI:FindTarget()
-    -- Find the entity with the target tag. The event reflects to scripting as
-    -- "Get Entity By Tag"; O3DE's Lua binding strips spaces, so the callable name
-    -- is GetEntityByTag, and it returns a single EntityId (not a list).
+    -- Prefer the shared body registry (twin_stick_movement.lua lists the player
+    -- under "Player"), which needs no Tag component on the target. Fall back to
+    -- the Tag component through TagGlobalRequestBus; the event reflects to
+    -- scripting as "Get Entity By Tag", and O3DE's Lua binding strips spaces, so
+    -- the callable name is GetEntityByTag, returning a single EntityId.
+    local wanted = self.Properties.TargetTag or "Player"
+    for _, id in pairs(bodies(wanted)) do
+        if id ~= nil and id:IsValid() then
+            self.targetEntityId = id
+            return true
+        end
+    end
     local target = TagGlobalRequestBus.Event.GetEntityByTag(
-        Crc32(self.Properties.TargetTag))
+        Crc32(wanted))
     if target ~= nil and target:IsValid() then
         self.targetEntityId = target
         return true
@@ -140,12 +151,24 @@ function EnemyChaseAI:OnTick(deltaTime, scriptTime)
     local distance = self:GetDistanceToTarget()
 
     -- State transitions
+    local nextState
     if distance > self.Properties.DetectionRadius then
-        self.state = STATE_IDLE
+        nextState = STATE_IDLE
     elseif distance <= self.Properties.AttackRange then
-        self.state = STATE_ATTACK
+        nextState = STATE_ATTACK
     else
-        self.state = STATE_CHASE
+        nextState = STATE_CHASE
+    end
+    if nextState ~= self.state then
+        self.state = nextState
+        local me = TransformBus.Event.GetWorldTranslation(self.entityId)
+        local them = self.targetEntityId and TransformBus.Event.GetWorldTranslation(self.targetEntityId) or nil
+        local function fmt(v)
+            if not v then return "nil" end
+            return string.format("(%.1f, %.1f, %.1f)", v.x, v.y, v.z)
+        end
+        Debug.Log("[AiCompanion] enemy state " .. nextState .. " distance " .. string.format("%.2f", distance)
+            .. " self " .. fmt(me) .. " target " .. fmt(them))
     end
 
     -- State behavior
@@ -174,15 +197,23 @@ function EnemyChaseAI:Chase(deltaTime)
         RigidBodyRequestBus.Event.SetLinearVelocity(
             self.entityId, Vector3(velocity.x, velocity.y, 0))
 
-        -- Face the target
-        local angle = atan2(direction.x, direction.y)
-        TransformBus.Event.SetWorldRotationQuaternion(
-            self.entityId, Quaternion.CreateRotationZ(-angle))
+        -- Face the target through angular velocity. Writing the transform of a
+        -- simulated rigid body every tick teleports the body back to that pose
+        -- each step, so the linear velocity above never moves it (the launcher
+        -- warns "Transform of Entity ... with simulated body was set manually").
+        local tm = TransformBus.Event.GetWorldTM(self.entityId)
+        local forward = tm and tm:GetBasisY() or Vector3(0, 1, 0)
+        local cross = forward.x * direction.y - forward.y * direction.x
+        local dot = forward.x * direction.x + forward.y * direction.y
+        local turn = atan2(cross, dot)
+        RigidBodyRequestBus.Event.SetAngularVelocity(
+            self.entityId, Vector3(0, 0, turn * 4.0))
     end
 end
 
 function EnemyChaseAI:Attack()
     if self.attackTimer <= 0 then
+        Debug.Log("[AiCompanion] enemy attack " .. tostring(self.Properties.AttackDamage))
         -- Deal damage to the target (via a game event bus if available)
         GameplayNotificationBus.Event.OnEventBegin(
             GameplayNotificationId(self.targetEntityId, "TakeDamage"),

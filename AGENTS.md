@@ -102,6 +102,7 @@ matching the file type:
 - C++: `AZ::AzTest` (Google Test), files in `Code/Source/Tests/`
 - Run Python tests: `python -m pytest Tests/` or `python -m unittest discover Tests`
 - Live editor tests (`Tests/live/`, opt-in): `O3DE_LIVE_EDITOR_TEST=1 python -m pytest Tests/live` against a running editor, or `scripts/ci_live_test.sh` to bring one up on Xvfb first
+- Launcher gameplay check: `scripts/ci_launcher_test.sh` builds an arena level through the API, runs it in the project's GameLauncher, and asserts on the Lua scripts' `[AiCompanion] ...` log markers (`Tests/live/test_launcher.py`)
 
 ## SBOM
 

@@ -107,6 +107,34 @@ AICOMPANION_PROJECT=/path/to/project \
 LIVE_SECURE=1 bash scripts/ci_live_test.sh
 ```
 
+## The launcher gameplay check
+
+`scripts/ci_launcher_test.sh` is the only check that runs the gem's Lua in a
+GameLauncher, where PhysX contact callbacks and the prefab bus are not
+available to scripts (see `Docs/lua-scripts.md`). It brings up AssetProcessor,
+Xvfb and the Editor, creates a level and builds a small arena through the gem
+API (`Tests/live/build_launcher_arena.py`: a twin-stick player, a health pickup
+inside its pickup radius, a chasing enemy, and a contact-damage hazard on the
+enemy's start position), saves it, waits for AssetProcessor to produce the
+spawnable, stops the Editor, runs the project's GameLauncher with `+LoadLevel`,
+waits for the level-load line and then for the scripts' `[AiCompanion] ...`
+markers in `user/log/Game.log`, and runs `Tests/live/test_launcher.py` on that
+log. It needs no input: the player registers itself, the pickup collects by
+distance, the enemy finds and attacks the player, and the hazard damages the
+enemy. Each test asserts one of those happened at runtime, plus one that no
+Lua runtime error appeared.
+
+```bash
+O3DE_ENGINE_PATH=/path/to/o3de \
+AICOMPANION_PROJECT=/path/to/project \
+bash scripts/ci_launcher_test.sh
+```
+
+The project's `<Project>.GameLauncher` target is built if it is missing. The
+generated level (`Levels/AiCompanionLauncherArena`) is deleted afterwards;
+`LAUNCHER_KEEP=1` keeps it and the processes. The workflow runs this as the
+`launcher-test` job after the live suite, on the same `ci:live` label.
+
 To run the tests against an editor you already have open, skip the script:
 
 ```bash
