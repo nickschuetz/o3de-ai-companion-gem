@@ -45,7 +45,7 @@ Stationary turret that fires projectiles at the player.
 ### Projectile_Basic
 Basic projectile with damage on contact and auto-destroy.
 - **Mesh**: Sphere (0.2 scale)
-- **Physics**: Dynamic rigid body (trigger collider, no gravity)
+- **Physics**: Dynamic rigid body (no gravity); hits are detected by distance in `damage_on_contact.lua`
 - **Script**: `damage_on_contact.lua` (10 damage, destroys on contact, 5s lifetime)
 - **Tag**: `Projectile`
 
@@ -54,14 +54,14 @@ Basic projectile with damage on contact and auto-destroy.
 ### Pickup_Health
 Health pickup that heals on contact and respawns.
 - **Mesh**: Sphere (0.5 scale)
-- **Physics**: Trigger collider
+- **Physics**: Sphere collider (optional; pickup detection is by distance in `health_pickup.lua`)
 - **Script**: `health_pickup.lua` (25 HP heal, 10s respawn, visual rotation)
 - **Tag**: `Pickup`, `Health`
 
 ### Pickup_Ammo
 Ammo pickup that restores ammunition.
 - **Mesh**: Cube (0.5 scale)
-- **Physics**: Trigger collider
+- **Physics**: Sphere collider (optional; pickup detection is by distance in `health_pickup.lua`)
 - **Script**: `health_pickup.lua` (configured for ammo)
 - **Tag**: `Pickup`, `Ammo`
 
