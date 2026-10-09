@@ -9,6 +9,7 @@
 #include "AgentMode/AgentModeState.h"
 #include "Introspection/BusSchema.h"
 
+#include "Validation/InputValidator.h"
 #include <AzCore/Component/ComponentApplicationBus.h>
 #include <AzCore/Component/Entity.h>
 #include <AzCore/IO/Path/Path.h>
@@ -18,7 +19,12 @@
 #include <AzCore/Settings/SettingsRegistryMergeUtils.h>
 #include <AzCore/Utils/Utils.h>
 #include <AzFramework/API/ApplicationAPI.h>
+
+#include <AzCore/Component/TransformBus.h>
+#include <AzCore/Math/Quaternion.h>
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
+#include <AzToolsFramework/API/ToolsApplicationAPI.h>
+#include <AzToolsFramework/Entity/EditorEntityAPIBus.h>
 #include <AzToolsFramework/PropertyTreeEditor/PropertyTreeEditor.h>
 #include <AzToolsFramework/ToolsComponents/GenericComponentWrapper.h>
 
@@ -428,6 +434,119 @@ namespace AiCompanion
         AZ::BehaviorContext* behaviorContext = nullptr;
         AZ::ComponentApplicationBus::BroadcastResult(behaviorContext, &AZ::ComponentApplicationRequests::GetBehaviorContext);
         return BuildBusSchemaJson(behaviorContext, busName);
+    }
+
+    namespace
+    {
+        bool EntityExists(AZ::EntityId id)
+        {
+            bool exists = false;
+            AzToolsFramework::ToolsApplicationRequestBus::BroadcastResult(
+                exists, &AzToolsFramework::ToolsApplicationRequests::EntityExists, id);
+            return exists;
+        }
+
+        bool IsLevelRoot(AZ::EntityId id)
+        {
+            AZ::EntityId levelRoot;
+            AzToolsFramework::ToolsApplicationRequestBus::BroadcastResult(
+                levelRoot, &AzToolsFramework::ToolsApplicationRequests::GetCurrentLevelEntityId);
+            return levelRoot.IsValid() && levelRoot == id;
+        }
+    } // namespace
+
+    AZ::Outcome<AZ::u64, AZStd::string> AiCompanionEditorSystemComponent::CreateEntity(
+        AZStd::string name, AZ::Vector3 position, AZ::u64 parentId)
+    {
+        if (!InputValidator::IsValidEntityName(name))
+        {
+            return AZ::Failure(AZStd::string::format(
+                "invalid entity name '%s' (letter first, then letters, digits, '_' or '-', at most %zu characters)",
+                name.c_str(),
+                InputValidator::MaxEntityNameLength));
+        }
+        if (!InputValidator::IsValidPosition(position.GetX(), position.GetY(), position.GetZ()))
+        {
+            return AZ::Failure(AZStd::string("position out of bounds"));
+        }
+        AZ::EntityId parent(parentId);
+        if (parentId != 0 && !EntityExists(parent))
+        {
+            return AZ::Failure(AZStd::string::format("parent entity %llu does not exist", static_cast<unsigned long long>(parentId)));
+        }
+
+        AzToolsFramework::ScopedUndoBatch undo("AiCompanion Create Entity");
+        AZ::EntityId created;
+        AzToolsFramework::ToolsApplicationRequestBus::BroadcastResult(
+            created, &AzToolsFramework::ToolsApplicationRequests::CreateNewEntityAtPosition, position, parent);
+        if (!created.IsValid())
+        {
+            return AZ::Failure(AZStd::string("the editor did not create an entity; is a level open?"));
+        }
+        AzToolsFramework::EditorEntityAPIBus::Event(created, &AzToolsFramework::EditorEntityAPIRequests::SetName, name);
+        return AZ::Success(static_cast<AZ::u64>(created));
+    }
+
+    AZ::Outcome<void, AZStd::string> AiCompanionEditorSystemComponent::SetTransform(
+        AZ::u64 entityId,
+        bool setPosition,
+        AZ::Vector3 position,
+        bool setRotation,
+        AZ::Vector3 rotationDegrees,
+        bool setScale,
+        float uniformScale)
+    {
+        AZ::EntityId id(entityId);
+        if (!EntityExists(id))
+        {
+            return AZ::Failure(AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId)));
+        }
+        if (setPosition && !InputValidator::IsValidPosition(position.GetX(), position.GetY(), position.GetZ()))
+        {
+            return AZ::Failure(AZStd::string("position out of bounds"));
+        }
+        if (setScale && !(uniformScale > 0.0f && uniformScale <= 1000.0f))
+        {
+            return AZ::Failure(AZStd::string("scale must be in (0, 1000]"));
+        }
+
+        AzToolsFramework::ScopedUndoBatch undo("AiCompanion Set Transform");
+        if (setPosition)
+        {
+            AZ::TransformBus::Event(id, &AZ::TransformBus::Events::SetWorldTranslation, position);
+        }
+        if (setRotation)
+        {
+            AZ::TransformBus::Event(
+                id, &AZ::TransformBus::Events::SetWorldRotationQuaternion, AZ::Quaternion::CreateFromEulerDegreesXYZ(rotationDegrees));
+        }
+        if (setScale)
+        {
+            AZ::TransformBus::Event(id, &AZ::TransformBus::Events::SetLocalUniformScale, uniformScale);
+        }
+        AzToolsFramework::ToolsApplicationRequestBus::Broadcast(&AzToolsFramework::ToolsApplicationRequests::AddDirtyEntity, id);
+        return AZ::Success();
+    }
+
+    AZ::Outcome<void, AZStd::string> AiCompanionEditorSystemComponent::DeleteEntity(AZ::u64 entityId)
+    {
+        AZ::EntityId id(entityId);
+        if (!EntityExists(id))
+        {
+            return AZ::Failure(AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId)));
+        }
+        if (IsLevelRoot(id))
+        {
+            return AZ::Failure(AZStd::string("refusing to delete the level's root entity"));
+        }
+        AzToolsFramework::ScopedUndoBatch undo("AiCompanion Delete Entity");
+        AzToolsFramework::ToolsApplicationRequestBus::Broadcast(
+            &AzToolsFramework::ToolsApplicationRequests::DeleteEntityAndAllDescendants, id);
+        if (EntityExists(id))
+        {
+            return AZ::Failure(AZStd::string("the editor did not delete the entity"));
+        }
+        return AZ::Success();
     }
 
 } // namespace AiCompanion

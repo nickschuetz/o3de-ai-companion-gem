@@ -55,6 +55,9 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `get_entity` | One entity (`entity_id` parameter) | No (C++ EBus) |
 | `validate_scene` | Scene validation | No (C++ EBus) |
 | `get_bus_schema` | Reflected EBus description (`bus_name` parameter, empty lists all) | No (C++ BehaviorContext) |
+| `create_entity` | Create a named entity (`name`, `position?`, `parent_id?`), validated, undoable | No (C++) |
+| `set_transform` | Set `position` / `rotation` (Euler degrees) / `scale` on `entity_id`, validated, undoable | No (C++) |
+| `delete_entity` | Delete `entity_id` and descendants; refuses the level root, undoable | No (C++) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
 `get_capabilities()` to confirm the gem is present, and the C++ request types

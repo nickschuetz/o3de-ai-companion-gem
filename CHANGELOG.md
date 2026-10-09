@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Three native mutation request types served in C++: `create_entity` (`name`, optional `position` and `parent_id`), `set_transform` (`entity_id` plus any of `position`, `rotation` in Euler degrees, `scale`) and `delete_entity` (`entity_id`). Arguments pass through the C++ `InputValidator`, missing entities and the level root are refused, and each call runs in its own editor undo batch, so an agent on a secure-mode editor can build and tidy a scene with no Python. Request parsing lives in `Network/RequestParsing` with unit tests; the live suite covers the round trip, undo, validation refusals and the root-entity guard.
 - Every API error carries a top-level `code` (`validation_failed`, `limit_exceeded`, `not_in_editor`, `not_found`, `editor_running`, `io_error`, `engine_error`, `instantiate_failed`, `prefab_not_found`) so agents can branch without parsing the message. `details.code` still mirrors it for callers written against 0.4.0; `spawn_prefab`'s former `invalid_prefab_name` / `invalid_position` codes are now `validation_failed` with `details.reason`.
 
 ### Changed

@@ -17,6 +17,8 @@ set(FILES
     Source/AgentMode/AgentModeState.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
+    Source/Network/RequestParsing.h
+    Source/Network/RequestParsing.cpp
     Source/Snapshot/SceneSnapshotProvider.h
     Source/Snapshot/SceneSnapshotProvider.cpp
     Source/Introspection/BusSchema.h

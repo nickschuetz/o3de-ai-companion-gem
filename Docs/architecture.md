@@ -153,7 +153,7 @@ The AgentServer uses a length-prefixed JSON protocol over TCP:
 
 Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
 `get_entity_tree`, `get_entity`, `validate_scene`, `get_bus_schema`,
-`execute_python`.
+`create_entity`, `set_transform`, `delete_entity`, `execute_python`.
 
 `get_entity` takes `entity_id` (decimal, as a number or string) and returns one
 entity's transform, parent and component list; `get_bus_schema` takes an
@@ -168,8 +168,15 @@ versions, the three C++ snapshot types behind its `get_scene_snapshot`,
 everything else (`run_editor_python` and the `begin_session` /
 `exec_in_session` tools).
 
-Requests that require main-thread access (`get_scene_snapshot`, `get_entity_tree`,
-`get_entity`, `validate_scene`, `get_bus_schema`, `execute_python`) are dispatched via a lock-free queue from the
+`create_entity` (`name`, optional `position` and `parent_id`), `set_transform`
+(`entity_id` plus any of `position`, `rotation` as Euler degrees, `scale`) and
+`delete_entity` (`entity_id`) are the validated mutation set: each runs the
+C++ `InputValidator` on its arguments, refuses missing entities and the level
+root, and executes inside its own editor undo batch, so an agent on a
+secure-mode editor can still build and tidy a scene without Python.
+
+Requests that require main-thread access (every type except `ping` and
+`get_api_version`) are dispatched via a lock-free queue from the
 client thread to the `AZ::SystemTickBus` handler, which processes them every few
 milliseconds regardless of editor focus state. A 30-second timeout prevents
 deadlocks if the main thread is blocked.

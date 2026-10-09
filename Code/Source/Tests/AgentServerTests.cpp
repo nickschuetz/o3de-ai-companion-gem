@@ -235,7 +235,8 @@ namespace UnitTest
     TEST_F(AgentServerProtocolTest, RequestTypeClassification_SafeTypes)
     {
         AZStd::vector<AZStd::string> safeTypes = { "ping",           "get_api_version", "get_scene_snapshot", "get_entity_tree",
-                                                   "validate_scene", "get_entity",      "get_bus_schema" };
+                                                   "validate_scene", "get_entity",      "get_bus_schema",     "create_entity",
+                                                   "set_transform",  "delete_entity" };
 
         for (const auto& type : safeTypes)
         {
@@ -249,7 +250,8 @@ namespace UnitTest
         AZStd::string type = "execute_python";
         bool isSafe =
             (type == "ping" || type == "get_api_version" || type == "get_scene_snapshot" || type == "get_entity_tree" ||
-             type == "validate_scene" || type == "get_entity" || type == "get_bus_schema");
+             type == "validate_scene" || type == "get_entity" || type == "get_bus_schema" || type == "create_entity" ||
+             type == "set_transform" || type == "delete_entity");
         EXPECT_FALSE(isSafe);
     }
 

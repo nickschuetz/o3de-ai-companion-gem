@@ -114,7 +114,8 @@ consider SSH tunneling, and enable secure mode.
 
 When secure mode is enabled (`AI_COMPANION_SECURE_MODE=1`), the AgentServer
 disables `execute_python` — the most powerful request type — and only allows
-safe, read-only operations via C++ EBus:
+operations served by the gem's own C++, which are read-only except for the
+validated mutation set:
 
 - `ping` — connection health check
 - `get_api_version` — protocol and gem version info
@@ -123,6 +124,9 @@ safe, read-only operations via C++ EBus:
 - `get_entity` — one entity's transform, parent and components
 - `validate_scene` — scene validation
 - `get_bus_schema` — reflected EBus description from the live BehaviorContext
+- `create_entity`, `set_transform`, `delete_entity` — the validated mutation set:
+  arguments go through the C++ `InputValidator`, missing entities and the level
+  root are refused, and each call is its own editor undo batch
 
 This limits the attack surface when the server is exposed beyond localhost.
 o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree`,

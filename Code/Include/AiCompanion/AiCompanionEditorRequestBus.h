@@ -7,6 +7,7 @@
 
 #include <AzCore/Component/ComponentBus.h>
 #include <AzCore/EBus/EBus.h>
+#include <AzCore/Math/Vector3.h>
 #include <AzCore/Outcome/Outcome.h>
 #include <AzCore/std/any.h>
 #include <AzCore/std/string/string.h>
@@ -54,6 +55,28 @@ namespace AiCompanion
         //! Shape with empty busName: {"buses": ["<name>", ...]}
         //! On failure: {"error": "<message>"}
         virtual AZStd::string GetBusSchema(AZStd::string busName) = 0;
+
+        //! Creates an entity named `name` at `position` (world), optionally
+        //! under `parentId`, inside its own undo batch. The name must pass
+        //! InputValidator::IsValidEntityName and the position its bound.
+        //! Returns the new entity id, or an error message.
+        virtual AZ::Outcome<AZ::u64, AZStd::string> CreateEntity(AZStd::string name, AZ::Vector3 position, AZ::u64 parentId) = 0;
+
+        //! Sets any of world position, world rotation (Euler degrees, XYZ) and
+        //! uniform scale on an existing entity, inside its own undo batch. A
+        //! flag false leaves that part untouched.
+        virtual AZ::Outcome<void, AZStd::string> SetTransform(
+            AZ::u64 entityId,
+            bool setPosition,
+            AZ::Vector3 position,
+            bool setRotation,
+            AZ::Vector3 rotationDegrees,
+            bool setScale,
+            float uniformScale) = 0;
+
+        //! Deletes an entity and its descendants inside its own undo batch.
+        //! Refuses the level's root entity and ids that do not exist.
+        virtual AZ::Outcome<void, AZStd::string> DeleteEntity(AZ::u64 entityId) = 0;
     };
 
     using AiCompanionEditorRequestBus = AZ::EBus<AiCompanionEditorRequests>;
