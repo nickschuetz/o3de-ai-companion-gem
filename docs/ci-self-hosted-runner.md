@@ -7,8 +7,8 @@ there, on `ubuntu-latest` (the required check) and on `windows-latest`
 caught before it reaches a Windows user of the gem.
 
 The `build-test` workflow compiles the gem's C++ and runs its C++ unit tests
-(including the `BusSchema` introspection tests). That needs a full O3DE SDK (26.05 or 26.10)5
-SDK, a host project, and the 3rdParty packages, none of which exist on
+(including the `BusSchema` introspection tests). That needs a full O3DE SDK (26.05 or 26.10),
+a host project, and the 3rdParty packages, none of which exist on
 GitHub-hosted runners. It therefore runs only on a **self-hosted** runner and is
 **opt-in**.
 

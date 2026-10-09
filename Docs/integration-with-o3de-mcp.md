@@ -72,6 +72,14 @@ keep working when the AgentServer runs in secure mode, which disables
 {"id": "uuid", "status": "ok|error", "output": "...", "error": "...", "duration_ms": 123}
 ```
 
+One error reply carries an extra `code`. A request `type` the server does not
+serve answers with `"code": "unknown_request_type"` and the message
+`"Unknown request type: <type>"`; a client that sees that code falls back to
+`execute_python` (o3de-mcp does this for its native-first tools). No other
+AgentServer error carries a `code`, so a client never falls back for a different
+reason. This code is the C++ server's own and is separate from the `code` field
+inside the JSON that the Python API functions print to `output`.
+
 See [Agent Best Practices](agent-best-practices.md) for token efficiency and performance tips.
 
 ## Before vs After

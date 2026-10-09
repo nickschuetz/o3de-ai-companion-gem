@@ -7,6 +7,8 @@
 #include <AzCore/std/string/string_view.h>
 #include <AzTest/AzTest.h>
 
+#include "Network/ResponseBuilding.h"
+
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
@@ -198,6 +200,56 @@ namespace UnitTest
 
         EXPECT_STREQ(doc["status"].GetString(), "error");
         EXPECT_STRNE(doc["error"].GetString(), "");
+    }
+
+    TEST_F(AgentServerProtocolTest, UnknownRequestTypeReply_CarriesTheCodeAndTheMessage)
+    {
+        // The AgentServer answers an unknown "type" with this reply. Clients
+        // branch on the code; older ones match on the message, so both stay.
+        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse(
+            "req-7", "Unknown request type: definitely_not_a_type", AiCompanion::ResponseBuilding::UnknownRequestTypeCode);
+
+        rapidjson::Document doc;
+        doc.Parse(reply.c_str());
+
+        ASSERT_FALSE(doc.HasParseError());
+        EXPECT_STREQ(doc["id"].GetString(), "req-7");
+        EXPECT_STREQ(doc["status"].GetString(), "error");
+        EXPECT_STREQ(doc["output"].GetString(), "");
+        EXPECT_STREQ(doc["error"].GetString(), "Unknown request type: definitely_not_a_type");
+        ASSERT_TRUE(doc.HasMember("code"));
+        EXPECT_STREQ(doc["code"].GetString(), "unknown_request_type");
+        EXPECT_EQ(doc["duration_ms"].GetInt64(), 0);
+    }
+
+    TEST_F(AgentServerProtocolTest, OtherErrorReplies_CarryNoCode)
+    {
+        // Only the unknown-type reply has a code; a client must never see it
+        // on any other error, or it would fall back to Python for the wrong reason.
+        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse("req-8", "Missing 'type' field");
+
+        rapidjson::Document doc;
+        doc.Parse(reply.c_str());
+
+        ASSERT_FALSE(doc.HasParseError());
+        EXPECT_STREQ(doc["status"].GetString(), "error");
+        EXPECT_STREQ(doc["error"].GetString(), "Missing 'type' field");
+        EXPECT_FALSE(doc.HasMember("code"));
+    }
+
+    TEST_F(AgentServerProtocolTest, SuccessReply_CarriesNoCode)
+    {
+        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildResponse("req-9", "ok", "{}", "", 12);
+
+        rapidjson::Document doc;
+        doc.Parse(reply.c_str());
+
+        ASSERT_FALSE(doc.HasParseError());
+        EXPECT_STREQ(doc["status"].GetString(), "ok");
+        EXPECT_STREQ(doc["output"].GetString(), "{}");
+        EXPECT_STREQ(doc["error"].GetString(), "");
+        EXPECT_EQ(doc["duration_ms"].GetInt64(), 12);
+        EXPECT_FALSE(doc.HasMember("code"));
     }
 
     TEST_F(AgentServerProtocolTest, ApiVersionResponse_HasRequiredFields)

@@ -56,6 +56,7 @@ flowchart TB
             SSP["SceneSnapshotProvider"]
             IV["InputValidator"]
             RP["RequestParsing"]
+            RB["ResponseBuilding"]
             AS["AgentServer<br/>TCP Listener"]
         end
 
@@ -132,6 +133,7 @@ network server.
 | **SceneSnapshotProvider** | Fast entity traversal and JSON serialization of scene state, whole scene or one entity |
 | **InputValidator** | C++ counterpart to Python validators for entity names, positions and component types |
 | **RequestParsing** | Parses request arguments (entity ids as numbers or strings, Vector3 arrays within the position bound) for the native request types |
+| **ResponseBuilding** | Writes every AgentServer reply (`id`, `status`, `output`, `error`, `duration_ms`, and `code` on the unknown-request-type error only) |
 | **BusSchema** | Builds a JSON description of any reflected EBus from the live BehaviorContext, with argument names and tooltips |
 | **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, secure mode, and audit logging |
 
@@ -183,6 +185,14 @@ everything else (`run_editor_python` and the `begin_session` /
 C++ `InputValidator` on its arguments, refuses missing entities and the level
 root, and executes inside its own editor undo batch, so an agent on a
 secure-mode editor can still build and tidy a scene without Python.
+
+Every reply is `{"id", "status", "output", "error", "duration_ms"}`, written by
+`Network/ResponseBuilding`. A request `type` the server does not serve answers
+with `"error": "Unknown request type: <type>"` and, alone among the server's
+error replies, `"code": "unknown_request_type"`, so a client can tell a missing
+request type from any other failure and fall back to `execute_python`. The
+`code` field inside the JSON the Python API prints to `output` is a separate,
+Python-side vocabulary.
 
 Requests that require main-thread access (every type except `ping` and
 `get_api_version`) are dispatched via a lock-free queue from the

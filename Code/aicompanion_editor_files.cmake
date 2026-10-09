@@ -19,6 +19,8 @@ set(FILES
     Source/Network/AgentServer.cpp
     Source/Network/RequestParsing.h
     Source/Network/RequestParsing.cpp
+    Source/Network/ResponseBuilding.h
+    Source/Network/ResponseBuilding.cpp
     Source/Snapshot/SceneSnapshotProvider.h
     Source/Snapshot/SceneSnapshotProvider.cpp
     Source/Introspection/BusSchema.h

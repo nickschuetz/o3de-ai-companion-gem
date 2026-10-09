@@ -81,7 +81,9 @@ class LiveEditorTest(unittest.TestCase):
     def native(self, request_type: str, **fields):
         """Call a native request type; skip the test if this gem build lacks it."""
         response = self.client.request(request_type, **fields)
-        if response.get("status") == "error" and "Unknown request type" in str(response.get("error", "")):
+        if response.get("status") == "error" and (
+            response.get("code") == "unknown_request_type" or "Unknown request type" in str(response.get("error", ""))
+        ):
             self.skipTest(f"{request_type} is not served by this gem build")
         return response
 
@@ -104,6 +106,14 @@ class TestProtocol(LiveEditorTest):
         response = self.client.request("definitely_not_a_type")
         self.assertEqual(response["status"], "error")
         self.assertIn("Unknown request type", response["error"])
+        self.assertEqual(response.get("code"), "unknown_request_type", response)
+
+    def test_other_errors_carry_no_unknown_request_type_code(self):
+        # o3de-mcp falls back to editor Python on exactly this code, so no
+        # other error reply may carry it.
+        response = self.client.request("get_entity", entity_id="not-an-id")
+        self.assertEqual(response["status"], "error")
+        self.assertNotIn("code", response, response)
 
 
 class TestPythonPackage(LiveEditorTest):
