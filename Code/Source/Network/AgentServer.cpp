@@ -4,6 +4,7 @@
  */
 
 #include "AgentServer.h"
+#include "RequestParsing.h"
 
 #include <AiCompanion/AiCompanionEditorRequestBus.h>
 #include <AzCore/IO/Path/Path.h>
@@ -575,7 +576,7 @@ namespace AiCompanion
             }
             else if (
                 type == "get_scene_snapshot" || type == "get_entity_tree" || type == "validate_scene" || type == "get_entity" ||
-                type == "get_bus_schema")
+                type == "get_bus_schema" || type == "create_entity" || type == "set_transform" || type == "delete_entity")
             {
                 // Safe EBus calls — dispatch to main thread
                 auto pending = std::make_shared<PendingRequest>();
@@ -616,8 +617,8 @@ namespace AiCompanion
                     response = BuildErrorResponse(
                         id,
                         "execute_python is disabled in secure mode. "
-                        "Only ping, get_api_version, get_scene_snapshot, get_entity_tree, "
-                        "validate_scene, get_entity and get_bus_schema are available.");
+                        "Only ping, get_api_version, get_scene_snapshot, get_entity_tree, validate_scene, "
+                        "get_entity, get_bus_schema, create_entity, set_transform and delete_entity are available.");
                     AZ_Warning("AiCompanion", false, "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
                 }
                 else
@@ -836,6 +837,18 @@ namespace AiCompanion
         else if (type == "get_bus_schema")
         {
             return HandleGetBusSchema(id, doc);
+        }
+        else if (type == "create_entity")
+        {
+            return HandleCreateEntity(id, doc);
+        }
+        else if (type == "set_transform")
+        {
+            return HandleSetTransform(id, doc);
+        }
+        else if (type == "delete_entity")
+        {
+            return HandleDeleteEntity(id, doc);
         }
         else if (type == "execute_python")
         {
@@ -1057,36 +1070,8 @@ namespace AiCompanion
 
     AZStd::string AgentServer::HandleGetEntity(const AZStd::string& id, const rapidjson::Document& doc)
     {
-        // entity_id may arrive as a JSON number or as a decimal string (the
-        // Python side serializes ids as strings to stay JSON-safe).
         AZ::u64 entityId = 0;
-        if (doc.HasMember("entity_id"))
-        {
-            const auto& v = doc["entity_id"];
-            if (v.IsUint64())
-            {
-                entityId = v.GetUint64();
-            }
-            else if (v.IsString())
-            {
-                AZStd::string text = v.GetString();
-                while (!text.empty() && (text.front() == '[' || text.front() == ' '))
-                {
-                    text.erase(0, 1);
-                }
-                while (!text.empty() && (text.back() == ']' || text.back() == ' '))
-                {
-                    text.pop_back();
-                }
-                char* end = nullptr;
-                entityId = static_cast<AZ::u64>(strtoull(text.c_str(), &end, 10));
-                if (end == text.c_str() || (end && *end != '\0'))
-                {
-                    entityId = 0;
-                }
-            }
-        }
-        if (entityId == 0)
+        if (!doc.HasMember("entity_id") || !RequestParsing::ParseEntityId(doc["entity_id"], entityId))
         {
             return BuildErrorResponse(id, "get_entity requires 'entity_id' (a decimal id, as a number or string)");
         }
@@ -1115,6 +1100,124 @@ namespace AiCompanion
             return BuildErrorResponse(id, "AiCompanionEditorRequestBus has no handler; is the editor system component active?");
         }
         return BuildResponse(id, "ok", json, "", 0);
+    }
+
+    AZStd::string AgentServer::HandleCreateEntity(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        if (!doc.HasMember("name") || !doc["name"].IsString())
+        {
+            return BuildErrorResponse(id, "create_entity requires 'name'");
+        }
+        AZ::Vector3 position = AZ::Vector3::CreateZero();
+        if (doc.HasMember("position") && !RequestParsing::ParseVector3(doc["position"], position))
+        {
+            return BuildErrorResponse(id, "create_entity 'position' must be [x, y, z] within the position bound");
+        }
+        AZ::u64 parentId = 0;
+        if (doc.HasMember("parent_id") && !doc["parent_id"].IsNull() && !RequestParsing::ParseEntityId(doc["parent_id"], parentId))
+        {
+            return BuildErrorResponse(id, "create_entity 'parent_id' must be a decimal entity id");
+        }
+
+        AZ::Outcome<AZ::u64, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::CreateEntity, AZStd::string(doc["name"].GetString()), position, parentId);
+        if (!outcome.IsSuccess())
+        {
+            return BuildErrorResponse(id, outcome.GetError());
+        }
+
+        rapidjson::StringBuffer sb;
+        rapidjson::Writer<rapidjson::StringBuffer> w(sb);
+        w.StartObject();
+        w.Key("entity_id");
+        w.Uint64(outcome.GetValue());
+        w.Key("name");
+        w.String(doc["name"].GetString());
+        w.Key("position");
+        w.StartArray();
+        w.Double(position.GetX());
+        w.Double(position.GetY());
+        w.Double(position.GetZ());
+        w.EndArray();
+        w.EndObject();
+        return BuildResponse(id, "ok", sb.GetString(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleSetTransform(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u64 entityId = 0;
+        if (!doc.HasMember("entity_id") || !RequestParsing::ParseEntityId(doc["entity_id"], entityId))
+        {
+            return BuildErrorResponse(id, "set_transform requires 'entity_id'");
+        }
+        AZ::Vector3 position = AZ::Vector3::CreateZero();
+        AZ::Vector3 rotation = AZ::Vector3::CreateZero();
+        float scale = 1.0f;
+        const bool setPosition = doc.HasMember("position");
+        const bool setRotation = doc.HasMember("rotation");
+        const bool setScale = doc.HasMember("scale");
+        if (!setPosition && !setRotation && !setScale)
+        {
+            return BuildErrorResponse(id, "set_transform needs at least one of 'position', 'rotation' (Euler degrees) or 'scale'");
+        }
+        if (setPosition && !RequestParsing::ParseVector3(doc["position"], position))
+        {
+            return BuildErrorResponse(id, "set_transform 'position' must be [x, y, z] within the position bound");
+        }
+        if (setRotation && !RequestParsing::ParseVector3(doc["rotation"], rotation))
+        {
+            return BuildErrorResponse(id, "set_transform 'rotation' must be [x, y, z] Euler degrees");
+        }
+        if (setScale)
+        {
+            if (!doc["scale"].IsNumber())
+            {
+                return BuildErrorResponse(id, "set_transform 'scale' must be a number");
+            }
+            scale = static_cast<float>(doc["scale"].GetDouble());
+        }
+
+        AZ::Outcome<void, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome,
+            &AiCompanionEditorRequestBus::Events::SetTransform,
+            entityId,
+            setPosition,
+            position,
+            setRotation,
+            rotation,
+            setScale,
+            scale);
+        if (!outcome.IsSuccess())
+        {
+            return BuildErrorResponse(id, outcome.GetError());
+        }
+        AZStd::string entityJson;
+        AiCompanionRequestBus::BroadcastResult(entityJson, &AiCompanionRequestBus::Events::GetEntity, entityId);
+        return BuildResponse(id, "ok", entityJson, "", 0);
+    }
+
+    AZStd::string AgentServer::HandleDeleteEntity(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u64 entityId = 0;
+        if (!doc.HasMember("entity_id") || !RequestParsing::ParseEntityId(doc["entity_id"], entityId))
+        {
+            return BuildErrorResponse(id, "delete_entity requires 'entity_id'");
+        }
+        AZ::Outcome<void, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::DeleteEntity, entityId);
+        if (!outcome.IsSuccess())
+        {
+            return BuildErrorResponse(id, outcome.GetError());
+        }
+        rapidjson::StringBuffer sb;
+        rapidjson::Writer<rapidjson::StringBuffer> w(sb);
+        w.StartObject();
+        w.Key("deleted");
+        w.Uint64(entityId);
+        w.EndObject();
+        return BuildResponse(id, "ok", sb.GetString(), "", 0);
     }
 
     // -------------------------------------------------------------------------

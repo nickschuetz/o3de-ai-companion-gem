@@ -47,6 +47,16 @@ namespace AiCompanion
             AZ::EntityComponentIdPair pair, AZStd::string propertyPath, AZStd::any value) override;
 
         AZStd::string GetBusSchema(AZStd::string busName) override;
+        AZ::Outcome<AZ::u64, AZStd::string> CreateEntity(AZStd::string name, AZ::Vector3 position, AZ::u64 parentId) override;
+        AZ::Outcome<void, AZStd::string> SetTransform(
+            AZ::u64 entityId,
+            bool setPosition,
+            AZ::Vector3 position,
+            bool setRotation,
+            AZ::Vector3 rotationDegrees,
+            bool setScale,
+            float uniformScale) override;
+        AZ::Outcome<void, AZStd::string> DeleteEntity(AZ::u64 entityId) override;
 
     protected:
         // AZ::Component overrides

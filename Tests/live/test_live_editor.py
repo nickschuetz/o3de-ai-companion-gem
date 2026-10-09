@@ -140,6 +140,69 @@ class TestNativeRequestTypes(LiveEditorTest):
         self.assertIn("error", unknown)
 
 
+class TestNativeMutations(LiveEditorTest):
+    """create_entity / set_transform / delete_entity served in C++ with their own undo batches."""
+
+    def _ids(self) -> set[int]:
+        return {int(e["id"]) for e in json.loads(self.client.request("get_scene_snapshot")["output"])["entities"]}
+
+    def test_create_set_transform_delete_round_trip(self):
+        before = self._ids()
+        created = self.native("create_entity", name="LiveNative", position=[2, 3, 4])
+        self.assertEqual(created["status"], "ok", created)
+        info = json.loads(created["output"])
+        new_id = int(info["entity_id"])
+        self.assertIn(new_id, self._ids() - before)
+        self.assertEqual(info["name"], "LiveNative")
+
+        moved = self.native("set_transform", entity_id=new_id, position=[5, 6, 7], rotation=[0, 0, 90], scale=2)
+        self.assertEqual(moved["status"], "ok", moved)
+        entity = json.loads(moved["output"])
+        self.assertAlmostEqual(entity["position"][0], 5.0, places=3)
+        self.assertAlmostEqual(entity["scale"][0], 2.0, places=3)
+        self.assertAlmostEqual(abs(entity["rotation"][2]), 90.0, places=1)
+
+        deleted = self.native("delete_entity", entity_id=new_id)
+        self.assertEqual(deleted["status"], "ok", deleted)
+        self.assertNotIn(new_id, self._ids())
+
+    def test_create_entity_is_undoable(self):
+        before = self._ids()
+        created = self.native("create_entity", name="LiveNativeUndo")
+        new_id = int(json.loads(created["output"])["entity_id"])
+        self.assertIn(new_id, self._ids())
+        self.client.run("import azlmbr.legacy.general as g\ng.undo()\n")
+        if new_id in self._ids():
+            self.native("delete_entity", entity_id=new_id)
+            self.fail("create_entity was not undone by one editor Undo step")
+        self.assertEqual(self._ids(), before)
+
+    def test_validation_refuses_bad_input_before_touching_the_level(self):
+        before = self._ids()
+        bad_name = self.native("create_entity", name="9bad")
+        self.assertEqual(bad_name["status"], "error")
+        self.assertIn("invalid entity name", bad_name["error"])
+        bad_pos = self.native("create_entity", name="Fine", position=[1, 2, 1e9])
+        self.assertEqual(bad_pos["status"], "error")
+        missing = self.native("set_transform", entity_id=987654321, position=[0, 0, 0])
+        self.assertEqual(missing["status"], "error")
+        self.assertIn("does not exist", missing["error"])
+        self.assertEqual(self._ids(), before)
+
+    def test_delete_refuses_the_level_root(self):
+        # The level's container is the root with children (other parentless
+        # entities can appear in roots too), named "Level" in a stock level.
+        tree = json.loads(self.native("get_entity_tree")["output"])
+        roots = tree["roots"]
+        named = [r for r in roots if r["name"] == "Level"]
+        root = named[0] if named else max(roots, key=lambda r: len(r.get("children", [])))
+        root_id = root["id"]
+        refused = self.native("delete_entity", entity_id=root_id)
+        self.assertEqual(refused["status"], "error", refused)
+        self.assertIn("root", refused["error"])
+        self.assertIn(int(root_id), self._ids())
+
+
 class TestTemplatesAndRollback(LiveEditorTest):
     def _entity_ids(self) -> set[int]:
         snapshot = json.loads(self.client.request("get_scene_snapshot")["output"])

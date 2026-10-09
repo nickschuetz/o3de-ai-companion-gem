@@ -22,6 +22,7 @@
 #   LIVE_AP_PORT         AssetProcessor port (default: 45644).
 #   LIVE_DISPLAY         Xvfb display (default: :99).
 #   LIVE_KEEP            1 to leave everything running on exit (debugging).
+#   LIVE_PYTEST_ARGS     extra pytest arguments, e.g. "-k Protocol" to run a subset.
 #
 # Exit status is non-zero if the editor never answers, the level does not
 # open, or any test fails.
@@ -157,5 +158,7 @@ sleep 5
 # 5. Tests.
 echo "== run live suite =="
 cd "$GEM_PATH"
-O3DE_LIVE_EDITOR_TEST=1 python3 -m pytest Tests/live -v
+# LIVE_PYTEST_ARGS lets a developer narrow the run, e.g. LIVE_PYTEST_ARGS="-k Protocol".
+# shellcheck disable=SC2086
+O3DE_LIVE_EDITOR_TEST=1 python3 -m pytest Tests/live -v ${LIVE_PYTEST_ARGS:-}
 echo "== live suite passed =="
