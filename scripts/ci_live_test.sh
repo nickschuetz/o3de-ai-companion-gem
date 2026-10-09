@@ -23,6 +23,12 @@
 #   LIVE_DISPLAY         Xvfb display (default: :99).
 #   LIVE_KEEP            1 to leave everything running on exit (debugging).
 #   LIVE_PYTEST_ARGS     extra pytest arguments, e.g. "-k Protocol" to run a subset.
+#   LIVE_SECURE          1 to start the editor with AI_COMPANION_SECURE_MODE=1.
+#                        The AgentServer then refuses execute_python, so the
+#                        script waits for get_api_version to report secure_mode
+#                        and for a native read type to answer, opens no level
+#                        (the native types work on whatever is loaded), and runs
+#                        only the secure-mode tests (pytest -k Secure).
 #
 # Exit status is non-zero if the editor never answers, the level does not
 # open, or any test fails.
@@ -36,6 +42,7 @@ LIVE_PORT="${LIVE_PORT:-4610}"
 LIVE_AP_PORT="${LIVE_AP_PORT:-45644}"
 LIVE_DISPLAY="${LIVE_DISPLAY:-:99}"
 LIVE_KEEP="${LIVE_KEEP:-0}"
+LIVE_SECURE="${LIVE_SECURE:-0}"
 
 fail() {
     echo "ci_live_test: $1" >&2
@@ -55,6 +62,7 @@ echo "== AiCompanion live test =="
 echo "  engine : $O3DE_ENGINE_PATH"
 echo "  project: $AICOMPANION_PROJECT"
 echo "  level  : $LIVE_LEVEL   port: $LIVE_PORT   display: $LIVE_DISPLAY"
+echo "  secure : $LIVE_SECURE"
 echo "  logs   : $STATE"
 
 PIDS=()
@@ -99,8 +107,13 @@ Xvfb "$LIVE_DISPLAY" -screen 0 1600x900x24 -nocursor >"$STATE/xvfb.log" 2>&1 &
 PIDS+=("$!")
 sleep 2
 
-# 3. Editor with the AgentServer on LIVE_PORT. The gem reads O3DE_EDITOR_PORT.
-DISPLAY="$LIVE_DISPLAY" O3DE_EDITOR_PORT="$LIVE_PORT" "$BIN/Editor" --project-path="$AICOMPANION_PROJECT" \
+# 3. Editor with the AgentServer on LIVE_PORT. The gem reads O3DE_EDITOR_PORT,
+#    and AI_COMPANION_SECURE_MODE=1 when the secure variant is requested.
+editor_env=("DISPLAY=$LIVE_DISPLAY" "O3DE_EDITOR_PORT=$LIVE_PORT")
+if [ "$LIVE_SECURE" = "1" ]; then
+    editor_env+=("AI_COMPANION_SECURE_MODE=1")
+fi
+env "${editor_env[@]}" "$BIN/Editor" --project-path="$AICOMPANION_PROJECT" \
     --skipWelcomeScreenDialog --rhi=vulkan --rhi-device-validation=disable \
     --regset="/Amazon/AzCore/Bootstrap/remote_port=$LIVE_AP_PORT" >"$STATE/editor.log" 2>&1 &
 PIDS+=("$!")
@@ -119,13 +132,48 @@ done
 [ "$answered" = "1" ] || fail "AgentServer never answered ping on port $LIVE_PORT (see $STATE/editor.log)"
 echo "== AgentServer up =="
 
-# The AgentServer answers ping as soon as the gem's system component activates,
-# which is before the renderer and editor Python exist; an execute_python sent
-# then fails with "Failed to retrieve script execution result". Wait until a
-# trivial script actually runs.
-ready=0
-for _ in $(seq 1 300); do
-    if python3 - <<'PY' 2>/dev/null; then ready=1; break; fi
+if [ "$LIVE_SECURE" = "1" ]; then
+    # Secure mode refuses execute_python, so neither the Python-ready probe
+    # nor the level open below can be used. get_api_version is answered on
+    # the network thread as soon as ping is, so it confirms at once that the
+    # environment variable reached the editor; the native read types are
+    # dispatched to the main thread, so one of them answering means the
+    # editor's main loop is up. No level is opened: the native types work on
+    # whatever is loaded, and the secure-mode tests do not need entities.
+    secure=0
+    for _ in $(seq 1 60); do
+        rc=0
+        python3 - <<'PY' 2>/dev/null || rc=$?
+from agent_client import AgentClient
+import json, sys
+try:
+    info = json.loads(AgentClient(timeout=3).request("get_api_version")["output"])
+except Exception:
+    sys.exit(1)
+if info.get("secure_mode") is not True:
+    sys.exit(2)
+try:
+    tree = AgentClient(timeout=35).request("get_entity_tree")
+except Exception:
+    sys.exit(1)
+sys.exit(0 if tree.get("status") == "ok" else 1)
+PY
+        case "$rc" in
+            0) secure=1; break ;;
+            2) fail "LIVE_SECURE=1 but get_api_version reports secure_mode false: AI_COMPANION_SECURE_MODE did not reach the editor (see $STATE/editor.log)" ;;
+        esac
+        sleep 2
+    done
+    [ "$secure" = "1" ] || fail "native request types never answered in secure mode on port $LIVE_PORT (see $STATE/editor.log)"
+    echo "== secure mode confirmed, native request types answering =="
+else
+    # The AgentServer answers ping as soon as the gem's system component activates,
+    # which is before the renderer and editor Python exist; an execute_python sent
+    # then fails with "Failed to retrieve script execution result". Wait until a
+    # trivial script actually runs.
+    ready=0
+    for _ in $(seq 1 300); do
+        if python3 - <<'PY' 2>/dev/null; then ready=1; break; fi
 from agent_client import AgentClient
 import sys
 try:
@@ -134,13 +182,13 @@ except Exception:
     sys.exit(1)
 sys.exit(0 if "python-ready" in out else 1)
 PY
-    sleep 2
-done
-[ "$ready" = "1" ] || fail "editor Python never became ready on port $LIVE_PORT (see $STATE/editor.log)"
-echo "== editor Python ready =="
+        sleep 2
+    done
+    [ "$ready" = "1" ] || fail "editor Python never became ready on port $LIVE_PORT (see $STATE/editor.log)"
+    echo "== editor Python ready =="
 
-# 4. Open the level; the editor starts with none when the welcome screen is skipped.
-python3 - "$LIVE_LEVEL" <<'PY' || fail "could not open level $LIVE_LEVEL"
+    # 4. Open the level; the editor starts with none when the welcome screen is skipped.
+    python3 - "$LIVE_LEVEL" <<'PY' || fail "could not open level $LIVE_LEVEL"
 import sys
 from agent_client import AgentClient
 level = sys.argv[1]
@@ -152,13 +200,20 @@ out = AgentClient().run(
 print(out.strip())
 sys.exit(0 if f"LEVEL={level}" in out else 1)
 PY
-# Let the level's entities activate before the first snapshot.
-sleep 5
+    # Let the level's entities activate before the first snapshot.
+    sleep 5
+fi
 
-# 5. Tests.
-echo "== run live suite =="
+# 5. Tests. In secure mode only TestSecureMode applies; the other classes
+#    would skip themselves anyway (they go through execute_python).
 cd "$GEM_PATH"
 # LIVE_PYTEST_ARGS lets a developer narrow the run, e.g. LIVE_PYTEST_ARGS="-k Protocol".
 # shellcheck disable=SC2086
-O3DE_LIVE_EDITOR_TEST=1 python3 -m pytest Tests/live -v ${LIVE_PYTEST_ARGS:-}
+if [ "$LIVE_SECURE" = "1" ]; then
+    echo "== run live suite (secure mode) =="
+    O3DE_LIVE_EDITOR_TEST=1 python3 -m pytest Tests/live -v -k Secure ${LIVE_PYTEST_ARGS:-}
+else
+    echo "== run live suite =="
+    O3DE_LIVE_EDITOR_TEST=1 python3 -m pytest Tests/live -v ${LIVE_PYTEST_ARGS:-}
+fi
 echo "== live suite passed =="
