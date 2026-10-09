@@ -212,4 +212,9 @@ Check the `status` field in every response:
 - `"ok"` — operation succeeded, result in `output`
 - `"error"` — operation failed, details in `error`
 
+A request `type` the server does not serve fails with
+`"code": "unknown_request_type"` next to the `"Unknown request type: <type>"`
+message. Branch on the code to fall back to `execute_python`; it is the only
+AgentServer error that carries a `code`.
+
 The `duration_ms` field helps identify slow operations for optimization.

@@ -5,6 +5,7 @@
 
 #include "AgentServer.h"
 #include "RequestParsing.h"
+#include "ResponseBuilding.h"
 
 #include <AiCompanion/AiCompanionEditorRequestBus.h>
 #include <AzCore/IO/Path/Path.h>
@@ -657,7 +658,10 @@ namespace AiCompanion
             }
             else
             {
-                response = BuildErrorResponse(id, AZStd::string::format("Unknown request type: %s", type.c_str()));
+                // Keep the message text: older clients match on it. The code is
+                // the machine-readable signal, and no other error carries it.
+                response = BuildErrorResponse(
+                    id, AZStd::string::format("Unknown request type: %s", type.c_str()), ResponseBuilding::UnknownRequestTypeCode);
             }
 
             LogVerbose("[AgentServer] Sending: %.4096s%s", response.c_str(), response.size() > LogTruncateSize ? "...(truncated)" : "");
@@ -1227,27 +1231,13 @@ namespace AiCompanion
     AZStd::string AgentServer::BuildResponse(
         const AZStd::string& id, const char* status, const AZStd::string& output, const AZStd::string& error, AZ::s64 durationMs)
     {
-        rapidjson::StringBuffer sb;
-        rapidjson::Writer<rapidjson::StringBuffer> w(sb);
-        w.StartObject();
-        w.Key("id");
-        w.String(id.c_str());
-        w.Key("status");
-        w.String(status);
-        w.Key("output");
-        w.String(output.c_str());
-        w.Key("error");
-        w.String(error.c_str());
-        w.Key("duration_ms");
-        w.Int64(durationMs);
-        w.EndObject();
-        return sb.GetString();
+        return ResponseBuilding::BuildResponse(id, status, output, error, durationMs);
     }
 
-    AZStd::string AgentServer::BuildErrorResponse(const AZStd::string& id, const AZStd::string& error)
+    AZStd::string AgentServer::BuildErrorResponse(const AZStd::string& id, const AZStd::string& error, const char* code)
     {
         AZ_Error("AiCompanion", false, "[AgentServer] req=%s error: %s", id.c_str(), error.c_str());
-        return BuildResponse(id, "error", "", error, 0);
+        return ResponseBuilding::BuildErrorResponse(id, error, code);
     }
 
     // -------------------------------------------------------------------------

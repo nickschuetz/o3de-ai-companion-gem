@@ -122,7 +122,9 @@ namespace AiCompanion
         // Response builders
         AZStd::string BuildResponse(
             const AZStd::string& id, const char* status, const AZStd::string& output, const AZStd::string& error, AZ::s64 durationMs);
-        AZStd::string BuildErrorResponse(const AZStd::string& id, const AZStd::string& error);
+        //! code, when given, is emitted as the reply's "code" field. Only the
+        //! unknown-request-type reply sets one.
+        AZStd::string BuildErrorResponse(const AZStd::string& id, const AZStd::string& error, const char* code = nullptr);
 
         // Logging helpers
         void LogMinimal(const char* format, ...) const;

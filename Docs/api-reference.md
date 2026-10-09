@@ -30,6 +30,13 @@ the error is returned with `rolled_back: true` plus `details.exception` and
 `details.operation`. For callers written against 0.4.0, `details.code` mirrors
 `code`.
 
+These codes belong to the Python package. The C++ AgentServer's own replies
+(`{"id", "status", "output", "error", "duration_ms"}`) carry a `code` in one
+case only: a request `type` the server does not serve answers with
+`"code": "unknown_request_type"` next to
+`"error": "Unknown request type: <type>"`. See the
+[integration guide](integration-with-o3de-mcp.md#response-format).
+
 ## Meta
 
 ### `get_api_version() -> str`
