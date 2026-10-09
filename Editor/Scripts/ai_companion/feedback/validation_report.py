@@ -36,7 +36,7 @@ def validate_scene() -> str:
         return _python_validate()
 
     except ImportError:
-        return error("Cannot validate scene: not running inside O3DE Editor")
+        return error("Cannot validate scene: not running inside O3DE Editor", code="not_in_editor")
 
 
 def _python_validate() -> str:
@@ -77,4 +77,4 @@ def _python_validate() -> str:
         })
 
     except ImportError:
-        return error("Cannot validate scene: not running inside O3DE Editor")
+        return error("Cannot validate scene: not running inside O3DE Editor", code="not_in_editor")

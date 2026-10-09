@@ -45,9 +45,9 @@ def end_undo_batch() -> str:
 
 
 def rollback_last_batch() -> str:
-    """Undo the last completed undo batch (one editor Undo step)."""
-    _rollback.rollback_last_batch()
-    return success({"rolled_back": True})
+    """Undo the last completed undo batch (one editor Undo step), then delete
+    any entity that batch created which the undo left behind."""
+    return success(_rollback.rollback_last_batch())
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +365,7 @@ def create_grid(
     """
     valid, err = validate_entity_name(name_prefix)
     if not valid:
-        return error(err)
+        return error(err, code="validation_failed")
 
     sandbox = get_sandbox()
     sandbox.check_entity_limit(rows * cols)
@@ -644,18 +644,19 @@ def spawn_prefab(
 
     name = (prefab_name or "").strip()
     if not name or any(sep in name for sep in ("/", "\\", "..")):
-        return error(f"Invalid prefab name: {prefab_name!r}", details={"code": "invalid_prefab_name"})
+        return error(f"Invalid prefab name: {prefab_name!r}", code="validation_failed", details={"reason": "invalid_prefab_name"})
 
     valid, msg = validate_position(pos)
     if not valid:
-        return error(msg, details={"code": "invalid_position"})
+        return error(msg, code="validation_failed", details={"reason": "invalid_position"})
 
     located = find_prefab_file(name)
     if located["found"] is None:
         return error(
             f"Prefab not found: {located['relative_path']} (searched {', '.join(located['searched'])}). "
             "The prefab system was not called, because instantiating a missing prefab crashes the editor.",
-            details={"code": "prefab_not_found", "searched": located["searched"]},
+            code="prefab_not_found",
+            details={"searched": located["searched"]},
         )
 
     try:
@@ -671,7 +672,7 @@ def spawn_prefab(
 
         if hasattr(result, "IsSuccess") and not result.IsSuccess():
             err = result.GetError() if hasattr(result, "GetError") else "unknown"
-            return error(f"InstantiatePrefab failed: {err}", details={"code": "instantiate_failed"})
+            return error(f"InstantiatePrefab failed: {err}", code="instantiate_failed")
 
         spawned: Dict[str, Any] = {
             "prefab": name,
@@ -683,6 +684,7 @@ def spawn_prefab(
             from .utils.id_helpers import id_to_jsonable
 
             spawned["entity_id"] = id_to_jsonable(result.GetValue())
+            get_sandbox().record_entity(result.GetValue())
         return success(spawned)
 
     except ImportError:

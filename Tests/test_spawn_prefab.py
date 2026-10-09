@@ -109,7 +109,8 @@ class TestSpawnPrefabGuard(unittest.TestCase):
         with mock.patch.dict(sys.modules, modules):
             result = json.loads(api.spawn_prefab("Definitely_Not_A_Prefab"))
         self.assertEqual(result["status"], "error")
-        self.assertEqual(result["details"]["code"], "prefab_not_found")
+        self.assertEqual(result["code"], "prefab_not_found")
+        self.assertEqual(result["details"]["code"], "prefab_not_found")  # 0.4.0 mirror
         self.assertEqual(calls, [])
 
     def test_path_like_names_are_rejected_before_lookup(self):
@@ -120,7 +121,8 @@ class TestSpawnPrefabGuard(unittest.TestCase):
                 with mock.patch.dict(sys.modules, modules):
                     result = json.loads(api.spawn_prefab(bad))
                 self.assertEqual(result["status"], "error")
-                self.assertEqual(result["details"]["code"], "invalid_prefab_name")
+                self.assertEqual(result["code"], "validation_failed")
+                self.assertEqual(result["details"]["reason"], "invalid_prefab_name")
                 self.assertEqual(calls, [])
 
     def test_existing_prefab_reaches_the_bus(self):
@@ -144,7 +146,7 @@ class TestSpawnPrefabGuard(unittest.TestCase):
         with mock.patch.dict(sys.modules, modules):
             result = json.loads(api.spawn_prefab("Enemy_Chaser"))
         self.assertEqual(result["status"], "error")
-        self.assertEqual(result["details"]["code"], "instantiate_failed")
+        self.assertEqual(result["code"], "instantiate_failed")
 
     def test_outside_the_editor_reports_not_spawned(self):
         result = json.loads(api.spawn_prefab("Enemy_Chaser"))

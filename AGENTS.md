@@ -197,8 +197,11 @@ plaintext is safe and faster.
 ### Response conventions
 
 All API responses are JSON. Check the `status` field:
-- `"ok"` — succeeded, result in `output`
-- `"error"` — failed, details in `error`
+- `"ok"` — succeeded, result in `data`
+- `"error"` — failed; branch on `code` (`validation_failed`, `limit_exceeded`,
+  `not_in_editor`, `not_found`, `editor_running`, `io_error`, `engine_error`,
+  `instantiate_failed`, `prefab_not_found`), read `message` for the reason, and
+  `rolled_back: true` means the batch was undone and anything it created deleted
 
 The `duration_ms` field is present on AgentServer responses and useful for
 identifying slow operations during profiling.

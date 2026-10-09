@@ -3,6 +3,33 @@
 All functions are available from `ai_companion.api`. Every function returns
 a JSON string.
 
+## Responses and error codes
+
+Success: `{"status": "ok", "data": ...}`. Failure:
+
+```json
+{"status": "error", "code": "validation_failed", "message": "...", "details": {...}, "rolled_back": true}
+```
+
+`code` is what to branch on. The general codes:
+
+| Code | Meaning |
+|------|---------|
+| `validation_failed` | An argument failed the safety validators (name, position, component, prefab name, unknown template type) |
+| `limit_exceeded` | A sandbox limit was hit (entity count per call, recursion depth, timeout) |
+| `not_in_editor` | The call needs the editor's `azlmbr` and it is not available |
+| `not_found` | A named prefab, file or entity does not exist (`prefab_not_found` for `spawn_prefab`) |
+| `editor_running` | The operation needs the editor closed first |
+| `io_error` | A file could not be read or written |
+| `engine_error` | An `azlmbr` call failed or raised |
+| `instantiate_failed` | The prefab system returned a failed outcome |
+
+An exception inside a mutating call never reaches the agent as a traceback:
+the undo batch is ended, undone, any entity the call created is deleted, and
+the error is returned with `rolled_back: true` plus `details.exception` and
+`details.operation`. For callers written against 0.4.0, `details.code` mirrors
+`code`.
+
 ## Meta
 
 ### `get_api_version() -> str`
@@ -150,11 +177,11 @@ On engines built before [o3de/o3de#20099](https://github.com/o3de/o3de/pull/2009
 `PrefabPublicRequestBus.InstantiatePrefab` crashes the editor when the template
 cannot be loaded, and a C++ segfault cannot be caught from Python, so an unknown
 name never reaches the bus. Newer engines return a failure on their own; the
-guard is kept for the older ones. Error responses carry a `details.code`:
+guard is kept for the older ones. Error responses carry a `code`:
 
 | Code | Meaning |
 |------|---------|
-| `invalid_prefab_name` | Empty name, or one containing `/`, `\` or `..` |
+| `validation_failed` | Empty name, or one containing `/`, `\` or `..` (`details.reason` says which), or a bad position |
 | `prefab_not_found` | No `Prefabs/<name>.prefab` under the gem `Assets` folder, the project root or the engine root (`details.searched` lists them); the prefab system was not called |
 | `instantiate_failed` | The prefab system returned a failed outcome |
 
@@ -197,16 +224,18 @@ Manually begin an undo batch.
 End the current undo batch.
 
 ### `rollback_last_batch() -> str`
-Undo the last completed batch (one editor Undo step).
+Undo the last completed batch (one editor Undo step), then delete any entity
+that batch created which the undo left behind. Returns
+`{"rolled_back": true, "leftover_entities_deleted": n}`.
 
-Known limitation (O3DE 26.10): an entity that carries a Lua Script component
-may survive the undo. Undoing an entity creation re-instantiates the prefab,
-and if the script asset is already loaded the editor's
-`ScriptEditorComponent::LoadScript` opens an undo batch from inside the undo,
-which `ToolsApplication` rejects ("Can not create a new Undo/Redo batch while
-an Undo or Redo operation is running"). Entities without a Lua Script roll back
-reliably. When it matters, delete the entity explicitly after a failed
-rollback.
+The second step exists because on O3DE 26.10 an entity that carries a Lua
+Script component can survive the undo: undoing an entity creation
+re-instantiates the prefab, and if the script asset is already loaded the
+editor's `ScriptEditorComponent::LoadScript` opens an undo batch from inside
+the undo, which `ToolsApplication` rejects. The gem records every entity it
+creates, so rollback finishes the job either way; `leftover_entities_deleted`
+tells you whether it had to. The same path runs automatically when a mutating
+call raises.
 
 ## Further Reading
 

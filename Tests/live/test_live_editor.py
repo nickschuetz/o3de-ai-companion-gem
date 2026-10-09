@@ -171,29 +171,34 @@ class TestTemplatesAndRollback(LiveEditorTest):
             self.fail("rollback did not remove the created entity")
 
     def test_rollback_of_an_entity_with_a_lua_script(self):
-        # Known engine limitation on O3DE 26.10: undoing an entity creation goes
+        # Engine limitation on O3DE 26.10: undoing an entity creation goes
         # through prefab re-instantiation, and when the entity carries a Lua
         # Script whose asset is already loaded, ScriptEditorComponent::LoadScript
-        # opens an undo batch ("Update Script Properties") from inside the undo.
-        # ToolsApplication rejects that ("Can not create a new Undo/Redo batch
-        # while an Undo or Redo operation is running") and the entity survives.
-        # It depends on asset-load timing, so it is reported as a skip with the
-        # reason when it happens, and the entity is deleted so the level is
-        # left clean.
+        # opens an undo batch from inside the undo, ToolsApplication rejects it,
+        # and the entity survives the Undo. The gem records every entity it
+        # creates and rollback deletes the survivors, so the outcome is the same
+        # either way; the response says whether that path was needed.
         before = self._entity_ids()
         created = self.client.api('create_enemy("LiveChaser", position=[6, 6, 1])')
         self.assertEqual(created["status"], "ok", created)
         new_id = _entity_number(created["data"]["entity_id"])
         self.assertIn(new_id, self._entity_ids() - before)
 
-        self.client.api("rollback_last_batch()")
+        rolled = self.client.api("rollback_last_batch()")
+        self.assertEqual(rolled["status"], "ok", rolled)
         self.assertEqual(self.client.request("ping")["status"], "ok")
+        self.assertIn("leftover_entities_deleted", rolled["data"])
         if new_id in self._entity_ids():
             self._delete(new_id)
-            self.skipTest(
-                "rollback left the Lua-scripted entity behind: ScriptEditorComponent::LoadScript "
-                "opens an undo batch during the undo's prefab re-instantiation (engine limitation)"
-            )
+            self.fail(f"entity survived rollback even after survivor deletion: {rolled}")
+
+    def test_failed_call_returns_a_rolled_back_error_not_a_traceback(self):
+        before = self._entity_ids()
+        result = self.client.api('create_enemy("LiveBadEnemy", ai_type="no_such_ai")')
+        self.assertEqual(result["status"], "error", result)
+        self.assertEqual(result["code"], "validation_failed")
+        self.assertTrue(result["rolled_back"])
+        self.assertEqual(self._entity_ids(), before)
 
     def test_create_entity_batch_then_rollback(self):
         before = self._entity_ids()
@@ -211,7 +216,7 @@ class TestPrefabGuard(LiveEditorTest):
     def test_missing_prefab_is_refused_and_the_editor_survives(self):
         result = self.client.api('spawn_prefab("Live_Definitely_Missing")')
         self.assertEqual(result["status"], "error", result)
-        self.assertEqual(result["details"]["code"], "prefab_not_found")
+        self.assertEqual(result["code"], "prefab_not_found")
         self.assertEqual(self.client.request("ping")["status"], "ok")
 
     def test_shipped_prefab_spawns_then_rolls_back(self):

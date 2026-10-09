@@ -70,7 +70,9 @@ Every mutating API function is wrapped with `@with_undo_batch`:
 2. All entity/component operations execute within the batch
 3. If any operation fails:
    - The batch is ended
-   - The entire batch is undone (rolled back)
+   - The entire batch is undone (rolled back), any entity the batch created
+     that the undo left behind is deleted, and the caller receives a JSON error
+     with `rolled_back: true` and a `code` instead of a traceback
    - An error response is returned with `"rolled_back": true`
 4. On success, the batch is committed normally
 

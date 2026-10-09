@@ -147,7 +147,7 @@ def set_agent_mode(enabled: bool = True, suppress_dialogs: bool = True) -> str:
     try:
         _write_state(state)
     except OSError as exc:
-        return error(f"Failed to write agent-mode state file: {exc}")
+        return error(f"Failed to write agent-mode state file: {exc}", code="io_error")
 
     return success({
         "enabled": state["enabled"],
@@ -234,14 +234,16 @@ def configure_editor_prefs(enabled: bool = True) -> str:
     if not conf.is_file():
         return error(
             f"Editor preferences file not found at {conf}. Launch the "
-            "editor at least once so it can create the file, then retry."
+            "editor at least once so it can create the file, then retry.",
+            code="not_found",
         )
 
     if _editor_is_running():
         return error(
             "An O3DE Editor process is currently running. Close all editors "
             "before changing persistent preferences, otherwise the editor "
-            "will overwrite this file on shutdown."
+            "will overwrite this file on shutdown.",
+            code="editor_running",
         )
 
     backup = conf.with_suffix(conf.suffix + ".bak")

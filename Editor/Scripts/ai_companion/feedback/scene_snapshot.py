@@ -114,7 +114,7 @@ def _python_fallback_snapshot() -> str:
         })
 
     except ImportError:
-        return error("Cannot capture snapshot: not running inside O3DE Editor")
+        return error("Cannot capture snapshot: not running inside O3DE Editor", code="not_in_editor")
 
 
 def _python_fallback_tree() -> str:
@@ -149,4 +149,4 @@ def _python_fallback_tree() -> str:
         return success({"roots": nodes, "source": "python_fallback"})
 
     except ImportError:
-        return error("Cannot capture entity tree: not running inside O3DE Editor")
+        return error("Cannot capture entity tree: not running inside O3DE Editor", code="not_in_editor")
