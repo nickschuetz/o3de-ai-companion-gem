@@ -56,7 +56,7 @@ flowchart TB
             SSP["SceneSnapshotProvider"]
             IV["InputValidator"]
             RP["RequestParsing"]
-            RB["ResponseBuilding"]
+            RSP["ResponseBuilding"]
             AS["AgentServer<br/>TCP Listener"]
         end
 
@@ -74,6 +74,7 @@ flowchart TB
     MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity"| AgentSrv
     AgentSrv --> AS
     AS --> RP
+    AS -->|"every reply"| RSP
     AS -->|"request queue"| SysComp
     AS -->|"mutations, bus schema"| EdComp
     EdComp -->|"validated, own undo batch"| Engine
@@ -84,7 +85,7 @@ flowchart TB
     API --> Feedback
     API --> Safety
 
-    Builders -->|"azlmbr"| Engine
+    Builders -->|"azlmbr, EditorComponentAPI<br/>(mass, collider shape)"| Engine
     Templates --> Builders
     Feedback --> SSP
     Safety -->|"validates"| Builders
@@ -174,10 +175,13 @@ in C++ with no Python involved.
 
 o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
 inside its `get_capabilities` tool to confirm the gem is present and report its
-versions, the three C++ snapshot types behind its `get_scene_snapshot`,
-`get_entity_tree` and `validate_scene` tools, and `execute_python` for
-everything else (`run_editor_python` and the `begin_session` /
-`exec_in_session` tools).
+versions, the four C++ read types behind its `get_scene_snapshot`,
+`get_entity_tree`, `get_entity` and `validate_scene` tools, `get_bus_schema`
+first in `get_bus_schema_live`, the three mutation types first in its
+`create_entity`, `set_transform` and `delete_entity` tools (falling back to
+editor Python when the reply carries `unknown_request_type`), and
+`execute_python` for everything else (`run_editor_python` and the
+`begin_session` / `exec_in_session` tools).
 
 `create_entity` (`name`, optional `position` and `parent_id`), `set_transform`
 (`entity_id` plus any of `position`, `rotation` as Euler degrees, `scale`) and

@@ -6,11 +6,11 @@
     "origin_url": "https://github.com/nickschuetz/o3de-ai-companion-gem",
     "summary": "Remote repository for the AI Companion gem: high-level Python APIs, Lua gameplay scripts, prefabs and safety guardrails for AI-driven game development in O3DE.",
     "additional_info": "Register with: o3de register --repo-uri https://raw.githubusercontent.com/nickschuetz/o3de-ai-companion-gem/main. Then: o3de download --gem-name AiCompanion. Each release tag ships a source archive on GitHub; the entry below points at it.",
-    "last_updated": "2026-10-08",
+    "last_updated": "2026-10-09",
     "gems_data": [
         {
             "gem_name": "AiCompanion",
-            "version": "0.4.0",
+            "version": "0.5.0",
             "display_name": "AI Companion",
             "license": "Apache-2.0 Or MIT",
             "license_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/LICENSE.txt",
@@ -39,10 +39,17 @@
                 "o3de >= 26.10.0"
             ],
             "engine_api_dependencies": [],
-            "download_source_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem/archive/refs/tags/v0.4.0.zip",
+            "download_source_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem/archive/refs/tags/v0.5.0.zip",
             "source_control_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem.git",
-            "source_control_ref": "v0.4.0",
+            "source_control_ref": "v0.5.0",
             "versions_data": [
+                {
+                    "version": "0.5.0",
+                    "last_updated": "2026-10-09",
+                    "download_source_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem/archive/refs/tags/v0.5.0.zip",
+                    "source_control_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem.git",
+                    "source_control_ref": "v0.5.0"
+                },
                 {
                     "version": "0.4.0",
                     "last_updated": "2026-10-08",
