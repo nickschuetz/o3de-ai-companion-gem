@@ -360,15 +360,23 @@ class TestNativeMutations(LiveEditorTest):
             self.assertEqual(result["status"], "error", result)
             self.assertEqual(result["code"], "validation_failed", result)
             self.assertIn("entity is protected", result["message"])
-            self.assertEqual(self._ids() - before, {probe_id})
+            extra = self._ids() - before
+            if extra != {probe_id}:
+                snapshot = json.loads(self.native("get_scene_snapshot")["output"])["entities"]
+                names = {int(e["id"]): e["name"] for e in snapshot if int(e["id"]) in extra}
+                self.fail(f"unexpected entities after the refusals: {names} (probe {probe_id})")
         finally:
+            # EntityId(int) yields the invalid id on 26.10.0, so the probe is
+            # found by entity search before it is deleted.
             self.client.run(
                 "import azlmbr.bus as bus\n"
                 "import azlmbr.editor as editor\n"
                 "import azlmbr.entity as entity\n"
-                f"editor.ToolsApplicationRequestBus(bus.Broadcast, 'DeleteEntityById', entity.EntityId({probe_id}))\n"
+                "found = [e for e in entity.SearchBus(bus.Broadcast, 'SearchEntities', entity.SearchFilter())\n"
+                f"         if str(e.ToString()).strip('[]') == '{probe_id}']\n"
+                "editor.ToolsApplicationRequestBus(bus.Broadcast, 'DeleteEntities', found)\n"
             )
-        self.assertEqual(self._ids(), before)
+        self.assertEqual(self._ids(), before, "the probe was not removed")
 
 
 class TestTemplatesAndRollback(LiveEditorTest):
@@ -379,7 +387,9 @@ class TestTemplatesAndRollback(LiveEditorTest):
     def _delete(self, entity_id: int) -> None:
         self.client.run(
             "import azlmbr.bus as bus, azlmbr.editor as editor, azlmbr.entity as entity\n"
-            f"editor.ToolsApplicationRequestBus(bus.Broadcast, 'DeleteEntityById', entity.EntityId({entity_id}))\n"
+            "found = [e for e in entity.SearchBus(bus.Broadcast, 'SearchEntities', entity.SearchFilter())\n"
+            f"         if str(e.ToString()).strip('[]') == '{entity_id}']\n"
+            "editor.ToolsApplicationRequestBus(bus.Broadcast, 'DeleteEntities', found)\n"
         )
 
     def test_create_player_adds_an_entity_and_rollback_removes_it(self):
