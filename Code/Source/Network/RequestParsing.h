@@ -5,6 +5,7 @@
 #pragma once
 
 #include <AzCore/JSON/document.h>
+#include <AzCore/Math/Quaternion.h>
 #include <AzCore/Math/Vector3.h>
 #include <AzCore/base.h>
 
@@ -26,4 +27,15 @@ namespace AiCompanion::RequestParsing
     //! for any other shape, for non-finite values, or for components outside
     //! the InputValidator position bound.
     bool ParseVector3(const rapidjson::Value& value, AZ::Vector3& out);
+
+    //! Reads a scale: a JSON number, repeated into all three elements, or a
+    //! 3-element array of numbers. Returns false for any other shape or when
+    //! an element fails InputValidator::IsValidScale, i.e. is not finite or
+    //! lies outside (0, MaxScale].
+    bool ParseScale(const rapidjson::Value& value, AZ::Vector3& out);
+
+    //! Reads a 4-element JSON array [x, y, z, w] into a normalized
+    //! quaternion. Returns false for any other shape, for non-finite values,
+    //! or for an all-zero quaternion, which has no direction to normalize.
+    bool ParseQuaternion(const rapidjson::Value& value, AZ::Quaternion& out);
 } // namespace AiCompanion::RequestParsing

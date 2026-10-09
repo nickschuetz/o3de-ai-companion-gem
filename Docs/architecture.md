@@ -301,11 +301,39 @@ editor Python when the reply carries `unknown_request_type`), and
 asset readiness types.
 
 `create_entity` (`name`, optional `position` and `parent_id`), `set_transform`
-(`entity_id` plus any of `position`, `rotation` as Euler degrees, `scale`) and
-`delete_entity` (`entity_id`) are the validated mutation set: each runs the
-C++ `InputValidator` on its arguments, refuses missing entities and the level
-root, and executes inside its own editor undo batch, so an agent on a
-secure-mode editor can still build and tidy a scene without Python.
+(`entity_id` plus any of `position`, `rotation` as Euler degrees or
+`rotation_quaternion` as `[x, y, z, w]`, and `scale` as a number or
+`[x, y, z]`) and `delete_entity` (`entity_id`) are the validated mutation set:
+each runs the C++ `InputValidator` on its arguments, refuses missing entities
+and the level root, and executes inside its own editor undo batch, so an agent
+on a secure-mode editor can still build and tidy a scene without Python.
+
+A `scale` array with equal elements is the number: the Transform component's
+uniform scale. Unequal elements set the uniform scale to 1 and add the
+editor's Non-uniform Scale component when the entity has none, through the
+engine's `TransformComponent::AddNonUniformScaleComponent` (the call behind
+the Transform component's "Add non-uniform scale" button, which adds the
+component with `EntityCompositionRequestBus` inside the request's undo batch),
+then set its value; a uniform scale on an entity that already has the
+component keeps it and resets it to (1, 1, 1). Every element must lie in
+(0, 1000], a non-uniform element below 0.01 is refused because the component
+clamps it, both rotation fields at once and an all-zero quaternion are
+refused, and the quaternion is normalized. After setting, the gem reads the
+scale back and answers `engine_error` when it did not land. This lives in C++
+because editor Python cannot add the component: `AddNonUniformScaleComponent`
+is not reflected, and `EditorComponentAPIBus` does not find it by name; the
+Python package's `set_entity_scale` calls the gem's reflected `SetScale` event
+for the same reason.
+
+Every entity object in native output (`get_entity`, each entry of
+`get_scene_snapshot`, the `set_transform` reply) is `{"id", "name",
+"parent_id", "position", "rotation" (Euler degrees), "scale",
+"non_uniform_scale", "effective_scale", "components"}`. `scale` is the
+Transform's uniform scale on every axis; `non_uniform_scale` is the
+Non-uniform Scale component's `[x, y, z]` or null when the entity has none
+(the bus is read only when a handler is connected, because it answers
+(0, 0, 0) without one); `effective_scale` is their product, or the uniform
+scale on every axis. `get_entity_tree` entries carry no transform.
 
 Every 64-bit entity id in native output (`id` and `parent_id` in
 `get_entity`, `get_scene_snapshot` and `get_entity_tree`, `entity_id` in
@@ -314,8 +342,10 @@ Every 64-bit entity id in native output (`id` and `parent_id` in
 from `API_VERSION` 0.4.0 on, for the same reason the anim graph ids are: the
 values are random 64-bit numbers above 2^53 that a double-based JSON parser
 corrupts. Request fields still accept a number or a string. `get_api_version`
-reports the convention: `api_version` 0.3.0 and lower meant numbers. The
-Python API's own JSON keeps its bracketed `"[id]"` strings.
+reports the convention: `api_version` 0.5.0 and up accept array `scale` and
+`rotation_quaternion` and report `non_uniform_scale` and `effective_scale`;
+0.4.0 introduced string ids; 0.3.0 and lower meant numbers. The Python API's
+own JSON keeps its bracketed `"[id]"` strings.
 
 Every reply is `{"id", "status", "output", "error", "duration_ms"}`, written by
 `Network/ResponseBuilding`, and every `error` reply adds a `code` from the

@@ -18,6 +18,12 @@ namespace AiCompanion
         //! Maximum allowed absolute value for position coordinates.
         static constexpr float MaxPositionBound = 10000.0f;
 
+        //! Largest scale factor a set_transform call may apply, per axis.
+        static constexpr float MaxScale = 1000.0f;
+
+        //! Three scale elements within this of each other count as one uniform scale.
+        static constexpr float UniformScaleTolerance = 1e-6f;
+
         //! Validates an entity name: must start with a letter, contain only
         //! alphanumeric characters, underscores, or hyphens, and be within length limits.
         static bool IsValidEntityName(const AZStd::string& name);
@@ -28,6 +34,15 @@ namespace AiCompanion
 
         //! Validates that a position coordinate is finite and within world bounds.
         static bool IsValidPosition(float x, float y, float z);
+
+        //! Validates a scale: every element finite and in (0, MaxScale]. A uniform
+        //! scale is checked by passing the same value three times.
+        static bool IsValidScale(float x, float y, float z);
+
+        //! Whether the three elements are equal within UniformScaleTolerance, so
+        //! the scale is the Transform's uniform scale and needs no Non-uniform
+        //! Scale component.
+        static bool IsUniformScale(float x, float y, float z);
 
         //! Validates a script/asset path: must not contain path traversal sequences,
         //! null bytes, or other dangerous patterns.

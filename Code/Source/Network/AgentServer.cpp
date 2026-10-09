@@ -1187,7 +1187,7 @@ namespace AiCompanion
         w.Key("gem_version");
         w.String("0.5.0");
         w.Key("api_version");
-        w.String("0.4.0");
+        w.String("0.5.0");
         w.Key("secure_mode");
         w.Bool(m_secureMode.load());
         w.Key("tls_enabled");
@@ -1318,34 +1318,46 @@ namespace AiCompanion
             return BuildErrorResponse(id, "set_transform requires 'entity_id'", RequestError::ValidationFailed);
         }
         AZ::Vector3 position = AZ::Vector3::CreateZero();
-        AZ::Vector3 rotation = AZ::Vector3::CreateZero();
-        float scale = 1.0f;
+        AZ::Quaternion rotation = AZ::Quaternion::CreateIdentity();
+        AZ::Vector3 scale = AZ::Vector3::CreateOne();
         const bool setPosition = doc.HasMember("position");
-        const bool setRotation = doc.HasMember("rotation");
+        const bool setEuler = doc.HasMember("rotation");
+        const bool setQuaternion = doc.HasMember("rotation_quaternion");
         const bool setScale = doc.HasMember("scale");
-        if (!setPosition && !setRotation && !setScale)
+        if (!setPosition && !setEuler && !setQuaternion && !setScale)
         {
             return BuildErrorResponse(
                 id,
-                "set_transform needs at least one of 'position', 'rotation' (Euler degrees) or 'scale'",
+                "set_transform needs at least one of 'position', 'rotation' (Euler degrees), 'rotation_quaternion' or 'scale'",
                 RequestError::ValidationFailed);
+        }
+        if (setEuler && setQuaternion)
+        {
+            return BuildErrorResponse(id, "pass rotation or rotation_quaternion, not both", RequestError::ValidationFailed);
         }
         if (setPosition && !RequestParsing::ParseVector3(doc["position"], position))
         {
             return BuildErrorResponse(
                 id, "set_transform 'position' must be [x, y, z] within the position bound", RequestError::ValidationFailed);
         }
-        if (setRotation && !RequestParsing::ParseVector3(doc["rotation"], rotation))
+        if (setEuler)
         {
-            return BuildErrorResponse(id, "set_transform 'rotation' must be [x, y, z] Euler degrees", RequestError::ValidationFailed);
-        }
-        if (setScale)
-        {
-            if (!doc["scale"].IsNumber())
+            AZ::Vector3 eulerDegrees = AZ::Vector3::CreateZero();
+            if (!RequestParsing::ParseVector3(doc["rotation"], eulerDegrees))
             {
-                return BuildErrorResponse(id, "set_transform 'scale' must be a number", RequestError::ValidationFailed);
+                return BuildErrorResponse(id, "set_transform 'rotation' must be [x, y, z] Euler degrees", RequestError::ValidationFailed);
             }
-            scale = static_cast<float>(doc["scale"].GetDouble());
+            rotation = AZ::Quaternion::CreateFromEulerDegreesXYZ(eulerDegrees);
+        }
+        if (setQuaternion && !RequestParsing::ParseQuaternion(doc["rotation_quaternion"], rotation))
+        {
+            return BuildErrorResponse(
+                id, "set_transform 'rotation_quaternion' must be [x, y, z, w], finite and not all zeros", RequestError::ValidationFailed);
+        }
+        if (setScale && !RequestParsing::ParseScale(doc["scale"], scale))
+        {
+            return BuildErrorResponse(
+                id, "set_transform 'scale' must be a number or [x, y, z] with every element in (0, 1000]", RequestError::ValidationFailed);
         }
 
         AZ::Outcome<void, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
@@ -1355,7 +1367,7 @@ namespace AiCompanion
             entityId,
             setPosition,
             position,
-            setRotation,
+            setEuler || setQuaternion,
             rotation,
             setScale,
             scale);

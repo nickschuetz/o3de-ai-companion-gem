@@ -53,9 +53,10 @@ namespace AiCompanion
             bool setPosition,
             AZ::Vector3 position,
             bool setRotation,
-            AZ::Vector3 rotationDegrees,
+            AZ::Quaternion rotation,
             bool setScale,
-            float uniformScale) override;
+            AZ::Vector3 scale) override;
+        AZ::Outcome<void, AZStd::string> SetScale(AZ::EntityId entityId, AZ::Vector3 scale) override;
         AZ::Outcome<void, AZStd::string> DeleteEntity(AZ::u64 entityId) override;
         AZ::Outcome<void, AZStd::string> CommitEntityToPrefab(AZ::EntityId entityId) override;
         AZ::Outcome<AZStd::string, AZStd::string> ListAnimGraphs() override;
