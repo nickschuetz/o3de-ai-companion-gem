@@ -1,7 +1,10 @@
 # Self-hosted runner for build-test CI
 
 The `lint` workflow (SPDX headers, hygiene, Python unit tests) runs on standard
-GitHub-hosted runners and is the always-on gate.
+GitHub-hosted runners and is the always-on gate. The Python unit tests run twice
+there, on `ubuntu-latest` (the required check) and on `windows-latest`
+(advisory), so a path or line-ending assumption that only holds on Linux is
+caught before it reaches a Windows user of the gem.
 
 The `build-test` workflow compiles the gem's C++ and runs its C++ unit tests
 (including the `BusSchema` introspection tests). That needs a full O3DE SDK (26.05 or 26.10)5
@@ -83,6 +86,26 @@ alone), opens `LIVE_LEVEL` (default `DefaultLevel`), runs `pytest Tests/live`,
 and stops everything it started. `LIVE_KEEP=1` leaves the processes up for
 debugging. Linux only; the runner needs Xvfb and a GPU with a working Vulkan
 driver in addition to the build requirements above.
+
+`LIVE_SECURE=1` runs the secure-mode variant: the script starts the Editor with
+`AI_COMPANION_SECURE_MODE=1`, so the AgentServer refuses `execute_python` and
+serves only the native read types (see `Docs/safety-model.md`, "Secure Mode").
+Because the Python-ready probe and the level open both go through
+`execute_python`, the script instead waits for `get_api_version` to report
+`"secure_mode": true` and for `get_entity_tree` to answer (which shows the
+editor's main loop is up), opens no level, and runs `pytest Tests/live -k
+Secure`. That selects `TestSecureMode`, which asserts that `execute_python` is
+refused with a secure-mode error and that `ping`, `get_api_version`,
+`get_scene_snapshot`, `get_entity_tree`, `validate_scene` and `get_bus_schema`
+all answer. Every other class in the live file skips itself against a
+secure-mode editor, and `TestSecureMode` skips against a normal one, so the two
+variants can be run back to back from the same checkout:
+
+```bash
+O3DE_ENGINE_PATH=/path/to/o3de \
+AICOMPANION_PROJECT=/path/to/project \
+LIVE_SECURE=1 bash scripts/ci_live_test.sh
+```
 
 To run the tests against an editor you already have open, skip the script:
 

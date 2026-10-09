@@ -77,8 +77,11 @@ class TestFindPrefabFile(unittest.TestCase):
     def test_gem_prefab_is_found_under_gem_assets(self):
         located = api.find_prefab_file("Player_TwinStick")
         self.assertEqual(located["relative_path"], "Prefabs/Player_TwinStick.prefab")
+        # find_prefab_file joins the forward-slash relative path onto a native
+        # root, so on Windows "found" carries mixed separators; compare the
+        # normalized form rather than the exact string.
         self.assertEqual(
-            located["found"],
+            os.path.normpath(located["found"]),
             os.path.join(GEM_ROOT, "Assets", "Prefabs", "Player_TwinStick.prefab"),
         )
 

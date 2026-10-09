@@ -13,6 +13,12 @@ imports inside the editor, the templates produce real entities, the native
 request types answer, and the prefab guard refuses a missing prefab without
 taking the editor down. Every mutation is undone through the gem's own
 rollback so the level is left as it was found.
+
+Against an editor started with ``AI_COMPANION_SECURE_MODE=1`` only
+``TestSecureMode`` runs (``scripts/ci_live_test.sh`` does that with
+``LIVE_SECURE=1``); every other class goes through ``execute_python``, which
+secure mode refuses, so they skip themselves. ``TestSecureMode`` in turn
+skips against an editor that is not in secure mode.
 """
 
 from __future__ import annotations
@@ -40,8 +46,28 @@ def _entity_number(entity_id: str | int) -> int:
     return int(match.group(0))
 
 
+_secure_mode: bool | None = None
+
+
+def _secure_mode_enabled(client: AgentClient) -> bool:
+    """Whether the editor's AgentServer is in secure mode, asked once per run.
+
+    ``get_api_version`` is answered on the server's network thread, so this
+    costs one round trip and cannot block on the editor's main loop.
+    """
+    global _secure_mode
+    if _secure_mode is None:
+        response = client.request("get_api_version")
+        info = json.loads(response["output"]) if response.get("status") == "ok" else {}
+        _secure_mode = info.get("secure_mode") is True
+    return _secure_mode
+
+
 class LiveEditorTest(unittest.TestCase):
     client: AgentClient
+    # Classes that drive the editor through execute_python cannot run in
+    # secure mode and skip there; TestSecureMode sets this to True.
+    runs_in_secure_mode = False
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -49,6 +75,8 @@ class LiveEditorTest(unittest.TestCase):
         pong = cls.client.request("ping")
         if pong.get("status") != "ok":
             raise unittest.SkipTest(f"AgentServer did not answer ping: {pong}")
+        if not cls.runs_in_secure_mode and _secure_mode_enabled(cls.client):
+            raise unittest.SkipTest("secure mode: execute_python is disabled")
 
     def native(self, request_type: str, **fields):
         """Call a native request type; skip the test if this gem build lacks it."""
@@ -293,6 +321,75 @@ class TestPrefabGuard(LiveEditorTest):
         self.client.api("rollback_last_batch()")
         final = {int(e["id"]) for e in json.loads(self.client.request("get_scene_snapshot")["output"])["entities"]}
         self.assertFalse((after - before) & final, "rollback left prefab entities behind")
+
+
+class TestSecureMode(LiveEditorTest):
+    """What the AgentServer serves and refuses under AI_COMPANION_SECURE_MODE=1.
+
+    Needs an editor started in secure mode and no particular level: the
+    native read types answer on whatever is loaded, which may be nothing.
+    """
+
+    runs_in_secure_mode = True
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        if not _secure_mode_enabled(cls.client):
+            raise unittest.SkipTest("editor is not in secure mode; start it with AI_COMPANION_SECURE_MODE=1")
+
+    def test_api_version_reports_secure_mode(self):
+        response = self.client.request("get_api_version")
+        self.assertEqual(response["status"], "ok", response)
+        self.assertIs(json.loads(response["output"])["secure_mode"], True)
+
+    def test_execute_python_is_refused(self):
+        response = self.client.execute_python("print(1)")
+        self.assertEqual(response["status"], "error", response)
+        self.assertIn("secure mode", str(response.get("error", "")).lower())
+
+    def test_read_only_request_types_answer(self):
+        requests = [
+            ("ping", {}),
+            ("get_api_version", {}),
+            ("get_scene_snapshot", {}),
+            ("get_entity_tree", {}),
+            ("validate_scene", {}),
+            ("get_bus_schema", {"bus_name": "AiCompanionRequestBus"}),
+        ]
+        for request_type, fields in requests:
+            with self.subTest(request_type=request_type):
+                response = self.client.request(request_type, **fields)
+                self.assertEqual(response["status"], "ok", response)
+
+    def test_native_outputs_are_json_without_errors(self):
+        snapshot = json.loads(self.client.request("get_scene_snapshot")["output"])
+        self.assertIn("entities", snapshot)
+        tree = json.loads(self.client.request("get_entity_tree")["output"])
+        self.assertIn("roots", tree)
+        report = json.loads(self.client.request("validate_scene")["output"])
+        self.assertIn("warnings", report)
+        schema = json.loads(self.client.request("get_bus_schema", bus_name="AiCompanionRequestBus")["output"])
+        self.assertNotIn("error", schema, schema)
+        self.assertIn("events", schema)
+
+    def test_native_mutations_work_without_python(self):
+        # The point of the validated mutation set: an agent on a secure-mode
+        # editor can still build and tidy a scene, with no execute_python.
+        created = self.client.request("create_entity", name="SecureNative", position=[1, 2, 3])
+        self.assertEqual(created["status"], "ok", created)
+        new_id = int(json.loads(created["output"])["entity_id"])
+        ids = {int(e["id"]) for e in json.loads(self.client.request("get_scene_snapshot")["output"])["entities"]}
+        self.assertIn(new_id, ids)
+
+        moved = self.client.request("set_transform", entity_id=new_id, position=[4, 5, 6])
+        self.assertEqual(moved["status"], "ok", moved)
+        self.assertAlmostEqual(json.loads(moved["output"])["position"][0], 4.0, places=3)
+
+        deleted = self.client.request("delete_entity", entity_id=new_id)
+        self.assertEqual(deleted["status"], "ok", deleted)
+        ids = {int(e["id"]) for e in json.loads(self.client.request("get_scene_snapshot")["output"])["entities"]}
+        self.assertNotIn(new_id, ids)
 
 
 if __name__ == "__main__":

@@ -79,3 +79,21 @@ jobs:
         # templates, agent-mode) with no azlmbr dependency, so these run on a
         # standard runner. The tests add Editor/Scripts to sys.path themselves.
         run: python -m pytest Tests/ -q
+
+  python-tests-windows:
+    name: python-tests (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run Python unit tests
+        # Same suite as python-tests, on the other platform the editor ships
+        # for. The agent-mode tests write under a temp dir and patch the XDG
+        # path helpers, so nothing here needs a POSIX layout. Tests/live skips
+        # itself without O3DE_LIVE_EDITOR_TEST=1. The Linux job above stays
+        # the required check; this one is advisory until it has a track record.
+        run: python -m pytest Tests/ -q

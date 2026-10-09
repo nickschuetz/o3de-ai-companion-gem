@@ -54,6 +54,37 @@ o3de enable-gem --gem-name AiCompanion --project-path /path/to/project
 cmake --build build --target Editor --config profile
 ```
 
+### From the remote gem repository
+
+The repository root carries a `repo.json` in O3DE's remote repository format
+(schema 1.0.0), so the `o3de` CLI and the Project Manager can fetch a release
+without a clone. Register the repository once, then download and register the
+gem by name:
+
+```bash
+# Register the remote repository (the CLI appends /repo.json to this URI)
+o3de register --repo-uri https://raw.githubusercontent.com/nickschuetz/o3de-ai-companion-gem/main
+
+# Download the latest release listed in repo.json and register it
+o3de download --gem-name AiCompanion
+
+# Or pin a version, or take the tagged source tree through git instead of the archive
+o3de download --gem-name AiCompanion==0.4.0
+o3de download --gem-name AiCompanion --use-source-control
+
+# Enable in your project and rebuild, as above
+o3de enable-gem --gem-name AiCompanion --project-path /path/to/project
+```
+
+`o3de download` registers the gem itself (pass `--skip-auto-register` to
+register later with `o3de register --gem-path`), placing it under the default
+gems folder from your `o3de_manifest.json` unless `--dest-path` says otherwise.
+The archive is GitHub's source archive for the release tag; it carries no
+`sha256`, so the CLI prints its standard warning that the download could not be
+hash-verified. Pick `--use-source-control` if you want the tag checked out
+through git instead. After a new release, `o3de repo --refresh-repo <uri>`
+picks up the updated manifest.
+
 ### Via o3de-mcp
 
 If you're using o3de-mcp, the AI agent can install the Gem itself:
