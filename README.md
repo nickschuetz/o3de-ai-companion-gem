@@ -15,29 +15,44 @@ creation, scene setup, lighting, physics, cameras, and scene inspection, so
 that a configured entity is one call instead of the eight or so raw
 create/add-component/set-property calls it replaces.
 
-Beneath the Python API, a C++ native layer provides fast scene introspection
-through EBus. The SceneSnapshotProvider traverses entities at engine speed and
+Beneath the Python API, a C++ native layer serves requests with no Python
+at all. The SceneSnapshotProvider traverses entities at engine speed and
 serializes scene state as JSON, while the InputValidator enforces the same
-safety rules in compiled code. Read-only queries like scene snapshots, entity
-trees, and validation can bypass Python entirely by going straight through the
-AgentServer's C++ request handlers.
+safety rules in compiled code. The AgentServer answers scene snapshots, entity
+trees, single entities, validation and live EBus schemas straight from C++,
+and a validated mutation set (`create_entity`, `set_transform`,
+`delete_entity`) that runs in its own undo batch, so an agent on a secure-mode
+editor, where arbitrary code execution is disabled, can still build and tidy a
+scene.
 
 A safety layer wraps every mutation. Inputs are validated against strict
 patterns (entity names, positions, asset paths), operations are sandboxed
 with configurable limits, and every change is captured in an undo batch that
-rolls back automatically on failure. System entities are protected from
-modification, and the AgentServer supports TLS encryption and a secure mode
-that disables arbitrary code execution.
+rolls back automatically on failure, deleting anything the editor's Undo
+leaves behind. Errors come back as JSON with a `code` to branch on, never as
+a traceback. System entities are protected from modification, and the
+AgentServer supports TLS encryption and a secure mode that disables arbitrary
+code execution.
 
 See the [architecture document](Docs/architecture.md) for the full system
 diagram.
 
 ## Quick Start
 
-**1. Clone**
+**1. Get the gem**
+
+Clone it:
 
 ```bash
 git clone https://github.com/nickschuetz/o3de-ai-companion-gem.git
+```
+
+or install a release from the remote gem repository, which needs no clone
+(see [Getting Started](Docs/README.md#from-the-remote-gem-repository)):
+
+```bash
+o3de register --repo-uri https://raw.githubusercontent.com/nickschuetz/o3de-ai-companion-gem/main
+o3de download --gem-name AiCompanion
 ```
 
 **2. Register and enable**
@@ -101,6 +116,18 @@ create_camera("MainCamera", camera_type="top_down")
 # Inspect the result
 print(get_scene_snapshot())
 ```
+
+## Verification
+
+| Check | What it proves | How |
+|-------|----------------|-----|
+| Python unit suite | The package's logic, with `azlmbr` stubbed | `python -m pytest Tests/`, on Linux and Windows in CI |
+| C++ unit suite | The AgentServer protocol, validators, snapshot and request parsing | `scripts/ci_build_test.sh` on a self-hosted runner (`ci:build` label) |
+| Live editor suite | The package inside a real editor: native request types, templates, rollback, the prefab guard, multi-entity persistence, secure mode | `scripts/ci_live_test.sh` (`LIVE_SECURE=1` for secure mode), `ci:live` label |
+| Launcher gameplay check | The Lua scripts running in a GameLauncher: registry, pickup, chase and attack, contact damage, no Lua errors | `scripts/ci_launcher_test.sh`, same label |
+
+See [docs/ci-self-hosted-runner.md](docs/ci-self-hosted-runner.md) for the
+runner requirements and what each script does.
 
 ## Documentation
 

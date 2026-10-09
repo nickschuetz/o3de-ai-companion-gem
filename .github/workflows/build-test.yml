@@ -71,3 +71,25 @@ jobs:
           AICOMPANION_PROJECT: ${{ vars.AICOMPANION_PROJECT }}
           BUILD_CONFIG: profile
         run: bash scripts/ci_live_test.sh
+
+  launcher-test:
+    name: launcher gameplay check
+    needs: live-test
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:live')
+    runs-on: [self-hosted, o3de]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build an arena, run it in the GameLauncher, check the Lua fired
+        # The only check that runs the gem's Lua in a launcher. Builds the
+        # project's GameLauncher target if it is missing, creates and saves a
+        # level through the gem API, runs it, and asserts on the scripts'
+        # log markers (Tests/live/test_launcher.py). See
+        # docs/ci-self-hosted-runner.md.
+        env:
+          O3DE_ENGINE_PATH: ${{ vars.O3DE_ENGINE_PATH }}
+          AICOMPANION_PROJECT: ${{ vars.AICOMPANION_PROJECT }}
+          BUILD_CONFIG: profile
+        run: bash scripts/ci_launcher_test.sh

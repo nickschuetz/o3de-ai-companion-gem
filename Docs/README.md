@@ -158,6 +158,24 @@ All inputs are validated before reaching O3DE APIs:
 - Script paths cannot contain `..` (path traversal)
 - System entities are protected from modification
 
+## Verifying an installation
+
+The quickest proof that the gem is wired up is a live run against the editor:
+
+```bash
+O3DE_ENGINE_PATH=/path/to/o3de AICOMPANION_PROJECT=/path/to/project \
+bash scripts/ci_live_test.sh
+```
+
+It starts AssetProcessor, a virtual display and the editor, opens a level, and
+runs `Tests/live/`: the package imports and reports its version, the native
+request types answer, the templates create entities that `rollback_last_batch`
+removes, multi-entity calls keep every entity, and `spawn_prefab` refuses a
+missing prefab with the editor still alive. `scripts/ci_launcher_test.sh` goes
+one step further and runs the Lua gameplay scripts in your project's
+GameLauncher. Both are described in
+[docs/ci-self-hosted-runner.md](../docs/ci-self-hosted-runner.md).
+
 ## Further Reading
 
 - [API Reference](api-reference.md), complete function documentation

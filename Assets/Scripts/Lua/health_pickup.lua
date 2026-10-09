@@ -81,6 +81,7 @@ function HealthPickup:FindCollector()
 end
 
 function HealthPickup:Collect(collectorId)
+    Debug.Log("[AiCompanion] pickup collected by " .. tostring(collectorId) .. " heal " .. tostring(self.Properties.HealAmount))
     GameplayNotificationBus.Event.OnEventBegin(
         GameplayNotificationId(collectorId, "Heal"),
         self.Properties.HealAmount)

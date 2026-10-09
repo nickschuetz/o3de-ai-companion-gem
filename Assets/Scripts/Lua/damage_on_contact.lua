@@ -134,6 +134,7 @@ function DamageOnContact:OnTick(deltaTime, scriptTime)
     if self.cooldownTimer <= 0 then
         local target = self:FindContact()
         if target ~= nil then
+            Debug.Log("[AiCompanion] contact damage " .. tostring(self.Properties.Damage) .. " to " .. tostring(target))
             GameplayNotificationBus.Event.OnEventBegin(
                 GameplayNotificationId(target, "TakeDamage"),
                 self.Properties.Damage)

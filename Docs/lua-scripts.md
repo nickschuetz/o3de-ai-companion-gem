@@ -3,13 +3,16 @@
 Gameplay Lua scripts in `Assets/Scripts/Lua/`. Attach to entities via the
 Python API or by adding a Lua Script component in the editor.
 
-> **Status: building blocks, verified by static checks only.** Every bus and
-> class these scripts call is reflected to launcher Lua on O3DE 26.10 (checked
-> against the engine source), and each file compiles under Lua 5.4, which is
-> what O3DE ships. They have not been exercised in a running GameLauncher
-> since the port described below. Mouse aim in `twin_stick_movement.lua` was
-> observed not to dispatch in the editor's Play mode (May 2026); test it in a
-> launcher build.
+> **Status: building blocks, exercised in a GameLauncher by
+> `scripts/ci_launcher_test.sh`.** Every bus and class these scripts call is
+> reflected to launcher Lua on O3DE 26.10 (checked against the engine source),
+> each file compiles under Lua 5.4, which is what O3DE ships, and the launcher
+> check builds an arena through the API and asserts at runtime that the player
+> registers, the pickup collects, the enemy chases and attacks, and contact
+> damage lands, with no Lua errors. The scripts write `[AiCompanion] ...` lines
+> through `Debug.Log` for that purpose. Mouse aim in `twin_stick_movement.lua`
+> was observed not to dispatch in the editor's Play mode (May 2026); it is not
+> covered by the launcher check, which runs with no input.
 >
 > **How contact works.** PhysX's `CollisionNotificationBus` and
 > `TriggerNotificationBus` are reflected to Lua only in the Automation
@@ -81,7 +84,14 @@ Simple chase-and-attack AI with state machine, plus hit points.
 | `BodyTag` | "Enemy" | Registry name this enemy is listed under, for projectiles and pickups |
 | `Health` | 30.0 | Hit points; `TakeDamage` events reduce it |
 
-**States:** Idle -> Chase -> Attack
+**States:** Idle -> Chase -> Attack. Each transition logs
+`[AiCompanion] enemy state <state> distance <d>`.
+
+Chase sets linear velocity on the rigid body and turns toward the target
+through angular velocity. It does not write the entity transform: on a
+simulated rigid body that teleports the body back to the written pose every
+tick, so the velocity never moves it (the launcher warns "Transform of Entity
+... with simulated body was set manually").
 
 **Events listened:** `TakeDamage` (addressed to this entity)
 

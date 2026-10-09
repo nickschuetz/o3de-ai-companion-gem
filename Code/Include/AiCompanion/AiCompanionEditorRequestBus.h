@@ -74,6 +74,15 @@ namespace AiCompanion
             bool setScale,
             float uniformScale) = 0;
 
+        //! Records an entity's current state (name, transform, components) in the
+        //! level's prefab template now, instead of when the root undo batch ends.
+        //! Creating an entity through the prefab system propagates the template
+        //! and re-instantiates entities from it, wiping live changes that are
+        //! not in the DOM yet; the editor only captures dirty entities when the
+        //! outermost undo batch closes. Call this after configuring each entity
+        //! in a call that creates several, so none of them come out bare.
+        virtual AZ::Outcome<void, AZStd::string> CommitEntityToPrefab(AZ::EntityId entityId) = 0;
+
         //! Deletes an entity and its descendants inside its own undo batch.
         //! Refuses the level's root entity and ids that do not exist.
         virtual AZ::Outcome<void, AZStd::string> DeleteEntity(AZ::u64 entityId) = 0;

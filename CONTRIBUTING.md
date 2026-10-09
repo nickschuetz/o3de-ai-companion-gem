@@ -113,6 +113,9 @@ These are non-negotiable:
   `scripts/ci_live_test.sh`, or `O3DE_LIVE_EDITOR_TEST=1 python -m pytest Tests/live`
   against an editor you already have open. Label the PR `ci:build` or `ci:live`
   to run these on the self-hosted runner
+- Changes to the Lua scripts should be checked in a GameLauncher with
+  `scripts/ci_launcher_test.sh`, which builds an arena with the API, runs it, and
+  asserts on the scripts' log markers; the `ci:live` label runs it too
 - Existing tests must continue to pass
 
 ### Documentation

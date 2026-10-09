@@ -193,13 +193,18 @@ print(get_scene_snapshot())
 For a multi-step build, open one o3de-mcp session instead: `begin_session`,
 then `exec_in_session` per step, then `end_session`. Imports and variables
 persist across steps, each step is its own request so the editor's main thread
-drains between them (which avoids the entity-naming race a single long script
-can hit), and a failed step leaves the earlier ones inspectable.
+drains between them, and a failed step leaves the earlier ones inspectable.
+(Creating several entities in one call used to leave every entity but the last
+bare; the builder now commits each entity to the level template as it goes, so
+`bootstrap_scene`, `create_entity_batch` and `create_grid` are safe in a single
+request.)
 
 For read-only checks that need no Python at all, o3de-mcp's `get_scene_snapshot`,
-`get_entity_tree` and `validate_scene` tools call the gem's C++ request types
-directly. They are the cheapest way to look at the scene, and the only way when
-the AgentServer runs in secure mode.
+`get_entity_tree`, `get_entity` and `validate_scene` tools call the gem's C++
+request types directly. They are the cheapest way to look at the scene, and the
+only way when the AgentServer runs in secure mode, where the native
+`create_entity`, `set_transform` and `delete_entity` request types are also the
+only way to change it.
 
 ### Error handling
 

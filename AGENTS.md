@@ -25,7 +25,10 @@ Editor/Scripts/ai_companion/ Python API package
   utils/                    Component registry, JSON helpers, transform helpers
   version.py                Version constants (__version__, API_VERSION)
 Tests/                      Python unit tests (unittest)
-Docs/                       Documentation
+Tests/live/                 Live editor suite and launcher check (opt-in; stdlib AgentServer client)
+scripts/                    CI scripts: build and C++ tests, live editor run, launcher gameplay check
+Docs/                       User documentation
+docs/                       Maintainer documentation (self-hosted runner)
 ```
 
 ## Versioning
@@ -102,6 +105,7 @@ matching the file type:
 - C++: `AZ::AzTest` (Google Test), files in `Code/Source/Tests/`
 - Run Python tests: `python -m pytest Tests/` or `python -m unittest discover Tests`
 - Live editor tests (`Tests/live/`, opt-in): `O3DE_LIVE_EDITOR_TEST=1 python -m pytest Tests/live` against a running editor, or `scripts/ci_live_test.sh` to bring one up on Xvfb first
+- Launcher gameplay check: `scripts/ci_launcher_test.sh` builds an arena level through the API, runs it in the project's GameLauncher, and asserts on the Lua scripts' `[AiCompanion] ...` log markers (`Tests/live/test_launcher.py`)
 
 ## SBOM
 
@@ -230,6 +234,12 @@ identifying slow operations during profiling.
 **Add a new prefab:**
 1. Create in `Assets/Prefabs/`
 2. Document in `Docs/prefab-catalog.md`
+
+**Add a native AgentServer request type:**
+1. Parse arguments with `Network/RequestParsing` (add a parser there if the shape is new, with a test in `Code/Source/Tests/RequestParsingTests.cpp`)
+2. Implement the operation as an `AiCompanionRequestBus` (runtime) or `AiCompanionEditorRequestBus` (editor) event; mutations validate with `InputValidator`, refuse the level root, and run in their own `ScopedUndoBatch`; call engine interfaces directly rather than the `*Integration*` layers, which raise modal dialogs on failure
+3. Add the type to the main-thread dispatch list, `HandleRequest`, and the secure-mode message in `Code/Source/Network/AgentServer.cpp`, and to the safe-type test in `AgentServerTests.cpp`
+4. Add a live test in `Tests/live/test_live_editor.py`, document it in `Docs/architecture.md`, `Docs/safety-model.md` and `Docs/integration-with-o3de-mcp.md`, and add the o3de-mcp tool
 
 **Add a C++ component or EBus:**
 1. Public header in `Code/Include/AiCompanion/`
