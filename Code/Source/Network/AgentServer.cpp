@@ -1086,8 +1086,10 @@ namespace AiCompanion
             return BuildResponse(id, "ok", output, "", 0);
         }
 
-        return BuildErrorResponse(
-            id, AZStd::string::format("Unhandled type in main thread: %s", type.c_str()), RequestError::UnknownRequestType);
+        // A type the dispatch list accepts but HandleRequest does not know is a
+        // server bug, not a missing request type: engine_error keeps clients
+        // from treating it as an older gem and falling back to Python.
+        return BuildErrorResponse(id, AZStd::string::format("Unhandled type in main thread: %s", type.c_str()), RequestError::EngineError);
     }
 
     AZStd::string AgentServer::HandlePing(const AZStd::string& id)
