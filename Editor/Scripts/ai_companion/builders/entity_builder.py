@@ -4,19 +4,76 @@
 """Fluent EntityBuilder for creating entities with components in a single call."""
 
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ..safety.validators import (
     validate_entity_name,
     validate_position,
     validate_component_type,
     validate_asset_path,
+    validate_float,
 )
 from ..safety.sandbox import get_sandbox
 from ..utils.json_output import success, error, entity_result
 from ..utils.component_registry import resolve_component
 
 Number = Union[int, float]
+
+# EditorComponentAPI property paths for the physics components, as the editor
+# reflects them on O3DE 26.x. The path segments are the EditContext display
+# names: "Configuration" is EditorRigidBodyComponent::m_config
+# (Gems/PhysX/Core/Code/Source/EditorRigidBodyComponent.cpp) and "Compute
+# Mass" / "Mass" are RigidBodyConfiguration::m_computeMass / m_mass as
+# reflected there. "Shape Configuration" is EditorColliderComponent::
+# m_proxyShapeConfiguration and "Shape" is EditorProxyShapeConfig::m_shapeType
+# (Gems/PhysX/Core/Code/Source/EditorColliderComponent.cpp). The engine's own
+# editor tests use the same strings (AutomatedTesting/Gem/PythonTests/
+# EditorPythonTestTools/.../PhysXDynamicRigidBodyComponent.py and
+# editor_physx_primitive_collider.py). Kept as constants so a rename in a
+# later engine release is a one-line fix.
+RIGID_BODY_COMPUTE_MASS_PATH = "Configuration|Compute Mass"
+RIGID_BODY_MASS_PATH = "Configuration|Mass"
+COLLIDER_SHAPE_PATH = "Shape Configuration|Shape"
+
+# Physics::ShapeType values (Code/Framework/AzFramework/AzFramework/Physics/
+# ShapeConfiguration.h). The editor accepts the plain integer for the enum
+# property, which is what the engine's Collider_SphereShapeEditing test
+# passes; azlmbr.physics.ShapeType_* is not used because Capsule is not
+# reflected there.
+COLLIDER_SHAPE_TYPES: Dict[str, int] = {
+    "sphere": 0,
+    "box": 1,
+    "capsule": 2,
+    "cylinder": 3,
+}
+
+# Mass in kilograms. The engine's lower bound is 0 (treated as infinite mass);
+# the upper bound here is only a sanity check against typos.
+MAX_MASS_KG = 1.0e9
+
+_BUS_CALL_ERRORS = (AttributeError, TypeError, RuntimeError, ValueError)
+
+
+def _set_component_property(editor, bus, pair, property_path: str, value: Any) -> Tuple[bool, str]:
+    """Set one property through EditorComponentAPIBus, never raising.
+
+    Returns ``(True, "")`` when the editor reports success, otherwise
+    ``(False, reason)``. A failed set must not abort a build: the entity and
+    its components already exist, and the agent can correct the property
+    afterwards from the warning in the result.
+    """
+    try:
+        outcome = editor.EditorComponentAPIBus(
+            bus.Broadcast, "SetComponentProperty", pair, property_path, value
+        )
+    except _BUS_CALL_ERRORS as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    if outcome is None:
+        return False, "no outcome returned"
+    if hasattr(outcome, "IsSuccess") and not outcome.IsSuccess():
+        reason = outcome.GetError() if hasattr(outcome, "GetError") else "SetComponentProperty failed"
+        return False, str(reason)
+    return True, ""
 
 
 class EntityBuilder:
@@ -89,11 +146,20 @@ class EntityBuilder:
         return self
 
     def with_physics(self, body_type: str = "dynamic", mass: float = 1.0) -> "EntityBuilder":
-        """Add PhysX rigid body + collider components."""
+        """Add a PhysX rigid body component.
+
+        For a dynamic body ``mass`` (kilograms) is applied to the component on
+        build: "Compute Mass" is switched off and "Mass" set, so the value
+        survives in the saved level instead of the editor's computed mass.
+        Static bodies have no mass.
+        """
         if body_type == "dynamic":
+            valid, err = validate_float(mass, 0.0, MAX_MASS_KG, "mass")
+            if not valid:
+                raise ValueError(err)
             self._components.append({
                 "type": "PhysX Dynamic Rigid Body",
-                "properties": {"mass": mass},
+                "properties": {"mass": float(mass)},
             })
         else:
             self._components.append({
@@ -103,10 +169,21 @@ class EntityBuilder:
         return self
 
     def with_collider(self, shape: str = "box") -> "EntityBuilder":
-        """Add a PhysX Primitive Collider component with the specified shape."""
+        """Add a PhysX Primitive Collider component with the specified shape.
+
+        ``shape`` is one of ``box``, ``sphere``, ``capsule`` or ``cylinder``
+        and is applied to the component's "Shape" property on build. The
+        shape's dimensions stay at the engine defaults.
+        """
+        key = str(shape).strip().lower()
+        if key not in COLLIDER_SHAPE_TYPES:
+            raise ValueError(
+                f"Unknown collider shape '{shape}'. "
+                f"Available: {', '.join(COLLIDER_SHAPE_TYPES)}"
+            )
         self._components.append({
             "type": "PhysX Primitive Collider",
-            "properties": {"shape": shape},
+            "properties": {"shape": key},
         })
         return self
 
@@ -266,15 +343,72 @@ class EntityBuilder:
         from ..utils.id_helpers import id_to_jsonable
 
         self._apply_asset_properties(component_pairs)
+        applied, warnings = self._apply_physics_properties(component_pairs)
         mark_entity_dirty(entity_id)
         commit_entity_to_prefab(entity_id)
+
+        extra: Dict[str, Any] = {}
+        if applied:
+            extra["applied_properties"] = applied
+        if warnings:
+            extra["property_warnings"] = warnings
 
         return entity_result(
             entity_id=id_to_jsonable(entity_id),
             name=self._name,
             component_ids=component_ids,
             position=self._position,
+            extra=extra or None,
         )
+
+    def _apply_physics_properties(
+        self, component_pairs: Dict[str, Any]
+    ) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
+        """Apply the stored mass and collider shape to the physics components.
+
+        The rigid body is created with "Compute Mass" on, and the editor then
+        overwrites ``m_mass`` with the mass it derives from the colliders
+        (EditorRigidBodyComponent::CreateEditorWorldRigidBody), so a level
+        saved with the default settings carries the computed value, not the
+        one the agent asked for. Switching "Compute Mass" off before setting
+        "Mass" makes the requested value stick. The collider's "Shape" is an
+        enum written as its integer value.
+
+        Every set is guarded: a bus call that raises or reports a failed
+        outcome is recorded as a warning and the build carries on. Returns
+        ``(applied, warnings)`` where ``applied`` maps component type to the
+        property paths and values that were accepted.
+        """
+        import azlmbr.bus as bus
+        import azlmbr.editor as editor
+
+        applied: Dict[str, Dict[str, Any]] = {}
+        warnings: List[str] = []
+
+        def set_property(comp_type: str, property_path: str, value: Any) -> None:
+            pair = component_pairs.get(comp_type)
+            if pair is None:
+                return
+            ok, err = _set_component_property(editor, bus, pair, property_path, value)
+            if ok:
+                applied.setdefault(comp_type, {})[property_path] = value
+            else:
+                warnings.append(f"{comp_type}: could not set '{property_path}': {err}")
+
+        for comp in self._components:
+            props = comp.get("properties") or {}
+            if comp["type"] == "PhysX Dynamic Rigid Body" and "mass" in props:
+                set_property("PhysX Dynamic Rigid Body", RIGID_BODY_COMPUTE_MASS_PATH, False)
+                set_property("PhysX Dynamic Rigid Body", RIGID_BODY_MASS_PATH, float(props["mass"]))
+            elif comp["type"] == "PhysX Primitive Collider" and "shape" in props:
+                shape_value = COLLIDER_SHAPE_TYPES.get(props["shape"])
+                if shape_value is None:
+                    warnings.append(
+                        f"PhysX Primitive Collider: unknown shape '{props['shape']}' not applied")
+                    continue
+                set_property("PhysX Primitive Collider", COLLIDER_SHAPE_PATH, shape_value)
+
+        return applied, warnings
 
     def _outside_editor_result(self) -> str:
         """Running outside the editor: a mock result so unit tests can run."""
