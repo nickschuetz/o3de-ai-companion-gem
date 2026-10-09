@@ -7,7 +7,7 @@
 
 #include <AzCore/Utils/Utils.h>
 
-#include <rapidjson/document.h>
+#include <AzCore/JSON/document.h>
 
 #include <chrono>
 #include <ctime>

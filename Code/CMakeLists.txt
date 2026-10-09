@@ -50,6 +50,9 @@ if(PAL_TRAIT_BUILD_HOST_TOOLS)
                 AZ::AzFramework
                 AZ::AzToolsFramework
                 3rdParty::OpenSSL
+                # Animation/AnimGraphInspector reads EMotion FX anim graphs
+                # (the list_anim_graphs / get_anim_graph request types).
+                Gem::EMotionFX.Editor.Static
     )
 
     ly_add_target(
@@ -65,6 +68,8 @@ if(PAL_TRAIT_BUILD_HOST_TOOLS)
         BUILD_DEPENDENCIES
             PRIVATE
                 Gem::${gem_name}.Editor.Static
+        RUNTIME_DEPENDENCIES
+            Gem::EMotionFX.Editor
     )
 endif()
 

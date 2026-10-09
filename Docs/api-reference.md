@@ -35,7 +35,11 @@ These codes belong to the Python package. The C++ AgentServer's own replies
 case only: a request `type` the server does not serve answers with
 `"code": "unknown_request_type"` next to
 `"error": "Unknown request type: <type>"`. See the
-[integration guide](integration-with-o3de-mcp.md#response-format).
+[integration guide](integration-with-o3de-mcp.md#response-format). The
+AgentServer's native request types (scene reads, the validated mutations, and
+the `list_anim_graphs` / `get_anim_graph` anim graph reads) are listed in the
+[integration guide](integration-with-o3de-mcp.md#request-types); they are not
+part of this Python package.
 
 ## Meta
 

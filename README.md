@@ -21,8 +21,9 @@ Beneath the Python API, a C++ native layer serves requests with no Python
 at all. The SceneSnapshotProvider traverses entities at engine speed and
 serializes scene state as JSON, while the InputValidator enforces the same
 safety rules in compiled code. The AgentServer answers scene snapshots, entity
-trees, single entities, validation and live EBus schemas straight from C++,
-and a validated mutation set (`create_entity`, `set_transform`,
+trees, single entities, validation, live EBus schemas and read-only views of
+EMotion FX anim graphs (`list_anim_graphs`, `get_anim_graph`) straight from
+C++, and a validated mutation set (`create_entity`, `set_transform`,
 `delete_entity`) that runs in its own undo batch, so an agent on a secure-mode
 editor, where arbitrary code execution is disabled, can still build and tidy a
 scene.
@@ -147,6 +148,7 @@ runner requirements and what each script does.
 
 - O3DE 2305.0 or later (also supports the 2.7.0, 24.09, 26.05.0, and 26.10.0 engine versions; the C++ and Python test suites are run against 26.10.0)
 - **EditorPythonBindings** Gem (for Python API access)
+- **EMotionFX** Gem (declared as a gem dependency; the editor module links it for the anim graph request types)
 
 ## Platform Support
 

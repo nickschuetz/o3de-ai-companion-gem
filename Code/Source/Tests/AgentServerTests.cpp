@@ -9,9 +9,9 @@
 
 #include "Network/ResponseBuilding.h"
 
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
+#include <AzCore/JSON/document.h>
+#include <AzCore/JSON/stringbuffer.h>
+#include <AzCore/JSON/writer.h>
 
 #include <cstring>
 
@@ -288,7 +288,7 @@ namespace UnitTest
     {
         AZStd::vector<AZStd::string> safeTypes = { "ping",           "get_api_version", "get_scene_snapshot", "get_entity_tree",
                                                    "validate_scene", "get_entity",      "get_bus_schema",     "create_entity",
-                                                   "set_transform",  "delete_entity" };
+                                                   "set_transform",  "delete_entity",   "list_anim_graphs",   "get_anim_graph" };
 
         for (const auto& type : safeTypes)
         {
@@ -303,7 +303,7 @@ namespace UnitTest
         bool isSafe =
             (type == "ping" || type == "get_api_version" || type == "get_scene_snapshot" || type == "get_entity_tree" ||
              type == "validate_scene" || type == "get_entity" || type == "get_bus_schema" || type == "create_entity" ||
-             type == "set_transform" || type == "delete_entity");
+             type == "set_transform" || type == "delete_entity" || type == "list_anim_graphs" || type == "get_anim_graph");
         EXPECT_FALSE(isSafe);
     }
 

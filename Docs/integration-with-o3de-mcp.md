@@ -58,13 +58,19 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `create_entity` | Create a named entity (`name`, `position?`, `parent_id?`), validated, undoable | No (C++) |
 | `set_transform` | Set `position` / `rotation` (Euler degrees) / `scale` on `entity_id`, validated, undoable | No (C++) |
 | `delete_entity` | Delete `entity_id` and descendants; refuses the level root, undoable | No (C++) |
+| `list_anim_graphs` | Every EMotion FX anim graph the engine holds: id, file name, ownership and dirty flags, node and parameter counts, actor instances | No (C++ EMotion FX) |
+| `get_anim_graph` | One anim graph (`anim_graph_id` as number or string, or `file_name`): nodes with ports and connections, transitions with conditions, parameters, node groups | No (C++ EMotion FX) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
 `get_capabilities()` to confirm the gem is present, and the C++ request types
 behind its `get_scene_snapshot`, `get_entity_tree`, `get_entity`,
 `validate_scene` and `get_bus_schema_live` tools. Everything else goes through `execute_python`. The C++ request types
 keep working when the AgentServer runs in secure mode, which disables
-`execute_python`.
+`execute_python`. o3de-mcp wrappers for `list_anim_graphs` and
+`get_anim_graph` are to follow; until then a client sends the request types
+directly. Both are read-only: `get_anim_graph` answers
+`anim graph not found: <selector>` for an unknown graph, and both answer
+`EMotion FX is not available` when the EMotionFX gem is not loaded.
 
 ### Response format
 

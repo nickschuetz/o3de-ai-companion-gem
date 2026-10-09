@@ -26,8 +26,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
+import time
 import unittest
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "Editor", "Scripts"))
@@ -35,6 +38,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "Editor",
 from agent_client import AgentClient  # noqa: E402
 
 GEM_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# The anim graph fixture (see Tests/live/fixtures/README.md) and where it goes
+# in the host project; scripts/ci_live_test.sh copies it there before starting
+# AssetProcessor, and TestAnimGraphs copies it itself when it is missing.
+ANIM_GRAPH_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "AiCompanionSample.animgraph"
+ANIM_GRAPH_PROJECT_SUBDIR = Path("Assets") / "AiCompanionLiveTest"
+ANIM_GRAPH_PRODUCT_PATH = "assets/aicompanionlivetest/aicompanionsample.animgraph"
+ANIM_GRAPH_ASSET_TIMEOUT_S = 120.0
+
+
+def _is_fixture_graph(file_name: str) -> bool:
+    """Whether an anim graph's reported file name is the fixture.
+
+    The engine reports the absolute path of the loaded product, with the
+    platform's separators (backslashes on Windows) and the catalog's casing,
+    so normalize separators and case and compare the product-path tail.
+    """
+    normalized = PurePosixPath(file_name.replace("\\", "/").lower())
+    tail = PurePosixPath(ANIM_GRAPH_PRODUCT_PATH)
+    return normalized.parts[-len(tail.parts):] == tail.parts
 
 if os.environ.get("O3DE_LIVE_EDITOR_TEST", "").strip() != "1":
     raise unittest.SkipTest("live editor tests are opt-in; set O3DE_LIVE_EDITOR_TEST=1")
@@ -377,6 +400,191 @@ class TestPrefabGuard(LiveEditorTest):
         self.assertFalse((after - before) & final, "rollback left prefab entities behind")
 
 
+class TestAnimGraphs(LiveEditorTest):
+    """list_anim_graphs / get_anim_graph served in C++ from EMotion FX.
+
+    The fixture graph is copied into the host project (``AICOMPANION_PROJECT``),
+    built by AssetProcessor, and loaded by an Anim Graph component on an entity
+    this class creates; EMotion FX registers the loaded graph with its
+    AnimGraphManager, which is what the request types read. Teardown deletes
+    the entity and removes the copied file when this class copied it.
+    """
+
+    entity_id: int = 0
+    graph_id: int | None = None
+    copied_fixture: Path | None = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        probe = cls.client.request("list_anim_graphs")
+        if probe.get("status") == "error" and probe.get("code") == "unknown_request_type":
+            raise unittest.SkipTest("list_anim_graphs is not served by this gem build")
+        project = os.environ.get("AICOMPANION_PROJECT", "").strip()
+        if not project:
+            raise unittest.SkipTest("AICOMPANION_PROJECT is not set; the anim graph fixture cannot be copied into the project")
+        cls._place_fixture(project)
+        cls._wait_for_asset()
+        cls._create_fixture_entity()
+        cls.graph_id = cls._wait_for_graph()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls.entity_id:
+            cls.client.request("delete_entity", entity_id=cls.entity_id)
+            cls.entity_id = 0
+        if cls.copied_fixture and cls.copied_fixture.exists():
+            cls.copied_fixture.unlink()
+            try:
+                cls.copied_fixture.parent.rmdir()
+            except OSError:
+                pass  # the directory holds something else; leave it
+            cls.copied_fixture = None
+
+    @classmethod
+    def _place_fixture(cls, project: str) -> None:
+        # The copy lives here, not only in scripts/ci_live_test.sh, so the
+        # class works wherever the suite runs (the script is Linux-only).
+        target = Path(project) / ANIM_GRAPH_PROJECT_SUBDIR / ANIM_GRAPH_FIXTURE.name
+        if target.exists():
+            return  # scripts/ci_live_test.sh put it there and will remove it
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ANIM_GRAPH_FIXTURE, target)
+        cls.copied_fixture = target
+
+    @classmethod
+    def _wait_for_asset(cls) -> None:
+        # AssetProcessor has to notice the file and build it; poll the catalog.
+        script = (
+            "import azlmbr.bus as bus, azlmbr.asset as asset, azlmbr.math as math\n"
+            f"aid = asset.AssetCatalogRequestBus(bus.Broadcast, 'GetAssetIdByPath', {ANIM_GRAPH_PRODUCT_PATH!r}, math.Uuid(), False)\n"
+            "print('ASSET_VALID=' + str(aid is not None and aid.is_valid()))\n"
+        )
+        deadline = time.monotonic() + ANIM_GRAPH_ASSET_TIMEOUT_S
+        last = ""
+        while time.monotonic() < deadline:
+            last = cls.client.run(script)
+            if "ASSET_VALID=True" in last:
+                return
+            time.sleep(3)
+        raise unittest.SkipTest(f"{ANIM_GRAPH_PRODUCT_PATH} never appeared in the asset catalog: {last.strip()}")
+
+    @classmethod
+    def _create_fixture_entity(cls) -> None:
+        # An Actor component is required by the Anim Graph component
+        # (EMotionFXActorService); it needs no actor asset to activate.
+        # Setting the asset property fires the component's ChangeNotify, which
+        # queues the asset load that registers the graph with EMotion FX.
+        script = (
+            "import azlmbr.bus as bus, azlmbr.editor as editor, azlmbr.entity as entity\n"
+            "import azlmbr.asset as asset, azlmbr.math as math\n"
+            "eid = editor.ToolsApplicationRequestBus(bus.Broadcast, 'CreateNewEntity', entity.EntityId())\n"
+            "editor.EditorEntityAPIBus(bus.Event, 'SetName', eid, 'LiveAnimGraph')\n"
+            "game = entity.EntityType().Game\n"
+            "actor_type = editor.EditorComponentAPIBus(bus.Broadcast, 'FindComponentTypeIdsByEntityType', ['Actor'], game)[0]\n"
+            "graph_type = editor.EditorComponentAPIBus(bus.Broadcast, 'FindComponentTypeIdsByEntityType', ['Anim Graph'], game)[0]\n"
+            "editor.EditorComponentAPIBus(bus.Broadcast, 'AddComponentsOfType', eid, [actor_type])\n"
+            "added = editor.EditorComponentAPIBus(bus.Broadcast, 'AddComponentsOfType', eid, [graph_type])\n"
+            "pair = added.GetValue()[0]\n"
+            f"aid = asset.AssetCatalogRequestBus(bus.Broadcast, 'GetAssetIdByPath', {ANIM_GRAPH_PRODUCT_PATH!r}, math.Uuid(), False)\n"
+            "outcome = editor.EditorComponentAPIBus(bus.Broadcast, 'SetComponentProperty', pair, 'Anim graph', aid)\n"
+            "print('SET_OK=' + str(outcome.IsSuccess()))\n"
+            "print('ENTITY=' + str(eid.ToString()))\n"
+        )
+        output = cls.client.run(script)
+        match = re.search(r"ENTITY=\[?(\d+)", output)
+        if not match:
+            raise unittest.SkipTest(f"could not create the fixture entity: {output.strip()}")
+        cls.entity_id = int(match.group(1))
+        if "SET_OK=True" not in output:
+            cls.tearDownClass()
+            raise unittest.SkipTest(f"could not assign the anim graph asset: {output.strip()}")
+
+    @classmethod
+    def _wait_for_graph(cls) -> int:
+        deadline = time.monotonic() + 60.0
+        last: dict = {}
+        while time.monotonic() < deadline:
+            response = cls.client.request("list_anim_graphs")
+            if response.get("status") == "ok":
+                last = json.loads(response["output"])
+                for graph in last.get("anim_graphs", []):
+                    if _is_fixture_graph(graph["file_name"]):
+                        return int(graph["id"])
+            else:
+                last = response
+            time.sleep(2)
+        cls.tearDownClass()
+        raise unittest.SkipTest(f"the fixture graph never appeared in list_anim_graphs: {last}")
+
+    def test_list_anim_graphs_describes_the_fixture(self):
+        listing = json.loads(self.native("list_anim_graphs")["output"])
+        self.assertIn("editor_mode", listing)
+        graph = next(g for g in listing["anim_graphs"] if g["id"] == self.graph_id)
+        self.assertTrue(_is_fixture_graph(graph["file_name"]), graph)
+        self.assertTrue(graph["owned_by_asset"], graph)
+        self.assertEqual(graph["num_nodes"], 3)
+        self.assertEqual(graph["num_parameters"], 1)
+        self.assertIsInstance(graph["instances"], list)
+        for instance in graph["instances"]:
+            # 64-bit entity ids travel as decimal strings (or null).
+            self.assertTrue(instance["entity_id"] is None or re.fullmatch(r"\d+", instance["entity_id"]), instance)
+
+    def test_get_anim_graph_by_id(self):
+        response = self.native("get_anim_graph", anim_graph_id=self.graph_id)
+        self.assertEqual(response["status"], "ok", response)
+        graph = json.loads(response["output"])
+        self.assertEqual(graph["id"], self.graph_id)
+
+        nodes = {n["id"]: n for n in graph["nodes"]}
+        self.assertEqual(len(nodes), 3, graph["nodes"])
+        self.assertEqual({n["name"] for n in nodes.values()}, {"Root", "Idle", "WalkForward"})
+        root = nodes[graph["root_state_machine_id"]]
+        self.assertEqual(root["name"], "Root")
+        self.assertIsNone(root["parent_id"])
+        self.assertEqual(root["type"], "AnimGraphStateMachine")
+        for name in ("Idle", "WalkForward"):
+            node = next(n for n in nodes.values() if n["name"] == name)
+            self.assertEqual(node["parent_id"], root["id"])
+            self.assertEqual(node["type"], "AnimGraphMotionNode")
+            self.assertTrue(node["can_act_as_state"])
+            self.assertEqual(len(node["position"]), 2)
+
+        self.assertEqual(len(graph["transitions"]), 1, graph["transitions"])
+        transition = graph["transitions"][0]
+        self.assertEqual(transition["state_machine_id"], root["id"])
+        self.assertEqual(nodes[transition["source_node_id"]]["name"], "Idle")
+        self.assertEqual(nodes[transition["target_node_id"]]["name"], "WalkForward")
+        self.assertFalse(transition["wildcard"])
+        self.assertAlmostEqual(transition["blend_time"], 0.3, places=3)
+        self.assertEqual(len(transition["conditions"]), 1)
+        self.assertEqual(transition["conditions"][0]["type"], "AnimGraphParameterCondition")
+
+        self.assertEqual(len(graph["parameters"]), 1, graph["parameters"])
+        parameter = graph["parameters"][0]
+        self.assertEqual(parameter["name"], "Speed")
+        self.assertIsNone(parameter["group"])
+        self.assertIsNotNone(parameter["min"])
+        self.assertEqual(graph["node_groups"], [])
+
+    def test_get_anim_graph_by_id_string_and_file_name_agree(self):
+        by_id = json.loads(self.native("get_anim_graph", anim_graph_id=str(self.graph_id))["output"])
+        by_name = json.loads(self.native("get_anim_graph", file_name="AiCompanionSample.animgraph")["output"])
+        self.assertEqual(by_id["id"], self.graph_id)
+        self.assertEqual(by_name["id"], self.graph_id)
+
+    def test_get_anim_graph_errors(self):
+        unknown = self.native("get_anim_graph", anim_graph_id=4000000000)
+        self.assertEqual(unknown["status"], "error", unknown)
+        self.assertIn("not found", unknown["error"])
+        self.assertNotIn("code", unknown)
+        missing = self.native("get_anim_graph")
+        self.assertEqual(missing["status"], "error", missing)
+        self.assertIn("anim_graph_id or file_name", missing["error"])
+        bad = self.native("get_anim_graph", anim_graph_id="not-an-id")
+        self.assertEqual(bad["status"], "error", bad)
+
+
 class TestSecureMode(LiveEditorTest):
     """What the AgentServer serves and refuses under AI_COMPANION_SECURE_MODE=1.
 
@@ -410,11 +618,23 @@ class TestSecureMode(LiveEditorTest):
             ("get_entity_tree", {}),
             ("validate_scene", {}),
             ("get_bus_schema", {"bus_name": "AiCompanionRequestBus"}),
+            ("list_anim_graphs", {}),
         ]
         for request_type, fields in requests:
             with self.subTest(request_type=request_type):
                 response = self.client.request(request_type, **fields)
+                if request_type == "list_anim_graphs" and response.get("code") == "unknown_request_type":
+                    self.skipTest("list_anim_graphs is not served by this gem build")
                 self.assertEqual(response["status"], "ok", response)
+
+    def test_list_anim_graphs_answers_in_secure_mode(self):
+        response = self.client.request("list_anim_graphs")
+        if response.get("code") == "unknown_request_type":
+            self.skipTest("list_anim_graphs is not served by this gem build")
+        self.assertEqual(response["status"], "ok", response)
+        listing = json.loads(response["output"])
+        self.assertIn("editor_mode", listing)
+        self.assertIsInstance(listing["anim_graphs"], list)
 
     def test_native_outputs_are_json_without_errors(self):
         snapshot = json.loads(self.client.request("get_scene_snapshot")["output"])

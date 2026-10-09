@@ -14,7 +14,7 @@ See [Docs/architecture.md](Docs/architecture.md) for the full architecture diagr
 Assets/Scripts/Lua/         Lua gameplay scripts (movement, AI, pickups, etc.)
 Assets/Prefabs/             O3DE prefab files (.prefab)
 Code/Include/AiCompanion/   Public C++ headers (EBus interfaces)
-Code/Source/                 C++ implementation (system components, AgentServer, snapshot, validation)
+Code/Source/                 C++ implementation (system components, AgentServer, snapshot, validation, anim graph inspector)
 Code/Source/Tests/           C++ unit tests (AZ::AzTest / Google Test)
 Editor/Scripts/ai_companion/ Python API package
   api.py                    Main entry point (32 public functions)
@@ -26,6 +26,7 @@ Editor/Scripts/ai_companion/ Python API package
   version.py                Version constants (__version__, API_VERSION)
 Tests/                      Python unit tests (unittest)
 Tests/live/                 Live editor suite and launcher check (opt-in; stdlib AgentServer client)
+Tests/live/fixtures/        Assets the live suite copies into the host project (not under Assets/, so no project builds them)
 scripts/                    CI scripts: build and C++ tests, live editor run, launcher gameplay check
 Docs/                       User documentation
 docs/                       Maintainer documentation (self-hosted runner)

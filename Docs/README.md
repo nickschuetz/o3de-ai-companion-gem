@@ -35,8 +35,9 @@ O3DE Engine (entities, components, physics, rendering)
 
 1. O3DE 2305.0 or later installed (the 2.7.0, 24.09, 26.05.0, and 26.10.0 engine versions are also supported; 26.10.0 is what the test suites run against)
 2. A project created with O3DE
-3. The following Gem enabled in your project:
+3. The following Gems enabled in your project:
    - **EditorPythonBindings** — Provides the `azlmbr` Python API
+   - **EMotionFX**: declared as a dependency in `gem.json`; the editor module links it to serve the `list_anim_graphs` and `get_anim_graph` request types
 
 ### Steps
 

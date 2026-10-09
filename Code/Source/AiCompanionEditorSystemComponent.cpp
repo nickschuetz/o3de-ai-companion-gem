@@ -7,6 +7,7 @@
 
 #include "AgentMode/AgentModeFilter.h"
 #include "AgentMode/AgentModeState.h"
+#include "Animation/AnimGraphInspector.h"
 #include "Introspection/BusSchema.h"
 
 #include "Validation/InputValidator.h"
@@ -71,7 +72,12 @@ namespace AiCompanion
                 ->Event(
                     "GetBusSchema",
                     &AiCompanionEditorRequestBus::Events::GetBusSchema,
-                    { { { "busName", "Reflected bus name to describe, e.g. 'DioramaSpriteRequestBus'. Empty lists all bus names." } } });
+                    { { { "busName", "Reflected bus name to describe, e.g. 'DioramaSpriteRequestBus'. Empty lists all bus names." } } })
+                ->Event("ListAnimGraphs", &AiCompanionEditorRequestBus::Events::ListAnimGraphs)
+                ->Event(
+                    "GetAnimGraph",
+                    &AiCompanionEditorRequestBus::Events::GetAnimGraph,
+                    { { { "selector", "The anim graph's decimal id, or its file name (exact, or the file name's tail)." } } });
         }
     }
 
@@ -589,6 +595,16 @@ namespace AiCompanion
             return AZ::Failure(AZStd::string("the editor did not delete the entity"));
         }
         return AZ::Success();
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::ListAnimGraphs()
+    {
+        return AnimGraphInspector::ListAnimGraphs();
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAnimGraph(AZStd::string selector)
+    {
+        return AnimGraphInspector::DescribeAnimGraph(selector);
     }
 
 } // namespace AiCompanion

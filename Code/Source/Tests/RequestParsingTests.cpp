@@ -8,7 +8,7 @@
 
 #include "Network/RequestParsing.h"
 
-#include <rapidjson/document.h>
+#include <AzCore/JSON/document.h>
 
 namespace UnitTest
 {
@@ -44,6 +44,36 @@ namespace UnitTest
         EXPECT_FALSE(AiCompanion::RequestParsing::ParseEntityId(Parse(R"({"v": ""})")["v"], id));
         EXPECT_FALSE(AiCompanion::RequestParsing::ParseEntityId(Parse(R"({"v": [1]})")["v"], id));
         EXPECT_FALSE(AiCompanion::RequestParsing::ParseEntityId(Parse(R"({"v": -5})")["v"], id));
+        EXPECT_EQ(id, 7u); // untouched on failure
+    }
+
+    TEST_F(RequestParsingFixture, AnimGraphId_AcceptsNumberStringAndZero)
+    {
+        AZ::u32 id = 7;
+        EXPECT_TRUE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": 3})")["v"], id));
+        EXPECT_EQ(id, 3u);
+        EXPECT_TRUE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": "42"})")["v"], id));
+        EXPECT_EQ(id, 42u);
+        EXPECT_TRUE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": 0})")["v"], id));
+        EXPECT_EQ(id, 0u);
+        EXPECT_TRUE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": "0"})")["v"], id));
+        EXPECT_EQ(id, 0u);
+        EXPECT_TRUE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": 4294967295})")["v"], id));
+        EXPECT_EQ(id, 4294967295u);
+    }
+
+    TEST_F(RequestParsingFixture, AnimGraphId_RejectsOutOfRangeGarbageAndWrongTypes)
+    {
+        AZ::u32 id = 7;
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": 4294967296})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": "4294967296"})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": -1})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": 1.5})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": "12abc"})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": "[3]"})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": ""})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": [1]})")["v"], id));
+        EXPECT_FALSE(AiCompanion::RequestParsing::ParseAnimGraphId(Parse(R"({"v": null})")["v"], id));
         EXPECT_EQ(id, 7u); // untouched on failure
     }
 
