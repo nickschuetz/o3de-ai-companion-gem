@@ -25,6 +25,7 @@
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
 #include <AzToolsFramework/API/ToolsApplicationAPI.h>
 #include <AzToolsFramework/Entity/EditorEntityAPIBus.h>
+#include <AzToolsFramework/Prefab/PrefabPublicInterface.h>
 #include <AzToolsFramework/PropertyTreeEditor/PropertyTreeEditor.h>
 #include <AzToolsFramework/ToolsComponents/GenericComponentWrapper.h>
 
@@ -469,19 +470,35 @@ namespace AiCompanion
         {
             return AZ::Failure(AZStd::string("position out of bounds"));
         }
-        AZ::EntityId parent(parentId);
+        // AZ::EntityId(0) is a valid-looking id that no entity has; the invalid id is
+        // all ones. An absent parent must be the default-constructed EntityId so the
+        // prefab system parents to the focused prefab's container.
+        AZ::EntityId parent = (parentId != 0) ? AZ::EntityId(parentId) : AZ::EntityId();
         if (parentId != 0 && !EntityExists(parent))
         {
             return AZ::Failure(AZStd::string::format("parent entity %llu does not exist", static_cast<unsigned long long>(parentId)));
         }
 
+        // Call the prefab system directly. ToolsApplication::CreateNewEntityAtPosition
+        // routes through PrefabIntegrationManager, which turns any failure into a modal
+        // WarningDialog; on an unattended editor that blocks the main thread inside the
+        // dialog's event loop until someone clicks it. The interface returns the same
+        // failure as a value, which is what an agent needs.
+        auto* prefabInterface = AZ::Interface<AzToolsFramework::Prefab::PrefabPublicInterface>::Get();
+        if (!prefabInterface)
+        {
+            return AZ::Failure(AZStd::string("prefab system is not available"));
+        }
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Create Entity");
-        AZ::EntityId created;
-        AzToolsFramework::ToolsApplicationRequestBus::BroadcastResult(
-            created, &AzToolsFramework::ToolsApplicationRequests::CreateNewEntityAtPosition, position, parent);
+        auto createResult = prefabInterface->CreateEntity(parent, position);
+        if (!createResult.IsSuccess())
+        {
+            return AZ::Failure(createResult.GetError());
+        }
+        const AZ::EntityId created = createResult.GetValue();
         if (!created.IsValid())
         {
-            return AZ::Failure(AZStd::string("the editor did not create an entity; is a level open?"));
+            return AZ::Failure(AZStd::string("the prefab system returned an invalid entity id"));
         }
         AzToolsFramework::EditorEntityAPIBus::Event(created, &AzToolsFramework::EditorEntityAPIRequests::SetName, name);
         return AZ::Success(static_cast<AZ::u64>(created));

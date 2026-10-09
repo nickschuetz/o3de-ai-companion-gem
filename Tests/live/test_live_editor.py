@@ -190,8 +190,13 @@ class TestNativeMutations(LiveEditorTest):
         self.assertEqual(self._ids(), before)
 
     def test_delete_refuses_the_level_root(self):
+        # The level's container is the root with children (other parentless
+        # entities can appear in roots too), named "Level" in a stock level.
         tree = json.loads(self.native("get_entity_tree")["output"])
-        root_id = tree["roots"][0]["id"]
+        roots = tree["roots"]
+        named = [r for r in roots if r["name"] == "Level"]
+        root = named[0] if named else max(roots, key=lambda r: len(r.get("children", [])))
+        root_id = root["id"]
         refused = self.native("delete_entity", entity_id=root_id)
         self.assertEqual(refused["status"], "error", refused)
         self.assertIn("root", refused["error"])

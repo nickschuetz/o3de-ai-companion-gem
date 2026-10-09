@@ -65,8 +65,10 @@ class TestUndoApiReturnsJson(unittest.TestCase):
             if event == "DeleteEntityById":
                 existing.discard(args[0]); deleted.append(args[0])
                 return None
-            if event in ("BeginUndoBatch", "EndUndoBatch"):
+            if event == "BeginUndoBatch":
                 return None
+            if event == "EndUndoBatch":
+                return bool(existing)  # a batch that created nothing is discarded by the editor
             raise AssertionError(f"unexpected event {event}")
         editor = types.ModuleType("azlmbr.editor"); editor.ToolsApplicationRequestBus = tools_bus
         bus = types.ModuleType("azlmbr.bus"); bus.Broadcast = object()
@@ -101,7 +103,19 @@ class TestUndoApiReturnsJson(unittest.TestCase):
         self.assertTrue(result["rolled_back"])
         self.assertEqual(result["details"]["exception"], "ValueError")
         self.assertEqual(result["details"]["operation"], "Create Enemy")
-        self.assertEqual(undo_calls, ["undo"])
+        self.assertEqual(undo_calls, [])  # nothing was created, so nothing to undo
+
+    def test_failed_call_that_changed_nothing_does_not_undo_the_previous_operation(self):
+        # The editor discards an empty undo batch; an Undo after that would land on
+        # the previous operation. EndUndoBatch reports False here, so no undo runs.
+        existing, deleted, undo_calls = set(), [], []
+        modules = self._editor_stub(existing, deleted, undo_calls)
+        with mock.patch.dict(sys.modules, modules):
+            result = json.loads(api.create_enemy("Bad", ai_type="no_such_ai"))
+        self.assertEqual(result["status"], "error")
+        self.assertTrue(result["rolled_back"])
+        self.assertFalse(result["details"]["rolled_back"])
+        self.assertEqual(undo_calls, [])
 
     def test_sandbox_limit_becomes_limit_exceeded(self):
         result = json.loads(api.create_grid("Block", rows=50, cols=50))

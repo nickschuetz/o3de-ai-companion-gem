@@ -41,13 +41,19 @@ def _begin_undo(label: str) -> None:
         pass
 
 
-def _end_undo() -> None:
-    """End the current O3DE undo batch."""
+def _end_undo():
+    """End the current O3DE undo batch.
+
+    Returns what the editor reports: True if the batch was kept on the undo
+    stack, False if it was empty and discarded, None when that cannot be
+    known (legacy API or outside the editor). An empty batch must not be
+    followed by an Undo, or the Undo lands on the previous operation.
+    """
     try:
         import azlmbr.editor as editor
         import azlmbr.bus as bus
-        editor.ToolsApplicationRequestBus(bus.Broadcast, "EndUndoBatch")
-        return
+        kept = editor.ToolsApplicationRequestBus(bus.Broadcast, "EndUndoBatch")
+        return bool(kept) if kept is not None else None
     except (ImportError, AttributeError):
         pass
 
@@ -57,6 +63,7 @@ def _end_undo() -> None:
             general.end_undo_batch()
     except ImportError:
         pass
+    return None
 
 
 def _entity_exists(entity_id) -> bool:
@@ -153,8 +160,16 @@ def with_undo_batch(label: str):
                     raise
                 # Outermost call: close the batch, undo it, delete anything the
                 # undo left behind, and hand the agent JSON instead of a traceback.
-                _end_undo()
-                outcome = _undo(get_sandbox().created_entity_ids)
+                # A batch that recorded nothing is discarded by the editor; calling
+                # Undo then would undo the previous operation instead, so only
+                # undo a batch the editor kept (or, when that is unknown, one that
+                # created entities).
+                created = get_sandbox().created_entity_ids
+                kept = _end_undo()
+                if kept or (kept is None and created):
+                    outcome = _undo(created)
+                else:
+                    outcome = {"rolled_back": False, "leftover_entities_deleted": _delete_survivors(created)}
                 _last_batch_entities = []
                 return error(
                     str(exc) or exc.__class__.__name__,

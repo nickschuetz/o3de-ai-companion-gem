@@ -8,6 +8,7 @@
 #include <AzCore/Debug/Trace.h>
 
 #include <QEvent>
+#include <QMessageBox>
 #include <QMetaObject>
 #include <QString>
 #include <QWidget>
@@ -53,6 +54,20 @@ namespace AiCompanion::AgentMode
             title.startsWith(QStringLiteral("Startup Errors")))
         {
             AZ_Printf("AiCompanion", "[AgentMode] Observed modal '%s' (auto-dismiss not configured)\n", title.toUtf8().constData());
+            return QObject::eventFilter(watched, event);
+        }
+
+        // Any other message box would block the editor's main thread inside
+        // QDialog::exec() until a human clicks it, which on an unattended editor
+        // means every AgentServer request times out from then on (seen with the
+        // "Entity Creation Error" box PrefabIntegrationManager raises). Log what
+        // it said, so the reason reaches the editor log, and reject it.
+        if (auto* box = qobject_cast<QMessageBox*>(widget))
+        {
+            AZ_Printf(
+                "AiCompanion", "[AgentMode] Rejecting modal '%s': %s\n", title.toUtf8().constData(), box->text().toUtf8().constData());
+            QMetaObject::invokeMethod(widget, "reject", Qt::QueuedConnection);
+            return false;
         }
 
         return QObject::eventFilter(watched, event);
