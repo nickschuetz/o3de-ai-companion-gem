@@ -216,6 +216,10 @@ All API responses are JSON. Check the `status` field:
   `instantiate_failed`, `prefab_not_found`), read `message` for the reason, and
   `rolled_back: true` means the batch was undone and anything it created deleted
 
+Native request types return 64-bit entity ids as decimal strings (API_VERSION
+0.4.0 and up); the Python package returns them bracketed (`"[id]"`); request
+fields accept a number or a string. Never emit a 64-bit id as a JSON number.
+
 The `duration_ms` field is present on AgentServer responses and useful for
 identifying slow operations during profiling.
 

@@ -211,6 +211,16 @@ C++ `InputValidator` on its arguments, refuses missing entities and the level
 root, and executes inside its own editor undo batch, so an agent on a
 secure-mode editor can still build and tidy a scene without Python.
 
+Every 64-bit entity id in native output (`id` and `parent_id` in
+`get_entity`, `get_scene_snapshot` and `get_entity_tree`, `entity_id` in
+`validate_scene` reports and in the `create_entity` reply, `deleted` in the
+`delete_entity` reply, and the anim graph `instances`) is a decimal string
+from `API_VERSION` 0.4.0 on, for the same reason the anim graph ids are: the
+values are random 64-bit numbers above 2^53 that a double-based JSON parser
+corrupts. Request fields still accept a number or a string. `get_api_version`
+reports the convention: `api_version` 0.3.0 and lower meant numbers. The
+Python API's own JSON keeps its bracketed `"[id]"` strings.
+
 Every reply is `{"id", "status", "output", "error", "duration_ms"}`, written by
 `Network/ResponseBuilding`. A request `type` the server does not serve answers
 with `"error": "Unknown request type: <type>"` and, alone among the server's

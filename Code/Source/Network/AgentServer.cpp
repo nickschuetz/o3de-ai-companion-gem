@@ -1051,7 +1051,7 @@ namespace AiCompanion
         w.Key("gem_version");
         w.String("0.5.0");
         w.Key("api_version");
-        w.String("0.3.0");
+        w.String("0.4.0");
         w.Key("secure_mode");
         w.Bool(m_secureMode.load());
         w.Key("tls_enabled");
@@ -1145,7 +1145,8 @@ namespace AiCompanion
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
         w.Key("entity_id");
-        w.Uint64(outcome.GetValue());
+        // Decimal string: 64-bit ids exceed 2^53 (see SceneSnapshotProvider).
+        w.String(AZStd::string::format("%llu", static_cast<unsigned long long>(outcome.GetValue())).c_str());
         w.Key("name");
         w.String(doc["name"].GetString());
         w.Key("position");
@@ -1229,7 +1230,7 @@ namespace AiCompanion
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
         w.StartObject();
         w.Key("deleted");
-        w.Uint64(entityId);
+        w.String(AZStd::string::format("%llu", static_cast<unsigned long long>(entityId)).c_str());
         w.EndObject();
         return BuildResponse(id, "ok", sb.GetString(), "", 0);
     }

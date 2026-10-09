@@ -155,6 +155,29 @@ class TestPythonPackage(LiveEditorTest):
 
 
 class TestNativeRequestTypes(LiveEditorTest):
+    def test_native_ids_are_decimal_strings(self):
+        # 64-bit entity ids exceed 2^53, so every id in native output is a
+        # decimal string (API_VERSION 0.4.0); inputs accept either form.
+        snapshot = json.loads(self.native("get_scene_snapshot")["output"])
+        self.assertTrue(snapshot["entities"], "the level has no entities")
+        for entity in snapshot["entities"]:
+            self.assertRegex(entity["id"], r"^\d+$")
+            if entity["parent_id"] is not None:
+                self.assertRegex(entity["parent_id"], r"^\d+$")
+        tree = json.loads(self.native("get_entity_tree")["output"])
+        self.assertRegex(tree["roots"][0]["id"], r"^\d+$")
+        sample = snapshot["entities"][0]
+        as_number = self.native("get_entity", entity_id=int(sample["id"]))
+        self.assertEqual(json.loads(as_number["output"])["id"], sample["id"])
+        created = json.loads(self.native("create_entity", name="IdStringProbe")["output"])
+        try:
+            self.assertRegex(created["entity_id"], r"^\d+$")
+            moved = json.loads(self.native("set_transform", entity_id=created["entity_id"], position=[1, 1, 1])["output"])
+            self.assertEqual(moved["id"], created["entity_id"])
+        finally:
+            deleted = json.loads(self.native("delete_entity", entity_id=created["entity_id"])["output"])
+        self.assertEqual(deleted["deleted"], created["entity_id"])
+
     def test_scene_snapshot_tree_and_validation_agree_on_entity_count(self):
         snapshot = json.loads(self.native("get_scene_snapshot")["output"])
         tree = json.loads(self.native("get_entity_tree")["output"])
