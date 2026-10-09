@@ -352,7 +352,10 @@ namespace UnitTest
                                                    "set_anim_graph_transition",
                                                    "connect_anim_graph_ports",
                                                    "disconnect_anim_graph_ports",
-                                                   "set_anim_graph_node" };
+                                                   "set_anim_graph_node",
+                                                   "get_asset_status",
+                                                   "get_asset_jobs",
+                                                   "get_asset_processor_status" };
 
         for (const auto& type : safeTypes)
         {
@@ -372,7 +375,8 @@ namespace UnitTest
              type == "add_anim_graph_node" || type == "remove_anim_graph_node" || type == "set_anim_graph_entry_state" ||
              type == "add_anim_graph_parameter" || type == "remove_anim_graph_parameter" || type == "add_anim_graph_transition" ||
              type == "remove_anim_graph_transition" || type == "set_anim_graph_transition" || type == "connect_anim_graph_ports" ||
-             type == "disconnect_anim_graph_ports" || type == "set_anim_graph_node");
+             type == "disconnect_anim_graph_ports" || type == "set_anim_graph_node" || type == "get_asset_status" ||
+             type == "get_asset_jobs" || type == "get_asset_processor_status");
         EXPECT_FALSE(isSafe);
     }
 

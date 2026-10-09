@@ -584,7 +584,8 @@ namespace AiCompanion
                 type == "remove_anim_graph_node" || type == "set_anim_graph_entry_state" || type == "add_anim_graph_parameter" ||
                 type == "remove_anim_graph_parameter" || type == "add_anim_graph_transition" || type == "remove_anim_graph_transition" ||
                 type == "set_anim_graph_transition" || type == "connect_anim_graph_ports" || type == "disconnect_anim_graph_ports" ||
-                type == "set_anim_graph_node")
+                type == "set_anim_graph_node" || type == "get_asset_status" || type == "get_asset_jobs" ||
+                type == "get_asset_processor_status")
             {
                 // Safe EBus calls — dispatch to main thread
                 auto pending = std::make_shared<PendingRequest>();
@@ -632,7 +633,8 @@ namespace AiCompanion
                         "save_anim_graph, add_anim_graph_node, remove_anim_graph_node, set_anim_graph_entry_state, "
                         "add_anim_graph_parameter, remove_anim_graph_parameter, add_anim_graph_transition, "
                         "remove_anim_graph_transition, set_anim_graph_transition, connect_anim_graph_ports, "
-                        "disconnect_anim_graph_ports and set_anim_graph_node are available.",
+                        "disconnect_anim_graph_ports, set_anim_graph_node, get_asset_status, get_asset_jobs and "
+                        "get_asset_processor_status are available.",
                         RequestError::SecureMode);
                     AZ_Warning("AiCompanion", false, "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
                 }
@@ -976,6 +978,18 @@ namespace AiCompanion
         {
             return HandleAnimGraphJsonRequest(
                 id, doc, jsonRequest, "set_anim_graph_node", &AiCompanionEditorRequestBus::Events::SetAnimGraphNode);
+        }
+        else if (type == "get_asset_status")
+        {
+            return HandleGetAssetStatus(id, doc);
+        }
+        else if (type == "get_asset_jobs")
+        {
+            return HandleGetAssetJobs(id, doc);
+        }
+        else if (type == "get_asset_processor_status")
+        {
+            return HandleGetAssetProcessorStatus(id);
         }
         else if (type == "execute_python")
         {
@@ -1851,6 +1865,94 @@ namespace AiCompanion
         }
         AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
         AiCompanionEditorRequestBus::BroadcastResult(outcome, event, animGraphId, jsonRequest);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+    // -------------------------------------------------------------------------
+    // Asset readiness. The server checks the request's shape (a non-empty
+    // path, boolean flags) and forwards; the path rule and the Asset
+    // Processor calls are in the editor component.
+    // -------------------------------------------------------------------------
+
+    namespace
+    {
+        //! An optional boolean field; absent or null leaves `out` untouched.
+        bool ReadOptionalBool(const rapidjson::Document& doc, const char* key, bool& out)
+        {
+            if (!doc.HasMember(key) || doc[key].IsNull())
+            {
+                return true;
+            }
+            if (!doc[key].IsBool())
+            {
+                return false;
+            }
+            out = doc[key].GetBool();
+            return true;
+        }
+    } // namespace
+
+    AZStd::string AgentServer::HandleGetAssetStatus(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZStd::string path;
+        if (!ReadOptionalText(doc, "path", path) || path.empty())
+        {
+            return BuildErrorResponse(
+                id,
+                "get_asset_status requires 'path': a source relative path, a product relative path, or a full path to either",
+                RequestError::ValidationFailed);
+        }
+        bool flushIo = false;
+        if (!ReadOptionalBool(doc, "flush_io", flushIo))
+        {
+            return BuildErrorResponse(id, "get_asset_status 'flush_io' must be a boolean", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::GetAssetStatus, path, flushIo);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleGetAssetJobs(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZStd::string sourcePath;
+        if (!ReadOptionalText(doc, "source_path", sourcePath) || sourcePath.empty())
+        {
+            return BuildErrorResponse(
+                id,
+                "get_asset_jobs requires 'source_path': the source file, relative to its scan folder or full",
+                RequestError::ValidationFailed);
+        }
+        bool escalate = false;
+        if (!ReadOptionalBool(doc, "escalate", escalate))
+        {
+            return BuildErrorResponse(id, "get_asset_jobs 'escalate' must be a boolean", RequestError::ValidationFailed);
+        }
+        bool includeLogs = false;
+        if (!ReadOptionalBool(doc, "include_logs", includeLogs))
+        {
+            return BuildErrorResponse(id, "get_asset_jobs 'include_logs' must be a boolean", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::GetAssetJobs, sourcePath, escalate, includeLogs);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleGetAssetProcessorStatus(const AZStd::string& id)
+    {
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::GetAssetProcessorStatus);
         if (!outcome.IsSuccess())
         {
             return FailureResponse(id, outcome.GetError());

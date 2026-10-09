@@ -47,6 +47,20 @@ ANIM_GRAPH_PROJECT_SUBDIR = Path("Assets") / "AiCompanionLiveTest"
 ANIM_GRAPH_PRODUCT_PATH = "assets/aicompanionlivetest/aicompanionsample.animgraph"
 ANIM_GRAPH_ASSET_TIMEOUT_S = 120.0
 
+# The asset readiness probes: copies of the anim graph fixture (one intact, one
+# deliberately broken) that TestAssetReadiness writes next to it and removes.
+READINESS_PROBE_NAME = "ReadinessProbe.animgraph"
+# An .fbx whose contents are not FBX: the scene builder parses the file and
+# fails the job, which is what the failed-job and log assertions need. (A
+# junk .animgraph does not do: that builder copies the file without parsing
+# it, so its job completes; observed on 26.10.0.)
+READINESS_BROKEN_NAME = "ReadinessBroken.fbx"
+READINESS_NEVER_SEEN_PATH = "assets/aicompanionlivetest/never_written_probe.animgraph"
+READINESS_STATUS_WORDS = {"unknown", "missing", "queued", "compiling", "compiled", "failed"}
+READINESS_JOB_WORDS = {"queued", "in_progress", "failed", "completed", "missing"}
+READINESS_TIMEOUT_S = 120.0
+READINESS_MAX_DURATION_MS = 2000
+
 
 def _is_fixture_graph(file_name: str) -> bool:
     """Whether an anim graph's reported file name is the fixture.
@@ -1160,6 +1174,269 @@ class TestAnimGraphs(LiveEditorTest):
         self.assertEqual(removed["status"], "ok", removed)
 
 
+class TestAssetReadiness(LiveEditorTest):
+    """The asset readiness request types: ``get_asset_status``,
+    ``get_asset_jobs`` and ``get_asset_processor_status``, served in C++ over
+    the editor's own Asset Processor connection.
+
+    The build round trip copies the anim graph fixture into the host project
+    (``AICOMPANION_PROJECT``) under a new name, watches its status reach
+    ``compiled``, reads its jobs by source relative path and by full path,
+    writes a broken copy to read a failed job's log, and removes both. What
+    the unit suites cannot know (the first status after a write, which path
+    forms the job query accepts, the status of a removed and of a never-seen
+    path) is printed with an ``[asset-readiness]`` prefix; run pytest with
+    ``-s`` or ``-rA`` to see it.
+    """
+
+    # Nothing here goes through execute_python, so the class also runs
+    # against a secure-mode editor.
+    runs_in_secure_mode = True
+
+    project: Path
+    probe_dir: Path
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        probe = cls.client.request("get_asset_processor_status")
+        if probe.get("status") == "error" and probe.get("code") == "unknown_request_type":
+            raise unittest.SkipTest("get_asset_processor_status is not served by this gem build")
+        if probe.get("status") != "ok":
+            raise unittest.SkipTest(f"get_asset_processor_status did not answer ok: {probe}")
+        status = json.loads(probe["output"])
+        if status.get("connected") is not True:
+            raise unittest.SkipTest(f"the editor is not connected to the Asset Processor: {status}")
+        project = os.environ.get("AICOMPANION_PROJECT", "").strip()
+        if not project:
+            raise unittest.SkipTest("AICOMPANION_PROJECT is not set; the readiness probes cannot be written into the project")
+        cls.project = Path(project)
+        cls.probe_dir = cls.project / ANIM_GRAPH_PROJECT_SUBDIR
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if not hasattr(cls, "probe_dir"):
+            return
+        for name in (READINESS_PROBE_NAME, READINESS_BROKEN_NAME):
+            path = cls.probe_dir / name
+            if path.exists():
+                path.unlink()
+        try:
+            cls.probe_dir.rmdir()
+        except OSError:
+            pass  # the directory holds something else (the anim graph fixture); leave it
+
+    @staticmethod
+    def _note(message: str) -> None:
+        print(f"[asset-readiness] {message}")
+
+    def _status(self, path: str, **fields) -> tuple[str, dict]:
+        """One get_asset_status call: asserts ok, a known word and a bounded duration."""
+        response = self.native("get_asset_status", path=path, **fields)
+        self.assertEqual(response["status"], "ok", response)
+        payload = json.loads(response["output"])
+        self.assertEqual(payload["path"], path, payload)
+        self.assertIs(payload["connected"], True, payload)
+        self.assertIn(payload["status"], READINESS_STATUS_WORDS, payload)
+        self.assertLess(response["duration_ms"], READINESS_MAX_DURATION_MS, response)
+        return payload["status"], response
+
+    def _wait_for_status(self, path: str, wanted: set[str], first_flush: bool) -> tuple[str, str, float, list[int]]:
+        """Polls get_asset_status about once a second until the word is in ``wanted``.
+
+        Returns the first word, the final word, the elapsed seconds and every
+        reply's ``duration_ms``. Only the first poll flushes the Asset
+        Processor's file change queue, as the recipe in the docs says.
+        """
+        started = time.monotonic()
+        first, response = self._status(path, flush_io=first_flush)
+        durations = [int(response["duration_ms"])]
+        current = first
+        while current not in wanted and time.monotonic() - started < READINESS_TIMEOUT_S:
+            time.sleep(1.0)
+            current, response = self._status(path)
+            durations.append(int(response["duration_ms"]))
+        return first, current, time.monotonic() - started, durations
+
+    def _jobs(self, source_path: str, **fields) -> list[dict]:
+        response = self.native("get_asset_jobs", source_path=source_path, **fields)
+        self.assertEqual(response["status"], "ok", response)
+        payload = json.loads(response["output"])
+        self.assertEqual(payload["source_path"], source_path, payload)
+        self.assertIsInstance(payload["jobs"], list, payload)
+        for job in payload["jobs"]:
+            self.assertIn(job["status"], READINESS_JOB_WORDS | {"unknown"}, job)
+            self.assertRegex(job["job_run_key"], r"^\d+$", job)
+            for key in ("job_key", "platform", "builder", "source_file", "watch_folder"):
+                self.assertIsInstance(job[key], str, job)
+            self.assertIsInstance(job["error_count"], int, job)
+            self.assertIsInstance(job["warning_count"], int, job)
+        return payload["jobs"]
+
+    def _existing_product_relpath(self) -> str | None:
+        """A product the Asset Processor has already built, from the project's cache."""
+        platform = {"linux": "linux", "win32": "pc", "darwin": "mac"}.get(sys.platform)
+        if platform is None:
+            return None
+        cache = self.project / "Cache" / platform
+        if not cache.is_dir():
+            return None
+        for root in (cache / "levels", cache):
+            if root.is_dir():
+                for candidate in sorted(root.rglob("*.spawnable")):
+                    return candidate.relative_to(cache).as_posix()
+        return None
+
+    def test_asset_processor_status_reports_the_connection(self):
+        response = self.native("get_asset_processor_status")
+        self.assertEqual(response["status"], "ok", response)
+        status = json.loads(response["output"])
+        self.assertIs(status["connected"], True, status)
+        self.assertIsInstance(status["ping_ms"], (int, float), status)
+        self.assertGreaterEqual(status["ping_ms"], 0, status)
+        self._note(f"Asset Processor ping: {status['ping_ms']} ms")
+
+    def test_existing_product_is_compiled(self):
+        product = self._existing_product_relpath()
+        if product is None:
+            self.skipTest("no built .spawnable product in the project cache to ask about")
+        word, response = self._status(product)
+        self._note(f"existing product {product!r}: {word} in {response['duration_ms']} ms")
+        self.assertEqual(word, "compiled")
+
+    def test_written_source_builds_and_reports_its_jobs(self):
+        self.probe_dir.mkdir(parents=True, exist_ok=True)
+        probe = self.probe_dir / READINESS_PROBE_NAME
+        broken = self.probe_dir / READINESS_BROKEN_NAME
+        for path in (probe, broken):
+            self.addCleanup(lambda p=path: p.unlink(missing_ok=True))
+        source_relpath = (ANIM_GRAPH_PROJECT_SUBDIR / READINESS_PROBE_NAME).as_posix()
+        broken_relpath = (ANIM_GRAPH_PROJECT_SUBDIR / READINESS_BROKEN_NAME).as_posix()
+
+        # A copy of the fixture under a new name is a new source the Asset
+        # Processor has never seen; flush_io on the first poll only.
+        shutil.copyfile(ANIM_GRAPH_FIXTURE, probe)
+        first, final, elapsed, durations = self._wait_for_status(source_relpath, {"compiled", "failed"}, first_flush=True)
+        self._note(f"first status after the write (flush_io): {first}")
+        self._note(
+            f"{source_relpath} reached {final!r} after {elapsed:.1f} s and {len(durations)} polls; "
+            f"duration_ms first {durations[0]}, max {max(durations)}"
+        )
+        self.assertEqual(final, "compiled", f"first {first}, durations {durations}")
+
+        # The other two path forms the engine documents for a status query.
+        product_relpath = source_relpath.lower()
+        for label, path in (("product relpath", product_relpath), ("full path", str(probe))):
+            word, response = self._status(path)
+            self._note(f"get_asset_status with the {label} {path!r}: {word} in {response['duration_ms']} ms")
+            self.assertEqual(word, "compiled", f"{label} {path!r}")
+
+        # The job query by both path forms; record which ones the Asset
+        # Processor accepted and check the jobs of every form that answered.
+        accepted: list[str] = []
+        for label, path in (("source relpath", source_relpath), ("full path", str(probe))):
+            jobs = self._jobs(path)
+            self._note(f"get_asset_jobs with the {label} {path!r}: {len(jobs)} job(s): {[(j['job_key'], j['status']) for j in jobs]}")
+            if not jobs:
+                continue
+            accepted.append(label)
+            self.assertTrue(any(job["status"] == "completed" for job in jobs), jobs)
+            for job in jobs:
+                self.assertNotIn("log", job, "no log was requested")
+        self._note(f"path forms get_asset_jobs accepted: {accepted}")
+        self.assertTrue(accepted, "neither the source relpath nor the full path returned jobs")
+        jobs_path = source_relpath if "source relpath" in accepted else str(probe)
+        escalated = self._jobs(jobs_path, escalate=True)
+        self.assertTrue(escalated, "escalate=true returned no jobs")
+
+        # A file that is not an FBX fails the scene builder's job; the failed
+        # job carries a log when include_logs is set.
+        broken.write_text("not an fbx file\n", encoding="utf-8")
+        # Observed on 26.10.0: get_asset_status answers "missing" for a source
+        # whose job failed (the failed source has no products), so the failed
+        # state is visible only through get_asset_jobs. Poll the jobs, and
+        # record what the status query says meanwhile.
+        broken_jobs_path = broken_relpath if "source relpath" in accepted else str(broken)
+        first_broken = json.loads(self.native("get_asset_status", path=broken_relpath, flush_io=True)["output"])["status"]
+        status_words: set[str] = {first_broken}
+        failed: list[dict] = []
+        started = time.monotonic()
+        while time.monotonic() - started < 120.0:
+            broken_jobs = self._jobs(broken_jobs_path, include_logs=True)
+            failed = [job for job in broken_jobs if job["status"] == "failed"]
+            if failed:
+                break
+            status_words.add(json.loads(self.native("get_asset_status", path=broken_relpath)["output"])["status"])
+            time.sleep(1.0)
+        elapsed_broken = time.monotonic() - started
+        self._note(
+            f"broken copy: first status {first_broken}, status words while waiting {sorted(status_words)}, "
+            f"failed job seen after {elapsed_broken:.1f} s"
+        )
+        self.assertTrue(failed, "no failed job for the junk .fbx within 120 s")
+        self._note(
+            "failed job(s): "
+            + ", ".join(
+                f"{job['job_key']!r} errors={job['error_count']} log_bytes={len(job.get('log') or '')} truncated={job.get('truncated', False)}"
+                for job in failed
+            )
+        )
+        for job in failed:
+            self.assertIn("log", job, job)
+        with_log = [job for job in failed if job.get("log")]
+        self.assertTrue(with_log, f"no failed job carried a log: {failed}")
+        self.assertTrue(all(len(job["log"]) <= 64 * 1024 for job in with_log))
+        unlogged = self._jobs(broken_jobs_path)
+        self.assertTrue(all("log" not in job for job in unlogged), unlogged)
+
+        # Removal: the Asset Processor forgets the source; record the word it
+        # settles on.
+        probe.unlink()
+        broken.unlink()
+        first_removed, final_removed, elapsed_removed, _ = self._wait_for_status(source_relpath, {"missing", "unknown"}, first_flush=True)
+        self._note(f"removed source: first status {first_removed}, settled on {final_removed!r} after {elapsed_removed:.1f} s")
+        self.assertIn(final_removed, {"missing", "unknown"})
+
+    def test_never_seen_path_is_unknown_or_missing(self):
+        word, response = self._status(READINESS_NEVER_SEEN_PATH)
+        self._note(f"never-seen path status: {word} in {response['duration_ms']} ms")
+        self.assertIn(word, {"unknown", "missing"})
+
+    def test_validation_refusals(self):
+        cases = [
+            ("get_asset_status", {"path": ""}),
+            ("get_asset_status", {}),
+            ("get_asset_status", {"path": 42}),
+            ("get_asset_status", {"path": "a\nb"}),
+            ("get_asset_status", {"path": "x" * 1025}),
+            ("get_asset_status", {"path": READINESS_NEVER_SEEN_PATH, "flush_io": "yes"}),
+            ("get_asset_jobs", {"source_path": ""}),
+            ("get_asset_jobs", {}),
+            ("get_asset_jobs", {"source_path": READINESS_NEVER_SEEN_PATH, "escalate": 1}),
+            ("get_asset_jobs", {"source_path": READINESS_NEVER_SEEN_PATH, "include_logs": "no"}),
+        ]
+        for request_type, fields in cases:
+            with self.subTest(request_type=request_type, fields={k: (v if len(str(v)) < 40 else "...") for k, v in fields.items()}):
+                response = self.native(request_type, **fields)
+                self.assertEqual(response["status"], "error", response)
+                self.assertEqual(response.get("code"), "validation_failed", response)
+
+    def test_null_flags_read_as_absent(self):
+        response = self.native("get_asset_status", path=READINESS_NEVER_SEEN_PATH, flush_io=None)
+        self.assertEqual(response["status"], "ok", response)
+        # A null flag is not a validation failure. What the Asset Processor
+        # answers for a source it has never seen (an empty list, a job in the
+        # missing state, or a refused query) is recorded, not assumed.
+        response = self.native("get_asset_jobs", source_path=READINESS_NEVER_SEEN_PATH, escalate=None, include_logs=None)
+        self._note(f"never-seen path get_asset_jobs: status={response['status']} code={response.get('code')} output={response.get('output')!r}")
+        self.assertNotEqual(response.get("code"), "validation_failed", response)
+        if response["status"] == "ok":
+            jobs = json.loads(response["output"])["jobs"]
+            self.assertTrue(all(job["status"] == "missing" for job in jobs), jobs)
+        else:
+            self.assertEqual(response.get("code"), "engine_error", response)
+
+
 class TestSecureMode(LiveEditorTest):
     """What the AgentServer serves and refuses under AI_COMPANION_SECURE_MODE=1.
 
@@ -1195,12 +1472,13 @@ class TestSecureMode(LiveEditorTest):
             ("validate_scene", {}),
             ("get_bus_schema", {"bus_name": "AiCompanionRequestBus"}),
             ("list_anim_graphs", {}),
+            ("get_asset_processor_status", {}),
         ]
         for request_type, fields in requests:
             with self.subTest(request_type=request_type):
                 response = self.client.request(request_type, **fields)
-                if request_type == "list_anim_graphs" and response.get("code") == "unknown_request_type":
-                    self.skipTest("list_anim_graphs is not served by this gem build")
+                if request_type in ("list_anim_graphs", "get_asset_processor_status") and response.get("code") == "unknown_request_type":
+                    self.skipTest(f"{request_type} is not served by this gem build")
                 self.assertEqual(response["status"], "ok", response)
 
     def test_list_anim_graphs_answers_in_secure_mode(self):
@@ -1211,6 +1489,15 @@ class TestSecureMode(LiveEditorTest):
         listing = json.loads(response["output"])
         self.assertIn("editor_mode", listing)
         self.assertIsInstance(listing["anim_graphs"], list)
+
+    def test_asset_processor_status_answers_in_secure_mode(self):
+        response = self.client.request("get_asset_processor_status")
+        if response.get("code") == "unknown_request_type":
+            self.skipTest("get_asset_processor_status is not served by this gem build")
+        self.assertEqual(response["status"], "ok", response)
+        status = json.loads(response["output"])
+        self.assertIsInstance(status["connected"], bool)
+        self.assertIsInstance(status["ping_ms"], (int, float))
 
     def test_native_outputs_are_json_without_errors(self):
         snapshot = json.loads(self.client.request("get_scene_snapshot")["output"])

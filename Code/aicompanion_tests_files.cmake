@@ -10,4 +10,5 @@ set(FILES
     Source/Tests/RequestParsingTests.cpp
     Source/Tests/RequestErrorTests.cpp
     Source/Tests/AnimGraphCommandTextTests.cpp
+    Source/Tests/AssetReadinessTests.cpp
 )

@@ -192,9 +192,12 @@ These functions route through fast C++ entity traversal, bypassing Python:
 
 They are also available as direct AgentServer request types (`get_scene_snapshot`,
 `get_entity_tree`, `validate_scene`), skipping `execute_python` entirely, alongside
-`get_entity` (one entity by id), `get_bus_schema` (live EBus reflection) and the
-validated mutation set `create_entity`, `set_transform`, `delete_entity`, which work
-in secure mode and each run in their own undo batch.
+`get_entity` (one entity by id), `get_bus_schema` (live EBus reflection), the asset
+readiness queries `get_asset_status`, `get_asset_jobs` and
+`get_asset_processor_status` (poll `get_asset_status` after writing a file; never
+compile synchronously), and the validated mutation set `create_entity`,
+`set_transform`, `delete_entity`, which work in secure mode and each run in their
+own undo batch.
 
 ### Use `ping` for health checks
 

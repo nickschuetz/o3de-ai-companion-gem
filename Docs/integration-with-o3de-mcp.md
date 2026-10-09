@@ -75,6 +75,9 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `connect_anim_graph_ports` | Connect `source_port` of `source_node_id` to `target_port` of `target_node_id` inside a blend tree (a port is an index or a name); answers the input port as `get_anim_graph` does | No (C++ EMotion Studio) |
 | `disconnect_anim_graph_ports` | Remove the connection into `target_port` of `target_node_id` | No (C++ EMotion Studio) |
 | `set_anim_graph_node` | Set any of `name`, `position`, `enabled`, `attributes` (reflected fields, e.g. a motion node's `motionIds`) on `node_id`; answers the node as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `get_asset_status` | Build status of `path` (a source relative path, a product relative path, or a full path to either): `unknown`, `missing`, `queued`, `compiling`, `compiled`, `failed`; optional `flush_io` for a file written a moment ago; asking escalates the asset's build priority; a full path under the project or engine root is queried in root-relative form (`query_path` in the reply); a source whose job failed answers `missing`, so a lasting `missing` means ask `get_asset_jobs` | No (C++ Asset Processor connection) |
+| `get_asset_jobs` | The Asset Processor's jobs for `source_path`: `job_key`, `platform`, `builder`, the matched `source_file` and `watch_folder`, `status` (`queued`, `in_progress`, `failed`, `completed`, `missing`), `error_count`, `warning_count`, `job_run_key`; optional `escalate`, and `include_logs` for each failed job's `log` (cut at 64 KB) | No (C++ Asset Processor connection) |
+| `get_asset_processor_status` | Whether the editor is connected to the Asset Processor (`connected`) and the ping (`ping_ms`); never fails | No (C++ Asset Processor connection) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
 `get_capabilities()` to confirm the gem is present, and the C++ request types
@@ -87,6 +90,19 @@ directly. Both are read-only: `get_anim_graph` answers
 `anim graph not found: <selector>` (code `not_found`) for an unknown graph, and
 both answer `EMotion FX is not available` (code `unavailable`) when the
 EMotionFX gem is not loaded.
+
+The three asset readiness types are read-only round trips over the editor's
+own Asset Processor connection. `get_asset_status` and `get_asset_jobs`
+answer `unavailable` (`not connected to the Asset Processor`) without a
+connection and `validation_failed` for an empty, over-long or
+control-character path or a non-boolean flag; `get_asset_processor_status`
+answers `connected: false` instead of failing. Asking for a status escalates
+the asset's build priority (the engine's behaviour); none of them compiles
+synchronously, so a client polls `get_asset_status` until `compiled` or
+`failed` and then reads the failed job's log with `get_asset_jobs` (see the
+[wait recipe](agent-best-practices.md#wait-for-an-asset-you-just-wrote)).
+o3de-mcp's `get_asset_status`, `get_asset_jobs` and `wait_for_asset` wrappers
+are to follow.
 
 The fifteen authoring types run through EMotion Studio's command system, so each
 request is one step in the Animation Editor's own undo history, not the

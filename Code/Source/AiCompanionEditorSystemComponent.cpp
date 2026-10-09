@@ -9,6 +9,7 @@
 #include "AgentMode/AgentModeState.h"
 #include "Animation/AnimGraphAuthoring.h"
 #include "Animation/AnimGraphInspector.h"
+#include "Assets/AssetReadiness.h"
 #include "Introspection/BusSchema.h"
 #include "Network/RequestError.h"
 
@@ -22,9 +23,11 @@
 #include <AzCore/Settings/SettingsRegistryMergeUtils.h>
 #include <AzCore/Utils/Utils.h>
 #include <AzFramework/API/ApplicationAPI.h>
+#include <AzFramework/Asset/AssetSystemBus.h>
 
 #include <AzCore/Component/TransformBus.h>
 #include <AzCore/Math/Quaternion.h>
+#include <AzToolsFramework/API/EditorAssetSystemAPI.h>
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
 #include <AzToolsFramework/API/ToolsApplicationAPI.h>
 #include <AzToolsFramework/Entity/EditorEntityAPIBus.h>
@@ -149,7 +152,19 @@ namespace AiCompanion
                     &AiCompanionEditorRequestBus::Events::SetAnimGraphNode,
                     { { { "animGraphId", "The anim graph's id." },
                         { "argumentsJson",
-                          "A JSON object: node_id, and any of name, position [x, y], enabled, attributes {field: value}." } } });
+                          "A JSON object: node_id, and any of name, position [x, y], enabled, attributes {field: value}." } } })
+                ->Event(
+                    "GetAssetStatus",
+                    &AiCompanionEditorRequestBus::Events::GetAssetStatus,
+                    { { { "path", "A source relative path, a product relative path, or a full path to either." },
+                        { "flushIo", "Flush the Asset Processor's file change queue first; use once, right after writing the file." } } })
+                ->Event(
+                    "GetAssetJobs",
+                    &AiCompanionEditorRequestBus::Events::GetAssetJobs,
+                    { { { "sourcePath", "The source file: relative to its scan folder, or a full path." },
+                        { "escalate", "Move the file's queued jobs to the front of the build queue." },
+                        { "includeLogs", "Attach each failed job's log, cut at 64 KB." } } })
+                ->Event("GetAssetProcessorStatus", &AiCompanionEditorRequestBus::Events::GetAssetProcessorStatus);
         }
     }
 
@@ -772,4 +787,149 @@ namespace AiCompanion
         return AnimGraphAuthoring::SetNode(animGraphId, argumentsJson);
     }
 
+    // -------------------------------------------------------------------------
+    // Asset readiness. Read-only queries to the Asset Processor over the
+    // editor's existing connection. Each is a synchronous round trip with the
+    // engine's own timeout; none calls CompileAssetSync, which would hold the
+    // main thread for a whole build.
+    // -------------------------------------------------------------------------
+
+    namespace
+    {
+        using EngineJobStatus = AzToolsFramework::AssetSystem::JobStatus;
+
+        // The mirror in Assets/AssetReadiness.h must match the engine enum
+        // value for value. JobStatus is stored in the Asset Processor's
+        // database, so the engine appends to it and never reorders it.
+        static_assert(static_cast<AZ::s32>(EngineJobStatus::Any) == static_cast<AZ::s32>(AssetReadiness::JobState::Any));
+        static_assert(static_cast<AZ::s32>(EngineJobStatus::Queued) == static_cast<AZ::s32>(AssetReadiness::JobState::Queued));
+        static_assert(static_cast<AZ::s32>(EngineJobStatus::InProgress) == static_cast<AZ::s32>(AssetReadiness::JobState::InProgress));
+        static_assert(static_cast<AZ::s32>(EngineJobStatus::Failed) == static_cast<AZ::s32>(AssetReadiness::JobState::Failed));
+        static_assert(
+            static_cast<AZ::s32>(EngineJobStatus::Failed_InvalidSourceNameExceedsMaxLimit) ==
+            static_cast<AZ::s32>(AssetReadiness::JobState::FailedInvalidSourceNameExceedsMaxLimit));
+        static_assert(static_cast<AZ::s32>(EngineJobStatus::Completed) == static_cast<AZ::s32>(AssetReadiness::JobState::Completed));
+        static_assert(static_cast<AZ::s32>(EngineJobStatus::Missing) == static_cast<AZ::s32>(AssetReadiness::JobState::Missing));
+
+        bool ConnectedToAssetProcessor()
+        {
+            bool connected = false;
+            AzFramework::AssetSystemRequestBus::BroadcastResult(
+                connected, &AzFramework::AssetSystemRequestBus::Events::ConnectedWithAssetProcessor);
+            return connected;
+        }
+
+        AZStd::string NotConnectedError()
+        {
+            return RequestError::EncodeError(RequestError::Unavailable, "not connected to the Asset Processor");
+        }
+
+        AZStd::string PathError(const AZStd::string& reason)
+        {
+            return RequestError::EncodeError(RequestError::ValidationFailed, "invalid path: " + reason);
+        }
+
+        //! The project and engine roots, for turning a full path into the
+        //! root-relative form the Asset Processor answers for.
+        AZStd::vector<AZStd::string> AssetQueryRoots()
+        {
+            AZStd::vector<AZStd::string> roots;
+            roots.push_back(AZStd::string(AZ::Utils::GetProjectPath().c_str()));
+            roots.push_back(AZStd::string(AZ::Utils::GetEnginePath().c_str()));
+            return roots;
+        }
+    } // namespace
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAssetStatus(AZStd::string path, bool flushIo)
+    {
+        AZStd::string reason;
+        if (!AssetReadiness::IsAcceptablePath(path, reason))
+        {
+            return AZ::Failure(PathError(reason));
+        }
+        if (!ConnectedToAssetProcessor())
+        {
+            return AZ::Failure(NotConnectedError());
+        }
+        const AZStd::string queryPath = AssetReadiness::NormalizeQueryPath(path, AssetQueryRoots());
+        AzFramework::AssetSystem::AssetStatus status = AzFramework::AssetSystem::AssetStatus_Unknown;
+        if (flushIo)
+        {
+            AzFramework::AssetSystemRequestBus::BroadcastResult(
+                status, &AzFramework::AssetSystemRequestBus::Events::GetAssetStatus_FlushIO, queryPath);
+        }
+        else
+        {
+            AzFramework::AssetSystemRequestBus::BroadcastResult(
+                status, &AzFramework::AssetSystemRequestBus::Events::GetAssetStatus, queryPath);
+        }
+        return AZ::Success(AssetReadiness::BuildAssetStatusJson(path, queryPath, status));
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAssetJobs(
+        AZStd::string sourcePath, bool escalate, bool includeLogs)
+    {
+        AZStd::string reason;
+        if (!AssetReadiness::IsAcceptablePath(sourcePath, reason))
+        {
+            return AZ::Failure(PathError(reason));
+        }
+        if (!ConnectedToAssetProcessor())
+        {
+            return AZ::Failure(NotConnectedError());
+        }
+        AZ::Outcome<AzToolsFramework::AssetSystem::JobInfoContainer> jobs = AZ::Failure();
+        const AZStd::string queryPath = AssetReadiness::NormalizeQueryPath(sourcePath, AssetQueryRoots());
+        AzToolsFramework::AssetSystemJobRequestBus::BroadcastResult(
+            jobs, &AzToolsFramework::AssetSystemJobRequestBus::Events::GetAssetJobsInfo, queryPath, escalate);
+        if (!jobs.IsSuccess())
+        {
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::EngineError,
+                AZStd::string::format("the Asset Processor did not answer the job query for '%s'", sourcePath.c_str())));
+        }
+
+        AZStd::vector<AssetReadiness::JobRecord> records;
+        records.reserve(jobs.GetValue().size());
+        for (const AzToolsFramework::AssetSystem::JobInfo& info : jobs.GetValue())
+        {
+            AssetReadiness::JobRecord record;
+            record.m_jobKey = info.m_jobKey;
+            record.m_platform = info.m_platform;
+            record.m_builder = info.m_builderGuid.ToString<AZStd::string>();
+            record.m_sourceFile = info.m_sourceFile;
+            record.m_watchFolder = info.m_watchFolder;
+            record.m_state = static_cast<AssetReadiness::JobState>(static_cast<AZ::s32>(info.m_status));
+            record.m_errorCount = info.m_errorCount;
+            record.m_warningCount = info.m_warningCount;
+            record.m_jobRunKey = info.m_jobRunKey;
+            if (includeLogs && AssetReadiness::IsFailedState(record.m_state))
+            {
+                record.m_hasLog = true;
+                AZ::Outcome<AZStd::string> log = AZ::Failure();
+                AzToolsFramework::AssetSystemJobRequestBus::BroadcastResult(
+                    log, &AzToolsFramework::AssetSystemJobRequestBus::Events::GetJobLog, info.m_jobRunKey);
+                if (log.IsSuccess())
+                {
+                    record.m_logAvailable = true;
+                    record.m_log = log.TakeValue();
+                    record.m_truncated = AssetReadiness::TruncateJobLog(record.m_log);
+                }
+            }
+            records.push_back(AZStd::move(record));
+        }
+        return AZ::Success(AssetReadiness::BuildAssetJobsJson(sourcePath, records));
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAssetProcessorStatus()
+    {
+        const bool connected = ConnectedToAssetProcessor();
+        float pingMs = 0.0f;
+        if (connected)
+        {
+            AzFramework::AssetSystemRequestBus::BroadcastResult(
+                pingMs, &AzFramework::AssetSystemRequestBus::Events::GetAssetProcessorPingTimeMilliseconds);
+        }
+        return AZ::Success(AssetReadiness::BuildAssetProcessorStatusJson(connected, pingMs));
+    }
 } // namespace AiCompanion

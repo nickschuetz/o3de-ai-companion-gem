@@ -134,6 +134,10 @@ namespace AiCompanion
             const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest);
         AZStd::string HandleRemoveAnimGraphParameter(const AZStd::string& id, const rapidjson::Document& doc);
         AZStd::string HandleRemoveAnimGraphTransition(const AZStd::string& id, const rapidjson::Document& doc);
+        //! The asset readiness types: read-only Asset Processor queries.
+        AZStd::string HandleGetAssetStatus(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleGetAssetJobs(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleGetAssetProcessorStatus(const AZStd::string& id);
         //! The anim graph request types whose arguments the engine-facing
         //! code reads from the request itself: the handler checks
         //! anim_graph_id and forwards the whole JSON.
