@@ -155,16 +155,21 @@ The Gem automatically registers its Python path when the editor starts.
 
 ## o3de-mcp Tool Surface
 
-o3de-mcp exposes 66 tools in five groups: capabilities (1), editor (40),
-introspection (3), project (17) and assets (5). AI Companion sits behind the
-editor group. Tools that matter most when working with this gem:
+o3de-mcp (main, after 0.4.0) exposes 67 tools in five groups: capabilities
+(1), editor (41), introspection (3), project (17) and assets (5). AI Companion
+sits behind the editor group. Tools that matter most when working with this
+gem:
 
 - `run_editor_python` runs a script that can `import ai_companion`.
 - `begin_session` / `exec_in_session` / `end_session` keep a Python namespace
   alive across calls, so `ai_companion` is imported once per session instead
   of once per request.
-- `get_scene_snapshot`, `get_entity_tree` and `validate_scene` return the
-  gem's C++ snapshot and validation output without any editor Python.
+- `get_scene_snapshot`, `get_entity_tree`, `get_entity` and `validate_scene`
+  return the gem's C++ snapshot and validation output without any editor
+  Python, and `get_bus_schema_live` asks the gem's native `get_bus_schema`
+  first. o3de-mcp's `create_entity`, `set_transform` and `delete_entity` try
+  the gem's native mutation request types first and fall back to editor Python
+  on an older gem (nickschuetz/o3de-mcp#18, in review at the time of writing).
 - `instantiate_prefab` accepts gem-shipped prefabs such as
   `Prefabs/Player_TwinStick.prefab`; it checks the asset catalog, not only the
   project root, before calling the prefab system.

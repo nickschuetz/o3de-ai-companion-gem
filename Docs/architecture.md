@@ -52,8 +52,10 @@ flowchart TB
 
         subgraph CppLayer["C++ Native Layer  (Code/Source/)"]
             SysComp["AiCompanionSystemComponent<br/>EBus Handler"]
+            EdComp["AiCompanionEditorSystemComponent<br/>native mutations, CommitEntityToPrefab,<br/>GetBusSchema, Agent Mode"]
             SSP["SceneSnapshotProvider"]
             IV["InputValidator"]
+            RP["RequestParsing"]
             AS["AgentServer<br/>TCP Listener"]
         end
 
@@ -68,9 +70,13 @@ flowchart TB
     Agent -->|"MCP tool calls"| MCP
     Agent -->|"TCP JSON"| AgentSrv
     MCP -->|"run_editor_python() / sessions"| API
-    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, validate_scene"| AgentSrv
+    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity"| AgentSrv
     AgentSrv --> AS
+    AS --> RP
     AS -->|"request queue"| SysComp
+    AS -->|"mutations, bus schema"| EdComp
+    EdComp -->|"validated, own undo batch"| Engine
+    Builders -->|"CommitEntityToPrefab"| EdComp
 
     API --> Builders
     API --> Templates
@@ -121,10 +127,13 @@ network server.
 
 | Component | Purpose |
 |-----------|---------|
-| **AiCompanionSystemComponent** | EBus handler connecting Python API to C++ scene operations |
-| **SceneSnapshotProvider** | Fast entity traversal and JSON serialization of scene state |
-| **InputValidator** | C++ counterpart to Python validators for entity names and component types |
-| **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, and audit logging |
+| **AiCompanionSystemComponent** | EBus handler connecting Python API to C++ scene operations (`AiCompanionRequestBus`, exported to editor Python as `azlmbr.ai_companion`) |
+| **AiCompanionEditorSystemComponent** | Editor-side handler (`AiCompanionEditorRequestBus`): the validated native mutations (`CreateEntity`, `SetTransform`, `DeleteEntity`, each in its own undo batch), `CommitEntityToPrefab` (records an entity in the level template immediately, so multi-entity calls persist), `GetBusSchema`, the `SetComponentPropertyUnwrapped` workaround, and Agent Mode's dialog filter |
+| **SceneSnapshotProvider** | Fast entity traversal and JSON serialization of scene state, whole scene or one entity |
+| **InputValidator** | C++ counterpart to Python validators for entity names, positions and component types |
+| **RequestParsing** | Parses request arguments (entity ids as numbers or strings, Vector3 arrays within the position bound) for the native request types |
+| **BusSchema** | Builds a JSON description of any reflected EBus from the live BehaviorContext, with argument names and tooltips |
+| **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, secure mode, and audit logging |
 
 ### Gameplay Layer
 
@@ -138,8 +147,8 @@ network server.
 1. **AI Agent** sends a request (via MCP tool call or TCP JSON message)
 2. **Python API** receives the call and delegates to the appropriate builder or template
 3. **Safety layer** validates all inputs (names, positions, asset paths) and begins an undo batch
-4. **Builders** invoke `azlmbr` (O3DE Python bindings) to create entities and attach components
-5. On success the undo batch is committed; on failure it is rolled back automatically
+4. **Builders** invoke `azlmbr` (O3DE Python bindings) to create entities and attach components, then commit each entity to the level's prefab template so the next creation cannot wipe it
+5. On success the undo batch is committed; on failure it is rolled back automatically (an editor Undo plus deletion of any entity the undo leaves behind) and the error is returned as JSON with a `code`
 6. A **JSON response** with entity IDs, component IDs, and status is returned to the agent
 7. The agent can call **Feedback** functions to inspect the scene and decide its next action
 

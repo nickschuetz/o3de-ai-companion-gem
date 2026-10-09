@@ -44,6 +44,11 @@ Lists all known O3DE component types. Optionally filter by category
 
 ## Scene Bootstrap
 
+Every entity a call creates is committed to the level's prefab template as soon
+as it is configured, so calls that create several entities (`bootstrap_scene`,
+`create_entity_batch`, `create_grid`, `bootstrap_twin_stick_arena`) keep every
+entity's name, transform and components, and a saved level contains them.
+
 ### `bootstrap_scene(preset="default", ground_size=50, lighting="three_point", camera="perspective") -> str`
 Sets up a complete scene with ground plane, lighting rig, and camera.
 
