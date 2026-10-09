@@ -19,6 +19,39 @@ def to_vector3(values: Optional[List[Number]] = None, x: Number = 0, y: Number =
     return azmath.Vector3(float(x), float(y), float(z))
 
 
+def mark_entity_dirty(entity_id) -> None:
+    """Tell the editor the entity changed, so the prefab template records it.
+
+    TransformBus setters and SetName change the live entity but do not by
+    themselves mark it dirty for the prefab system; without AddDirtyEntity
+    inside the surrounding undo batch, a saved level keeps the entity's
+    original transform, scale and name (the launcher check saw a 30-unit
+    ground saved with no scale and no name).
+    """
+    import azlmbr.bus as bus
+    import azlmbr.editor as editor
+    editor.ToolsApplicationRequestBus(bus.Broadcast, "AddDirtyEntity", entity_id)
+
+
+def commit_entity_to_prefab(entity_id) -> None:
+    """Record the entity's state in the level's prefab template right now.
+
+    The editor captures dirty entities into the template only when the root
+    undo batch ends, and creating the next entity through the prefab system
+    propagates the template and wipes live changes not yet captured. In a
+    call that creates several entities only the last one survived; the
+    launcher check saved a ground and three lights as bare "Entity2".."Entity5".
+    The gem's editor bus exposes the same call the editor makes at batch end.
+    Silently a no-op on a gem build without the event.
+    """
+    import azlmbr.bus as bus
+    import azlmbr.editor as editor
+    try:
+        editor.AiCompanionEditorRequestBus(bus.Broadcast, "CommitEntityToPrefab", entity_id)
+    except (AttributeError, TypeError, RuntimeError):
+        pass
+
+
 def set_entity_position(entity_id, position: List[Number]):
     """Set an entity's world position."""
     import azlmbr.bus as bus

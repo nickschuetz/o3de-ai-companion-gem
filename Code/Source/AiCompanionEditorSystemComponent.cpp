@@ -67,6 +67,7 @@ namespace AiCompanion
                 ->Attribute(AZ::Script::Attributes::Module, "editor")
                 ->Attribute(AZ::Script::Attributes::ExcludeFrom, AZ::Script::Attributes::ExcludeFlags::All)
                 ->Event("SetComponentPropertyUnwrapped", &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped)
+                ->Event("CommitEntityToPrefab", &AiCompanionEditorRequestBus::Events::CommitEntityToPrefab)
                 ->Event(
                     "GetBusSchema",
                     &AiCompanionEditorRequestBus::Events::GetBusSchema,
@@ -542,6 +543,30 @@ namespace AiCompanion
             AZ::TransformBus::Event(id, &AZ::TransformBus::Events::SetLocalUniformScale, uniformScale);
         }
         AzToolsFramework::ToolsApplicationRequestBus::Broadcast(&AzToolsFramework::ToolsApplicationRequests::AddDirtyEntity, id);
+        return AZ::Success();
+    }
+
+    AZ::Outcome<void, AZStd::string> AiCompanionEditorSystemComponent::CommitEntityToPrefab(AZ::EntityId entityId)
+    {
+        if (!EntityExists(entityId))
+        {
+            return AZ::Failure(
+                AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(static_cast<AZ::u64>(entityId))));
+        }
+        auto* prefabInterface = AZ::Interface<AzToolsFramework::Prefab::PrefabPublicInterface>::Get();
+        if (!prefabInterface)
+        {
+            return AZ::Failure(AZStd::string("prefab system is not available"));
+        }
+        // The same call ToolsApplication::CreateUndosForDirtyEntities makes when
+        // the root undo batch ends; a nested batch gives it a sequence point to
+        // hang the node on without closing the caller's batch.
+        AzToolsFramework::ScopedUndoBatch batch("AiCompanion Commit Entity");
+        auto outcome = prefabInterface->GenerateUndoNodesForEntityChangeAndUpdateCache(entityId, batch.GetUndoBatch());
+        if (!outcome.IsSuccess())
+        {
+            return AZ::Failure(outcome.GetError());
+        }
         return AZ::Success();
     }
 

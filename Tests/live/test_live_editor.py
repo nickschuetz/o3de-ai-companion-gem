@@ -303,6 +303,50 @@ class TestTemplatesAndRollback(LiveEditorTest):
         self.assertFalse(added & self._entity_ids())
 
 
+class TestMultiEntityPersistence(LiveEditorTest):
+    """Every entity of a multi-entity call must keep its configuration.
+
+    Creating an entity through the prefab system propagates the level template,
+    which re-instantiates entities from the template DOM and wipes live changes
+    not yet captured there. Before the builder gave each entity its own undo
+    batch, only the last entity of bootstrap_scene / create_entity_batch kept
+    its name, transform and components (the launcher check saved a ground as a
+    bare "Entity2"). A follow-up creation forces the propagation here.
+    """
+
+    def _entity(self, entity_id) -> dict:
+        return json.loads(self.client.request("get_entity", entity_id=_entity_number(entity_id))["output"])
+
+    def test_bootstrap_scene_entities_survive_the_next_creation(self):
+        result = self.client.api("bootstrap_scene(ground_size=4.0)")
+        self.assertEqual(result["status"], "ok", result)
+        ids = {e["name"]: e["entity_id"] for e in result["data"]["scene_entities"] if e.get("entity_id")}
+        self.assertIn("Ground", ids, result)
+
+        self.client.api('create_entity_batch([{"name": "LiveAfterBootstrap", "position": [1, 1, 0]}])')
+
+        ground = self._entity(ids["Ground"])
+        self.assertEqual(ground["name"], "Ground")
+        self.assertAlmostEqual(ground["scale"][0], 4.0, places=3)
+        self.assertAlmostEqual(ground["position"][2], -2.0, places=3)
+        comps = " ".join(ground["components"])
+        self.assertIn("Collider", comps, ground)
+        self.assertIn("RigidBody", comps, ground)
+
+        self.client.api("rollback_last_batch()")
+        self.client.api("rollback_last_batch()")
+
+    def test_entity_batch_keeps_every_name(self):
+        spec = json.dumps([{"name": f"LiveBatch{i}", "position": [i, 0, 0]} for i in range(3)])
+        result = self.client.api(f"create_entity_batch({spec})")
+        self.assertEqual(result["status"], "ok", result)
+        self.client.api('create_entity_batch([{"name": "LiveBatchTail", "position": [9, 0, 0]}])')
+        names = {self._entity(e["entity_id"])["name"] for e in result["data"]["entities"]}
+        self.assertEqual(names, {"LiveBatch0", "LiveBatch1", "LiveBatch2"})
+        self.client.api("rollback_last_batch()")
+        self.client.api("rollback_last_batch()")
+
+
 class TestPrefabGuard(LiveEditorTest):
     def test_missing_prefab_is_refused_and_the_editor_survives(self):
         result = self.client.api('spawn_prefab("Live_Definitely_Missing")')

@@ -57,6 +57,7 @@ namespace AiCompanion
             bool setScale,
             float uniformScale) override;
         AZ::Outcome<void, AZStd::string> DeleteEntity(AZ::u64 entityId) override;
+        AZ::Outcome<void, AZStd::string> CommitEntityToPrefab(AZ::EntityId entityId) override;
 
     protected:
         // AZ::Component overrides

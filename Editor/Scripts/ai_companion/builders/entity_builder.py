@@ -171,103 +171,119 @@ class EntityBuilder:
             import azlmbr.editor as editor
             import azlmbr.bus as bus
             import azlmbr.entity as entity_api
-            import azlmbr.components as components
-            from ..utils.transform_helpers import (
-                set_entity_position,
-                set_entity_rotation,
-                set_entity_scale,
-                set_entity_parent,
+
+            return self._build_in_editor(editor, bus, entity_api)
+
+        except ImportError:
+            return self._outside_editor_result()
+
+    def _build_in_editor(self, editor, bus, entity_api) -> str:
+        """Create and configure the entity, then commit it to the prefab template."""
+        from ..utils.transform_helpers import (
+            commit_entity_to_prefab,
+            mark_entity_dirty,
+            set_entity_position,
+            set_entity_rotation,
+            set_entity_scale,
+            set_entity_parent,
+        )
+
+        # Create entity
+        entity_id = editor.ToolsApplicationRequestBus(
+            bus.Broadcast, "CreateNewEntity", entity_api.EntityId()
+        )
+        get_sandbox().record_entity(entity_id)
+
+        # Set name
+        editor.EditorEntityAPIBus(
+            bus.Event, "SetName", entity_id, self._name
+        )
+
+        # Set transform
+        if self._position:
+            set_entity_position(entity_id, self._position)
+        if self._rotation:
+            set_entity_rotation(entity_id, self._rotation)
+        if self._scale:
+            if isinstance(self._scale, (int, float)):
+                set_entity_scale(entity_id, self._scale)
+            else:
+                set_entity_scale(entity_id, self._scale)
+
+        # Set parent
+        if self._parent_id is not None:
+            set_entity_parent(entity_id, self._parent_id)
+
+        # The name and transform writes above do not mark the entity dirty
+        # for the prefab system on their own; without this a saved level
+        # keeps the entity's defaults.
+        mark_entity_dirty(entity_id)
+
+        # Add components.
+        #
+        # AddComponentOfType returns Outcome<vector<EntityComponentIdPair>>
+        # on this build, despite the singular name. The actual pair is at
+        # index 0 of the wrapped vector; we need that proxy to address
+        # SetComponentProperty by EntityComponentIdPair.
+        component_ids = {}
+        component_pairs = {}
+        entity_type_game = entity_api.EntityType().Game
+        null_uuid_str = "00000000-0000-0000-0000-000000000000"
+        for comp in self._components:
+            comp_type = comp["type"]
+            type_ids = editor.EditorComponentAPIBus(
+                bus.Broadcast, "FindComponentTypeIdsByEntityType",
+                [comp_type], entity_type_game
             )
+            if not type_ids:
+                continue
+            tid = type_ids[0]
+            if null_uuid_str in str(tid):
+                continue
 
-            # Create entity
-            entity_id = editor.ToolsApplicationRequestBus(
-                bus.Broadcast, "CreateNewEntity", entity_api.EntityId()
+            pair = None
+            outcome = editor.EditorComponentAPIBus(
+                bus.Broadcast, "AddComponentOfType", entity_id, tid
             )
-            get_sandbox().record_entity(entity_id)
-
-            # Set name
-            editor.EditorEntityAPIBus(
-                bus.Event, "SetName", entity_id, self._name
-            )
-
-            # Set transform
-            if self._position:
-                set_entity_position(entity_id, self._position)
-            if self._rotation:
-                set_entity_rotation(entity_id, self._rotation)
-            if self._scale:
-                if isinstance(self._scale, (int, float)):
-                    set_entity_scale(entity_id, self._scale)
-                else:
-                    set_entity_scale(entity_id, self._scale)
-
-            # Set parent
-            if self._parent_id is not None:
-                set_entity_parent(entity_id, self._parent_id)
-
-            # Add components.
-            #
-            # AddComponentOfType returns Outcome<vector<EntityComponentIdPair>>
-            # on this build, despite the singular name. The actual pair is at
-            # index 0 of the wrapped vector; we need that proxy to address
-            # SetComponentProperty by EntityComponentIdPair.
-            component_ids = {}
-            component_pairs = {}
-            entity_type_game = entity_api.EntityType().Game
-            null_uuid_str = "00000000-0000-0000-0000-000000000000"
-            for comp in self._components:
-                comp_type = comp["type"]
-                type_ids = editor.EditorComponentAPIBus(
-                    bus.Broadcast, "FindComponentTypeIdsByEntityType",
-                    [comp_type], entity_type_game
-                )
-                if not type_ids:
-                    continue
-                tid = type_ids[0]
-                if null_uuid_str in str(tid):
-                    continue
-
-                pair = None
+            if hasattr(outcome, "IsSuccess") and outcome.IsSuccess():
+                val = outcome.GetValue()
+                pair = val[0] if isinstance(val, list) and val else val
+            else:
+                # Older builds only have AddComponentsOfType (plural).
                 outcome = editor.EditorComponentAPIBus(
-                    bus.Broadcast, "AddComponentOfType", entity_id, tid
+                    bus.Broadcast, "AddComponentsOfType", entity_id, [tid]
                 )
                 if hasattr(outcome, "IsSuccess") and outcome.IsSuccess():
                     val = outcome.GetValue()
-                    pair = val[0] if isinstance(val, list) and val else val
-                else:
-                    # Older builds only have AddComponentsOfType (plural).
-                    outcome = editor.EditorComponentAPIBus(
-                        bus.Broadcast, "AddComponentsOfType", entity_id, [tid]
-                    )
-                    if hasattr(outcome, "IsSuccess") and outcome.IsSuccess():
-                        val = outcome.GetValue()
-                        if val:
-                            pair = val[0] if isinstance(val, list) else val
+                    if val:
+                        pair = val[0] if isinstance(val, list) else val
 
-                if pair is not None:
-                    from ..utils.id_helpers import id_to_jsonable
-                    component_ids[comp_type] = id_to_jsonable(pair)
-                    component_pairs[comp_type] = pair
+            if pair is not None:
+                from ..utils.id_helpers import id_to_jsonable
+                component_ids[comp_type] = id_to_jsonable(pair)
+                component_pairs[comp_type] = pair
 
-            from ..utils.id_helpers import id_to_jsonable
+        from ..utils.id_helpers import id_to_jsonable
 
-            self._apply_asset_properties(component_pairs)
+        self._apply_asset_properties(component_pairs)
+        mark_entity_dirty(entity_id)
+        commit_entity_to_prefab(entity_id)
 
-            return entity_result(
-                entity_id=id_to_jsonable(entity_id),
-                name=self._name,
-                component_ids=component_ids,
-                position=self._position,
-            )
+        return entity_result(
+            entity_id=id_to_jsonable(entity_id),
+            name=self._name,
+            component_ids=component_ids,
+            position=self._position,
+        )
 
-        except ImportError:
-            # Running outside editor, return a mock result for testing
-            return entity_result(
-                entity_id=0,
-                name=self._name,
-                component_ids={c["type"]: 0 for c in self._components},
-                position=self._position,
-            )
+    def _outside_editor_result(self) -> str:
+        """Running outside the editor: a mock result so unit tests can run."""
+        return entity_result(
+            entity_id=0,
+            name=self._name,
+            component_ids={c["type"]: 0 for c in self._components},
+            position=self._position,
+        )
 
     def _apply_asset_properties(self, component_pairs: Dict[str, Any]) -> None:
         """Wire Asset<T> properties on freshly-created components.
