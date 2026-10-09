@@ -75,11 +75,23 @@ def _stub_azlmbr(calls, on_set=None):
     # Entity names the editor would report, for with_parent's protected check.
     entity_names = {1: "EditorGlobal", 2: "AZ::Probe", 3: "Player"}
 
+    class _StubEntityId:
+        def __init__(self, value):
+            self.value = value
+
+        def ToString(self):
+            return f"[{self.value}]"
+
+        def IsValid(self):
+            return True
+
     def info_bus(call_type, event, eid):
-        # The EntityId stub below keeps its constructor args as a tuple.
         if event == "GetName":
-            return entity_names.get(eid[1][0])
+            return entity_names.get(getattr(eid, "value", None))
         raise AssertionError(f"unexpected EditorEntityInfoRequestBus event {event!r}")
+
+    def search_bus(call_type, event, search_filter):
+        return [_StubEntityId(number) for number in entity_names]
 
     class _EntityType:
         Game = "Game"
@@ -94,7 +106,9 @@ def _stub_azlmbr(calls, on_set=None):
     editor.EditorEntityInfoRequestBus = info_bus
     # No AiCompanionEditorRequestBus: commit_entity_to_prefab tolerates its absence.
     entity = types.ModuleType("azlmbr.entity")
-    entity.EntityId = lambda *a: ("EntityId", a)
+    entity.EntityId = lambda *a: _StubEntityId(a[0] if a else 4294967295)
+    entity.SearchBus = search_bus
+    entity.SearchFilter = lambda: object()
     entity.EntityType = _EntityType
     components = types.ModuleType("azlmbr.components")
     components.TransformBus = quiet_bus

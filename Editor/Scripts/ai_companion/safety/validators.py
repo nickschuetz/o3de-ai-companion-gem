@@ -120,25 +120,12 @@ def is_protected_entity(name: str) -> bool:
     return False
 
 
-def _to_entity_id(value: Any, entity_api) -> Optional[Any]:
-    """An ``azlmbr.entity.EntityId`` for an int, a bracketed ``"[id]"`` string,
-    a decimal string, or an EntityId proxy; ``None`` when nothing parses."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return entity_api.EntityId(value)
-    if isinstance(value, str):
-        digits = "".join(ch for ch in value if ch.isdigit())
-        if not digits:
-            return None
-        return entity_api.EntityId(int(digits))
-    return value
-
-
 def validate_target_entity(entity_id: Any) -> Tuple[bool, str]:
     """Refuse a mutation aimed at a protected system entity. Returns (valid, error_message).
 
-    Resolves the entity's name through the editor (``EditorEntityInfoRequestBus``
+    Resolves the id with ``entity_id_from_value`` (an int is looked up by entity
+    search, since the Python ``EntityId(int)`` constructor is broken on 26.10.0),
+    then the entity's name through the editor (``EditorEntityInfoRequestBus``
     ``GetName``) and refuses it when ``is_protected_entity`` matches: ``EditorGlobal``,
     ``SystemEntity`` and any ``AZ::``-prefixed name. The message starts with
     ``entity is protected``, the text the native request types answer too.
@@ -151,9 +138,11 @@ def validate_target_entity(entity_id: Any) -> Tuple[bool, str]:
     except ImportError:
         return True, ""
 
-    eid = _to_entity_id(entity_id, entity_api)
+    from ..utils.id_helpers import entity_id_from_value
+
+    eid = entity_id_from_value(entity_id)
     if eid is None:
-        return False, f"Invalid entity id: {entity_id!r}"
+        return False, f"Invalid or unknown entity id: {entity_id!r}"
     try:
         name = editor.EditorEntityInfoRequestBus(bus.Event, "GetName", eid)
     except (AttributeError, TypeError, RuntimeError):

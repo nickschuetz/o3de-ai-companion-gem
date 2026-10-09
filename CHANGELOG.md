@@ -28,6 +28,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - The recursion depth limit from `safety/sandbox.py` (`MAX_RECURSION_DEPTH`, `OperationSandbox.check_depth`, `exit_depth` and the `max_depth` constructor argument). Nothing called it, so no call was ever limited by it; the docs no longer claim a depth limit. The sandbox's real limits are unchanged: `MAX_ENTITIES_PER_CALL` (100) and `MAX_OPERATION_TIMEOUT_SECONDS` (30), checked per outermost undo batch.
 
+### Fixed
+- Integer entity ids reach the engine correctly again. On O3DE 26.10.0 the Python `EntityId(int)` constructor yields the invalid id for every value and a raw int handed to a bus call such as `TransformBus.SetParent` is marshalled into a wrong id without an error, so `EntityBuilder.with_parent(123)` silently parented the new entity under an unrelated one. `utils.id_helpers.entity_id_from_value` now trusts the constructor only when its result round-trips to the same id text and otherwise finds the entity through `SearchBus`; the parent setter, the protected-entity validator and the camera template use it, and an id no entity carries is refused with "unknown entity id" instead of being passed on.
+
 ## [0.5.0] - 2026-10-09
 
 ### Added

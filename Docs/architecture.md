@@ -318,8 +318,8 @@ first in `get_bus_schema_live`, the three mutation types first in its
 editor Python when the reply carries `unknown_request_type`), the seventeen
 anim graph types one to one in its `list_anim_graphs`, `get_anim_graph` and
 authoring and wiring tools of the same names, the three asset readiness
-types in its `get_asset_status`, `get_asset_jobs` and `get_asset_processor_status`
-tools plus a polling `wait_for_asset` (o3de-mcp main, shipping in o3de-mcp
+types in its `get_asset_status`, `get_asset_jobs` and
+`get_asset_processor_connection` tools plus a polling `wait_for_asset` (o3de-mcp main, shipping in o3de-mcp
 0.6.0 alongside gem 0.6.0), and `execute_python` for everything else
 (`run_editor_python` and the `begin_session` / `exec_in_session` tools).
 

@@ -153,11 +153,22 @@ def _try_set_non_uniform_scale(entity_id, sx: float, sy: float, sz: float) -> bo
 
 
 def set_entity_parent(entity_id, parent_id):
-    """Set an entity's parent."""
+    """Set an entity's parent.
+
+    ``parent_id`` may be an EntityId proxy, an int or an id string; an int is
+    resolved to the live entity first, because a raw int handed to the bus is
+    marshalled into a wrong id on O3DE 26.10.0 (observed: the child ended up
+    under an unrelated entity). Raises ``ValueError`` when no entity has that id.
+    """
     import azlmbr.bus as bus
     import azlmbr.components as components
 
-    components.TransformBus(bus.Event, "SetParent", entity_id, parent_id)
+    from .id_helpers import entity_id_from_value
+
+    parent = entity_id_from_value(parent_id)
+    if parent is None:
+        raise ValueError(f"Unknown parent entity id: {parent_id!r}")
+    components.TransformBus(bus.Event, "SetParent", entity_id, parent)
 
 
 def get_entity_position(entity_id) -> Tuple[float, float, float]:
