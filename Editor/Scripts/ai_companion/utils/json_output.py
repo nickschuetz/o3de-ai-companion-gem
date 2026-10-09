@@ -67,8 +67,13 @@ def entity_result(
     name: str,
     component_ids: Optional[Dict[str, int]] = None,
     position: Optional[List[float]] = None,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Return a JSON response for a created entity."""
+    """Return a JSON response for a created entity.
+
+    ``extra`` holds further per-entity fields (for example the component
+    properties a build applied and any it could not), merged into ``data``.
+    """
     data: Dict[str, Any] = {
         "entity_id": entity_id,
         "name": name,
@@ -77,6 +82,8 @@ def entity_result(
         data["component_ids"] = component_ids
     if position is not None:
         data["position"] = position
+    if extra:
+        data.update(extra)
     return success(data)
 
 

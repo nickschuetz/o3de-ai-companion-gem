@@ -125,12 +125,23 @@ build_entity("MyEntity") \
 - `.with_parent(parent_id)`
 - `.with_mesh(mesh_asset)`
 - `.with_material(material_path)`
-- `.with_physics(body_type, mass)`
-- `.with_collider(shape)`
+- `.with_physics(body_type, mass)`: `"dynamic"` or `"static"`; `mass` (kilograms) applies to dynamic bodies only
+- `.with_collider(shape)`: `"box"`, `"sphere"`, `"capsule"` or `"cylinder"`
 - `.with_lua_script(script_path)`
 - `.with_script_canvas(graph_path)`
 - `.with_component(component_type, **properties)`
 - `.build()` — Execute and return JSON
+
+**Physics properties applied on build.** For a dynamic body, `build()` sets
+`Configuration|Compute Mass` to false and `Configuration|Mass` to the requested
+mass on the PhysX Dynamic Rigid Body, so the value is kept in the saved level
+rather than the mass the editor computes from the colliders. For a primitive
+collider it sets `Shape Configuration|Shape` to the requested shape; the
+shape's dimensions (box size, sphere radius, capsule height and radius) stay at
+the engine defaults. Properties passed to `.with_component(**properties)` are
+not applied; set them afterwards with `set_component_property`. The result's
+`applied_properties` lists what the editor accepted, and `property_warnings`
+lists any set the editor refused; a refused set does not fail the build.
 
 ## Lighting / Physics / Camera
 
@@ -144,7 +155,8 @@ Creates a camera entity.
 Creates a non-moving physics object.
 
 ### `create_dynamic_body(name, position, mesh="primitive_cube", mass=1.0, collider_shape="box") -> str`
-Creates a physics-simulated object.
+Creates a physics-simulated object. `mass` (kilograms) and `collider_shape` are
+applied to the components as described under the fluent builder.
 
 ### `create_physics_ground(size=50) -> str`
 Creates a ground plane with static physics collision.
