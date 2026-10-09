@@ -183,6 +183,7 @@ class EntityBuilder:
             entity_id = editor.ToolsApplicationRequestBus(
                 bus.Broadcast, "CreateNewEntity", entity_api.EntityId()
             )
+            get_sandbox().record_entity(entity_id)
 
             # Set name
             editor.EditorEntityAPIBus(

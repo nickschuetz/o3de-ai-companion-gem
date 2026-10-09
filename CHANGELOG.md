@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Every API error carries a top-level `code` (`validation_failed`, `limit_exceeded`, `not_in_editor`, `not_found`, `editor_running`, `io_error`, `engine_error`, `instantiate_failed`, `prefab_not_found`) so agents can branch without parsing the message. `details.code` still mirrors it for callers written against 0.4.0; `spawn_prefab`'s former `invalid_prefab_name` / `invalid_position` codes are now `validation_failed` with `details.reason`.
+
+### Changed
+- An exception inside a mutating API call no longer reaches the agent as a Python traceback. The undo decorator ends the batch, undoes it, deletes anything the call created, and returns a JSON error with `rolled_back: true`, `details.exception` and `details.operation`.
+- `rollback_last_batch` finishes what the editor's Undo leaves behind. The sandbox records every entity a batch creates (builder and `spawn_prefab`), and rollback deletes any that still exist after the undo, which closes the O3DE 26.10 gap where a Lua-scripted entity survived Undo. The response reports `leftover_entities_deleted`; the live suite now asserts removal instead of skipping.
+
 ## [0.4.0] - 2026-10-08
 
 ### Removed

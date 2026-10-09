@@ -62,4 +62,4 @@ def inspect_entity(entity_id: int) -> str:
         })
 
     except ImportError:
-        return error("Cannot inspect entity: not running inside O3DE Editor")
+        return error("Cannot inspect entity: not running inside O3DE Editor", code="not_in_editor")

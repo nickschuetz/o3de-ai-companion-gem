@@ -17,14 +17,46 @@ def success(data: Any = None, message: str = "") -> str:
     return json.dumps(result)
 
 
-def error(message: str, details: Any = None, rolled_back: bool = False) -> str:
-    """Return a JSON error response."""
+# Error codes every API error carries in its top-level ``code`` field, so an
+# agent can branch on them instead of parsing the message:
+#   validation_failed  an argument failed the safety validators
+#   limit_exceeded     a sandbox limit (entity count, depth, timeout) was hit
+#   not_in_editor      the call needs the O3DE Editor's azlmbr and it is absent
+#   not_found          the named prefab, file or entity does not exist
+#   editor_running     the operation needs the editor closed
+#   io_error           a file could not be read or written
+#   engine_error       an azlmbr call failed or raised
+#   instantiate_failed the prefab system returned a failed outcome
+ERROR_CODES = (
+    "validation_failed",
+    "limit_exceeded",
+    "not_in_editor",
+    "not_found",
+    "editor_running",
+    "io_error",
+    "engine_error",
+    "instantiate_failed",
+)
+
+
+def error(message: str, details: Any = None, rolled_back: bool = False, code: str = "engine_error") -> str:
+    """Return a JSON error response.
+
+    ``code`` is one of ``ERROR_CODES`` (or a function-specific code such as
+    ``prefab_not_found``) and is also mirrored into ``details.code`` for
+    callers written against 0.4.0.
+    """
     result: Dict[str, Any] = {
         "status": "error",
+        "code": code,
         "message": message,
     }
-    if details is not None:
-        result["details"] = details
+    if details is None:
+        details = {}
+    if isinstance(details, dict):
+        details = dict(details)
+        details.setdefault("code", code)
+    result["details"] = details
     if rolled_back:
         result["rolled_back"] = True
     return json.dumps(result)

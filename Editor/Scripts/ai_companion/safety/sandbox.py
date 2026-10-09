@@ -32,12 +32,23 @@ class OperationSandbox:
         self._entities_created = 0
         self._current_depth = 0
         self._start_time: Optional[float] = None
+        self._created_ids: list = []
 
     def begin(self):
         """Start tracking an operation."""
         self._entities_created = 0
         self._current_depth = 0
         self._start_time = time.monotonic()
+        self._created_ids = []
+
+    def record_entity(self, entity_id) -> None:
+        """Remember an entity this operation created, so rollback can delete it
+        if the editor's Undo leaves it behind."""
+        self._created_ids.append(entity_id)
+
+    @property
+    def created_entity_ids(self) -> list:
+        return list(self._created_ids)
 
     def check_entity_limit(self, count: int = 1):
         """Check if creating `count` more entities would exceed the limit."""
