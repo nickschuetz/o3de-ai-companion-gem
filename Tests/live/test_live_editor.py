@@ -313,6 +313,123 @@ class TestNativeMutations(LiveEditorTest):
         self.assertEqual(gone.get("code"), "not_found", gone)
         self.assertEqual(self._ids(), before)
 
+    def _set(self, entity_id: int, **fields) -> dict:
+        """set_transform that must succeed; returns the entity object it answers."""
+        response = self.native("set_transform", entity_id=entity_id, **fields)
+        self.assertEqual(response["status"], "ok", response)
+        return json.loads(response["output"])
+
+    @staticmethod
+    def _rounded(values) -> list[float]:
+        return [round(float(v), 3) for v in values]
+
+    def _has_non_uniform_component(self, entity: dict) -> bool:
+        return any("NonUniformScale" in name for name in entity["components"])
+
+    def test_scale_shapes_and_the_non_uniform_component(self):
+        # The contract from API_VERSION 0.5.0: "scale" is the Transform's
+        # uniform scale, "non_uniform_scale" the component's value or null,
+        # "effective_scale" their product; an array with equal elements is the
+        # number, unequal elements add the component the editor's own button adds.
+        created = self.native("create_entity", name="LiveScale", position=[1, 1, 1])
+        self.assertEqual(created["status"], "ok", created)
+        new_id = int(json.loads(created["output"])["entity_id"])
+        try:
+            entity = self._set(new_id, scale=2)
+            self.assertAlmostEqual(entity["scale"][0], 2.0, places=3)
+            self.assertIsNone(entity["non_uniform_scale"], entity)
+            self.assertEqual(self._rounded(entity["effective_scale"]), [2.0, 2.0, 2.0])
+            self.assertFalse(self._has_non_uniform_component(entity), entity["components"])
+
+            entity = self._set(new_id, scale=[2, 2, 2])
+            self.assertAlmostEqual(entity["scale"][0], 2.0, places=3)
+            self.assertIsNone(entity["non_uniform_scale"], entity)
+            self.assertFalse(self._has_non_uniform_component(entity), entity["components"])
+
+            entity = self._set(new_id, scale=[50, 50, 1])
+            self.assertEqual(self._rounded(entity["scale"]), [1.0, 1.0, 1.0])
+            self.assertEqual(self._rounded(entity["non_uniform_scale"]), [50.0, 50.0, 1.0])
+            self.assertEqual(self._rounded(entity["effective_scale"]), [50.0, 50.0, 1.0])
+            self.assertTrue(self._has_non_uniform_component(entity), entity["components"])
+            fetched = json.loads(self.native("get_entity", entity_id=new_id)["output"])
+            self.assertEqual(self._rounded(fetched["non_uniform_scale"]), [50.0, 50.0, 1.0])
+            self.assertEqual(self._rounded(fetched["effective_scale"]), [50.0, 50.0, 1.0])
+            self.assertTrue(self._has_non_uniform_component(fetched), fetched["components"])
+            in_snapshot = [
+                e for e in json.loads(self.native("get_scene_snapshot")["output"])["entities"] if int(e["id"]) == new_id
+            ]
+            self.assertEqual(len(in_snapshot), 1)
+            self.assertEqual(self._rounded(in_snapshot[0]["effective_scale"]), [50.0, 50.0, 1.0])
+
+            # A uniform scale afterwards keeps the component and resets it to one.
+            entity = self._set(new_id, scale=3)
+            self.assertEqual(self._rounded(entity["scale"]), [3.0, 3.0, 3.0])
+            self.assertEqual(self._rounded(entity["non_uniform_scale"]), [1.0, 1.0, 1.0])
+            self.assertEqual(self._rounded(entity["effective_scale"]), [3.0, 3.0, 3.0])
+            self.assertTrue(self._has_non_uniform_component(entity), entity["components"])
+        finally:
+            self.native("delete_entity", entity_id=new_id)
+
+    def test_rotation_quaternion(self):
+        created = self.native("create_entity", name="LiveQuaternion", position=[1, 1, 1])
+        self.assertEqual(created["status"], "ok", created)
+        new_id = int(json.loads(created["output"])["entity_id"])
+        try:
+            entity = self._set(new_id, rotation_quaternion=[0, 0, 0.7071068, 0.7071068])
+            self.assertAlmostEqual(entity["rotation"][2], 90.0, delta=0.05)
+            self.assertAlmostEqual(entity["rotation"][0], 0.0, delta=0.05)
+            # Not unit length on input: normalized before it is applied.
+            entity = self._set(new_id, rotation_quaternion=[0, 0, 2, 2])
+            self.assertAlmostEqual(entity["rotation"][2], 90.0, delta=0.05)
+            entity = self._set(new_id, rotation_quaternion=[0, 0, 0, 1])
+            self.assertAlmostEqual(entity["rotation"][2], 0.0, delta=0.05)
+        finally:
+            self.native("delete_entity", entity_id=new_id)
+
+    def test_scale_and_rotation_refusals_leave_the_entity_alone(self):
+        created = self.native("create_entity", name="LiveRefused", position=[1, 1, 1])
+        self.assertEqual(created["status"], "ok", created)
+        new_id = int(json.loads(created["output"])["entity_id"])
+        try:
+            both = self.native("set_transform", entity_id=new_id, rotation=[0, 0, 0], rotation_quaternion=[0, 0, 0, 1])
+            self.assertEqual(both.get("code"), "validation_failed", both)
+            self.assertIn("not both", both["error"])
+            zero = self.native("set_transform", entity_id=new_id, rotation_quaternion=[0, 0, 0, 0])
+            self.assertEqual(zero.get("code"), "validation_failed", zero)
+            for bad_scale in ([0, 1, 1], [1, 1001, 1], [1, 2], [1, "2", 3], 0, 1001):
+                with self.subTest(scale=bad_scale):
+                    refused = self.native("set_transform", entity_id=new_id, scale=bad_scale)
+                    self.assertEqual(refused.get("code"), "validation_failed", refused)
+            # Below AZ::MinTransformScale the component would clamp, so the gem
+            # refuses before touching the entity.
+            tiny = self.native("set_transform", entity_id=new_id, scale=[1, 0.001, 1])
+            self.assertEqual(tiny.get("code"), "validation_failed", tiny)
+            self.assertIn("0.01", tiny["error"])
+            entity = json.loads(self.native("get_entity", entity_id=new_id)["output"])
+            self.assertEqual(self._rounded(entity["scale"]), [1.0, 1.0, 1.0])
+            self.assertIsNone(entity["non_uniform_scale"], entity)
+            self.assertFalse(self._has_non_uniform_component(entity), entity["components"])
+        finally:
+            self.native("delete_entity", entity_id=new_id)
+
+    def test_non_uniform_scale_is_undone_in_one_step(self):
+        created = self.native("create_entity", name="LiveScaleUndo", position=[1, 1, 1])
+        self.assertEqual(created["status"], "ok", created)
+        new_id = int(json.loads(created["output"])["entity_id"])
+        try:
+            self._set(new_id, scale=2)
+            entity = self._set(new_id, scale=[50, 50, 1])
+            self.assertTrue(self._has_non_uniform_component(entity), entity["components"])
+            # One editor Undo: the component add and the scale were one batch.
+            self.client.run("import azlmbr.legacy.general as g\ng.undo()\n")
+            entity = json.loads(self.native("get_entity", entity_id=new_id)["output"])
+            self.assertFalse(self._has_non_uniform_component(entity), entity["components"])
+            self.assertIsNone(entity["non_uniform_scale"], entity)
+            self.assertEqual(self._rounded(entity["effective_scale"]), [2.0, 2.0, 2.0])
+        finally:
+            if new_id in self._ids():
+                self.native("delete_entity", entity_id=new_id)
+
     def test_delete_refuses_the_level_root(self):
         # The level's container is the root with children (other parentless
         # entities can appear in roots too), named "Level" in a stock level.
@@ -1575,6 +1692,13 @@ class TestSecureMode(LiveEditorTest):
         moved = self.client.request("set_transform", entity_id=new_id, position=[4, 5, 6])
         self.assertEqual(moved["status"], "ok", moved)
         self.assertAlmostEqual(json.loads(moved["output"])["position"][0], 4.0, places=3)
+
+        # A non-uniform scale adds the editor's component without Python.
+        scaled = self.client.request("set_transform", entity_id=new_id, scale=[50, 50, 1])
+        self.assertEqual(scaled["status"], "ok", scaled)
+        entity = json.loads(scaled["output"])
+        self.assertEqual([round(v, 3) for v in entity["effective_scale"]], [50.0, 50.0, 1.0])
+        self.assertEqual([round(v, 3) for v in entity["non_uniform_scale"]], [50.0, 50.0, 1.0])
 
         deleted = self.client.request("delete_entity", entity_id=new_id)
         self.assertEqual(deleted["status"], "ok", deleted)

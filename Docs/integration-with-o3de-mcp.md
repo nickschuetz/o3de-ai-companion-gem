@@ -63,11 +63,11 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `get_api_version` | Protocol and gem version info | No |
 | `get_scene_snapshot` | Full scene state as JSON | No (C++ EBus) |
 | `get_entity_tree` | Entity hierarchy tree | No (C++ EBus) |
-| `get_entity` | One entity (`entity_id` parameter) | No (C++ EBus) |
+| `get_entity` | One entity (`entity_id` parameter): position, rotation, `scale` (uniform), `non_uniform_scale` (the component's value or null), `effective_scale`, parent, components | No (C++ EBus) |
 | `validate_scene` | Scene validation | No (C++ EBus) |
 | `get_bus_schema` | Reflected EBus description (`bus_name` parameter, empty lists all) | No (C++ BehaviorContext) |
 | `create_entity` | Create a named entity (`name`, `position?`, `parent_id?`), validated, undoable | No (C++) |
-| `set_transform` | Set `position` / `rotation` (Euler degrees) / `scale` on `entity_id`, validated, undoable | No (C++) |
+| `set_transform` | Set `position`, `rotation` (Euler degrees) or `rotation_quaternion` (`[x, y, z, w]`), and `scale` (a number, or `[x, y, z]`; unequal elements add the editor's Non-uniform Scale component) on `entity_id`, validated, undoable; answers the `get_entity` shape | No (C++) |
 | `delete_entity` | Delete `entity_id` and descendants; refuses the level root, undoable | No (C++) |
 | `list_anim_graphs` | Every EMotion FX anim graph the engine holds: id, file name, ownership and dirty flags, node and parameter counts, actor instances | No (C++ EMotion FX) |
 | `get_anim_graph` | One anim graph (`anim_graph_id` as number or string, or `file_name`): nodes with ports and connections, transitions with conditions, parameters, node groups | No (C++ EMotion FX) |
@@ -182,6 +182,17 @@ carries every 64-bit entity id as a decimal string (`API_VERSION` 0.4.0 and
 up; 0.3.0 and lower sent JSON numbers, which a JavaScript parser corrupts above
 2^53), the editor-Python fallback sentences print bracketed `[id]`, and every
 tool and request field accepts either a number or a string.
+
+`api_version` is the gate for the transform contract too: 0.5.0 and up accept
+`scale` as `[x, y, z]` and `rotation_quaternion`, and every entity object they
+emit carries `non_uniform_scale` and `effective_scale` beside `scale`. A
+client talking to 0.4.0 sends a number for `scale` and Euler degrees for
+`rotation`, and reads `scale` alone. The native path is the only one that
+applies a non-uniform scale: editor Python cannot add the Non-uniform Scale
+component (`AddNonUniformScaleComponent` is not reflected, and
+`EditorComponentAPIBus` does not find it by name), and
+`NonUniformScaleRequestBus.GetScale` answers (0, 0, 0) on an entity without
+it, so a fallback that reads the bus blind reports a zero scale.
 
 Every error reply carries a `code` beside its `error` message, so a client
 branches on the code and shows the message. The vocabulary:
@@ -349,7 +360,7 @@ bare socket from the gem:
 "editor": {
   "status": "connected",
   "ai_companion_gem": true,
-  "agent_server": {"protocol_version": 1, "gem_version": "0.6.0", "api_version": "0.4.0"}
+  "agent_server": {"protocol_version": 1, "gem_version": "0.6.0", "api_version": "0.5.0"}
 }
 ```
 

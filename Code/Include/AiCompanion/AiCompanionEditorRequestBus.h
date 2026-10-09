@@ -7,6 +7,7 @@
 
 #include <AzCore/Component/ComponentBus.h>
 #include <AzCore/EBus/EBus.h>
+#include <AzCore/Math/Quaternion.h>
 #include <AzCore/Math/Vector3.h>
 #include <AzCore/Outcome/Outcome.h>
 #include <AzCore/std/any.h>
@@ -30,8 +31,8 @@ namespace AiCompanion
     //! vocabulary (validation_failed, not_found, unavailable, engine_error).
     //! The server decodes it into the reply's "code" and "error" fields; an
     //! editor Python caller that reads GetError() sees the JSON text.
-    //! SetComponentPropertyUnwrapped and CommitEntityToPrefab are called only
-    //! from the Python package and keep plain-text failures.
+    //! SetComponentPropertyUnwrapped, CommitEntityToPrefab and SetScale are
+    //! called only from the Python package and keep plain-text failures.
     class AiCompanionEditorRequests : public AZ::EBusTraits
     {
     public:
@@ -82,18 +83,35 @@ namespace AiCompanion
         //! prefab system's own text).
         virtual AZ::Outcome<AZ::u64, AZStd::string> CreateEntity(AZStd::string name, AZ::Vector3 position, AZ::u64 parentId) = 0;
 
-        //! Sets any of world position, world rotation (Euler degrees, XYZ) and
-        //! uniform scale on an existing entity, inside its own undo batch. A
-        //! flag false leaves that part untouched. Fails not_found for a
-        //! missing entity and validation_failed for a bad position or scale.
+        //! Sets any of world position, world rotation and effective local
+        //! scale on an existing entity, inside its own undo batch. A flag
+        //! false leaves that part untouched. The scale follows SetScale's
+        //! rules. Fails not_found for a missing entity, validation_failed for
+        //! a bad position or scale, and engine_error when the editor did not
+        //! add the Non-uniform Scale component or the scale read back differs
+        //! from what was asked.
         virtual AZ::Outcome<void, AZStd::string> SetTransform(
             AZ::u64 entityId,
             bool setPosition,
             AZ::Vector3 position,
             bool setRotation,
-            AZ::Vector3 rotationDegrees,
+            AZ::Quaternion rotation,
             bool setScale,
-            float uniformScale) = 0;
+            AZ::Vector3 scale) = 0;
+
+        //! Sets an entity's effective local scale, inside its own undo batch,
+        //! the way the Transform component's "Add non-uniform scale" button
+        //! does. Equal elements (within InputValidator::UniformScaleTolerance)
+        //! set the Transform's uniform scale and reset a present Non-uniform
+        //! Scale component to (1, 1, 1); unequal elements set the uniform
+        //! scale to 1 and add the editor's EditorNonUniformScaleComponent when
+        //! it is missing, then set its value. Every element must lie in
+        //! (0, InputValidator::MaxScale]; a non-uniform element below
+        //! AZ::MinTransformScale (0.01) is refused because the component
+        //! clamps it. Reflected to editor Python for the package's
+        //! set_entity_scale, which cannot add the component through
+        //! EditorComponentAPIBus; the failure text is plain, not encoded.
+        virtual AZ::Outcome<void, AZStd::string> SetScale(AZ::EntityId entityId, AZ::Vector3 scale) = 0;
 
         //! Records an entity's current state (name, transform, components) in the
         //! level's prefab template now, instead of when the root undo batch ends.

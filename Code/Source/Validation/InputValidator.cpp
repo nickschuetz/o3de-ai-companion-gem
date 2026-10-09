@@ -84,6 +84,21 @@ namespace AiCompanion
         return true;
     }
 
+    bool InputValidator::IsValidScale(float x, float y, float z)
+    {
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+        {
+            return false;
+        }
+        return x > 0.0f && x <= MaxScale && y > 0.0f && y <= MaxScale && z > 0.0f && z <= MaxScale;
+    }
+
+    bool InputValidator::IsUniformScale(float x, float y, float z)
+    {
+        return std::fabs(x - y) <= UniformScaleTolerance && std::fabs(y - z) <= UniformScaleTolerance &&
+            std::fabs(x - z) <= UniformScaleTolerance;
+    }
+
     bool InputValidator::IsValidAssetPath(const AZStd::string& path)
     {
         if (path.empty() || path.size() > 1024)

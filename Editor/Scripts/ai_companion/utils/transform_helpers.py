@@ -80,12 +80,15 @@ def set_entity_rotation(entity_id, rotation: List[Number]):
 def set_entity_scale(entity_id, scale: Union[Number, List[Number]]):
     """Set an entity's local scale. Accepts a single uniform value or [x, y, z].
 
-    On O3DE 2310+, the Transform component only exposes uniform scale via
-    `SetLocalUniformScale`. Non-uniform scaling requires a separate
-    `Non-uniform Scale` component, which we cannot reliably add on every
-    build (the component registration name varies). When a non-uniform
-    scale is requested but the component is unavailable, we fall back to
-    the largest axis as a uniform scale so the entity is at least visible.
+    The Transform component holds one uniform scale (`SetLocalUniformScale`).
+    A non-uniform [x, y, z] needs the editor's Non-uniform Scale component,
+    which editor Python cannot add: `AddNonUniformScaleComponent` is not
+    reflected and `EditorComponentAPIBus.AddComponentOfType` does not find it
+    by name. The gem's C++ `AiCompanionEditorRequestBus.SetScale` adds it the
+    way the Transform component's own button does, so that is tried first;
+    on a gem build without the event the old `EditorComponentAPIBus` attempt
+    runs, and if that fails too the largest axis is applied as a uniform
+    scale so the entity is at least visible.
     """
     import azlmbr.bus as bus
     import azlmbr.components as components
@@ -100,6 +103,9 @@ def set_entity_scale(entity_id, scale: Union[Number, List[Number]]):
         components.TransformBus(bus.Event, "SetLocalUniformScale", entity_id, sx)
         return
 
+    if _set_scale_natively(entity_id, sx, sy, sz):
+        return
+
     if _try_set_non_uniform_scale(entity_id, sx, sy, sz):
         return
 
@@ -111,8 +117,29 @@ def set_entity_scale(entity_id, scale: Union[Number, List[Number]]):
     )
 
 
+def _set_scale_natively(entity_id, sx: float, sy: float, sz: float) -> bool:
+    """Apply a scale through the gem's C++ `SetScale` event.
+
+    Returns True when the event answered success, False on a gem build
+    without the event or when it refused (out of range, or the engine did
+    not add the component).
+    """
+    import azlmbr.bus as bus
+    import azlmbr.editor as editor
+    import azlmbr.math as azmath
+
+    try:
+        outcome = editor.AiCompanionEditorRequestBus(
+            bus.Broadcast, "SetScale", entity_id, azmath.Vector3(sx, sy, sz)
+        )
+    except (AttributeError, TypeError, RuntimeError):
+        return False
+    return bool(hasattr(outcome, "IsSuccess") and outcome.IsSuccess())
+
+
 def _try_set_non_uniform_scale(entity_id, sx: float, sy: float, sz: float) -> bool:
-    """Attempt to add the Non-uniform Scale component and set its Scale.
+    """Attempt to add the Non-uniform Scale component and set its Scale
+    through `EditorComponentAPIBus`, for gem builds without `SetScale`.
 
     Returns True if the component was added and the value was set,
     False if the component is not registered on this build.
