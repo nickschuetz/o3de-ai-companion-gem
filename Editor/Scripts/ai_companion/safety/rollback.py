@@ -55,19 +55,17 @@ def _end_undo() -> None:
 
 
 def _undo() -> None:
-    """Undo the last operation (rolls back the most recent batch)."""
-    try:
-        import azlmbr.editor as editor
-        import azlmbr.bus as bus
-        editor.ToolsApplicationRequestBus(bus.Broadcast, "Undo")
-        return
-    except (ImportError, AttributeError):
-        pass
+    """Undo the last operation (rolls back the most recent batch).
 
+    ``ToolsApplicationRequestBus`` reflects ``BeginUndoBatch`` and
+    ``EndUndoBatch`` to Python but no ``Undo`` event: a call with that name
+    returns ``None`` without raising, so it must not be tried first. The
+    editor's undo itself is reachable through ``azlmbr.legacy.general.undo``.
+    """
     try:
         import azlmbr.legacy.general as general
         general.undo()
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
 
 

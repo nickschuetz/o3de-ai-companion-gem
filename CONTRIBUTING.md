@@ -106,6 +106,13 @@ These are non-negotiable:
   ```bash
   python -m pytest Tests/
   ```
+- C++ tests build through a host project; `scripts/ci_build_test.sh` does it end
+  to end (see [docs/ci-self-hosted-runner.md](docs/ci-self-hosted-runner.md))
+- Changes to what the editor actually does (reflection, templates, undo, the
+  AgentServer) should be checked against a running editor with the live suite:
+  `scripts/ci_live_test.sh`, or `O3DE_LIVE_EDITOR_TEST=1 python -m pytest Tests/live`
+  against an editor you already have open. Label the PR `ci:build` or `ci:live`
+  to run these on the self-hosted runner
 - Existing tests must continue to pass
 
 ### Documentation

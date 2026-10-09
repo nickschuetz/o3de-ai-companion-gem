@@ -17,13 +17,37 @@ import json
 from typing import Any, Dict, List, Optional, Union
 
 from .version import API_VERSION
-from .safety.rollback import with_undo_batch, begin_undo_batch, end_undo_batch, rollback_last_batch
+from .safety import rollback as _rollback
+from .safety.rollback import with_undo_batch
 from .safety.sandbox import get_sandbox, reset_sandbox, SandboxLimitError
 from .safety.validators import validate_entity_name, validate_position, is_protected_entity
 from .utils.json_output import success, error, batch_result
 from .utils.component_registry import list_components, get_categories
 
 Number = Union[int, float]
+
+
+# ---------------------------------------------------------------------------
+# Undo / rollback
+# ---------------------------------------------------------------------------
+
+
+def begin_undo_batch(label: str = "AI Operation") -> str:
+    """Manually begin an undo batch. Pair it with ``end_undo_batch()``."""
+    _rollback.begin_undo_batch(label)
+    return success({"label": label, "depth": _rollback._batch_depth})
+
+
+def end_undo_batch() -> str:
+    """End the current manual undo batch."""
+    _rollback.end_undo_batch()
+    return success({"depth": _rollback._batch_depth})
+
+
+def rollback_last_batch() -> str:
+    """Undo the last completed undo batch (one editor Undo step)."""
+    _rollback.rollback_last_batch()
+    return success({"rolled_back": True})
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +86,7 @@ def get_available_functions() -> str:
         {"name": "validate_scene", "args": [], "description": "Validate scene for common issues"},
         {"name": "list_prefabs", "args": [], "description": "List available AiCompanion prefabs"},
         {"name": "spawn_prefab", "args": ["prefab_name", "position?"], "description": "Instantiate a prefab"},
+        {"name": "find_prefab_file", "args": ["prefab_name"], "description": "Locate a prefab file on disk (returns a dict, not JSON)"},
         {"name": "begin_undo_batch", "args": ["label?"], "description": "Start a manual undo batch"},
         {"name": "end_undo_batch", "args": [], "description": "End the current undo batch"},
         {"name": "rollback_last_batch", "args": [], "description": "Undo the last batch"},
@@ -600,11 +625,13 @@ def spawn_prefab(
     """Instantiate an AiCompanion prefab at the given position.
 
     The prefab file is located on disk before the prefab system is asked to
-    instantiate it. ``PrefabPublicRequestBus.InstantiatePrefab`` crashes the
-    editor when the template cannot be loaded (a null DOM is dereferenced in
-    ``PrefabDomUtils::GetTemplateSourcePaths``, observed on O3DE 26.10.0), and
-    a C++ segfault cannot be caught from Python, so an unknown name must never
-    reach the bus.
+    instantiate it. On engines built before o3de/o3de#20099 (merged into
+    ``development`` on 2026-09-08, after the 26.10.0 builds),
+    ``PrefabPublicRequestBus.InstantiatePrefab`` crashes the editor when the
+    template cannot be loaded (a null DOM is dereferenced in
+    ``PrefabDomUtils::GetTemplateSourcePaths``). A C++ segfault cannot be
+    caught from Python, so an unknown name must never reach the bus. Newer
+    engines return a failure on their own; the guard stays for the older ones.
 
     Args:
         prefab_name: Name of the prefab (e.g., "Player_TwinStick").

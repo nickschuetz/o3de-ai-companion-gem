@@ -34,8 +34,11 @@ namespace AiCompanion
         {
             behaviorContext->EBus<AiCompanionRequestBus>("AiCompanionRequestBus")
                 ->Attribute(AZ::Script::Attributes::Category, "AiCompanion")
+                ->Attribute(AZ::Script::Attributes::Module, "ai_companion")
+                ->Attribute(AZ::Script::Attributes::Scope, AZ::Script::Attributes::ScopeFlags::Common)
                 ->Event("GetSceneSnapshot", &AiCompanionRequestBus::Events::GetSceneSnapshot)
                 ->Event("GetEntityTree", &AiCompanionRequestBus::Events::GetEntityTree)
+                ->Event("GetEntity", &AiCompanionRequestBus::Events::GetEntity)
                 ->Event("ValidateScene", &AiCompanionRequestBus::Events::ValidateScene)
                 ->Event("ValidateEntityName", &AiCompanionRequestBus::Events::ValidateEntityName)
                 ->Event("ValidateComponentType", &AiCompanionRequestBus::Events::ValidateComponentType);
@@ -82,6 +85,11 @@ namespace AiCompanion
     AZStd::string AiCompanionSystemComponent::GetEntityTree()
     {
         return SceneSnapshotProvider::CaptureEntityTree();
+    }
+
+    AZStd::string AiCompanionSystemComponent::GetEntity(AZ::u64 entityId)
+    {
+        return SceneSnapshotProvider::CaptureEntity(AZ::EntityId(entityId));
     }
 
     AZStd::string AiCompanionSystemComponent::ValidateScene()

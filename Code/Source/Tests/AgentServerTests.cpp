@@ -208,9 +208,9 @@ namespace UnitTest
         w.Key("protocol_version");
         w.Int(1);
         w.Key("gem_version");
-        w.String("0.2.0");
+        w.String("0.4.0");
         w.Key("api_version");
-        w.String("0.1.0");
+        w.String("0.2.0");
         w.Key("secure_mode");
         w.Bool(false);
         w.Key("tls_enabled");
@@ -222,8 +222,8 @@ namespace UnitTest
 
         EXPECT_FALSE(doc.HasParseError());
         EXPECT_EQ(doc["protocol_version"].GetInt(), 1);
-        EXPECT_STREQ(doc["gem_version"].GetString(), "0.2.0");
-        EXPECT_STREQ(doc["api_version"].GetString(), "0.1.0");
+        EXPECT_STREQ(doc["gem_version"].GetString(), "0.4.0");
+        EXPECT_STREQ(doc["api_version"].GetString(), "0.2.0");
         EXPECT_FALSE(doc["secure_mode"].GetBool());
         EXPECT_TRUE(doc["tls_enabled"].GetBool());
     }
@@ -234,7 +234,8 @@ namespace UnitTest
 
     TEST_F(AgentServerProtocolTest, RequestTypeClassification_SafeTypes)
     {
-        AZStd::vector<AZStd::string> safeTypes = { "ping", "get_api_version", "get_scene_snapshot", "get_entity_tree", "validate_scene" };
+        AZStd::vector<AZStd::string> safeTypes = { "ping",           "get_api_version", "get_scene_snapshot", "get_entity_tree",
+                                                   "validate_scene", "get_entity",      "get_bus_schema" };
 
         for (const auto& type : safeTypes)
         {
@@ -248,7 +249,7 @@ namespace UnitTest
         AZStd::string type = "execute_python";
         bool isSafe =
             (type == "ping" || type == "get_api_version" || type == "get_scene_snapshot" || type == "get_entity_tree" ||
-             type == "validate_scene");
+             type == "validate_scene" || type == "get_entity" || type == "get_bus_schema");
         EXPECT_FALSE(isSafe);
     }
 

@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <AzCore/Component/EntityId.h>
 #include <AzCore/std/string/string.h>
 
 namespace AiCompanion
@@ -20,6 +21,10 @@ namespace AiCompanion
         //! Captures the entity hierarchy tree as JSON.
         //! Returns a nested JSON structure reflecting parent-child relationships.
         static AZStd::string CaptureEntityTree();
+
+        //! Captures one entity (transform, parent, component list) as JSON.
+        //! Returns {"error": "..."} when no entity with that id is active.
+        static AZStd::string CaptureEntity(AZ::EntityId entityId);
 
         //! Validates the current scene for common issues.
         //! Checks for: unnamed entities, entities at origin, missing components, etc.

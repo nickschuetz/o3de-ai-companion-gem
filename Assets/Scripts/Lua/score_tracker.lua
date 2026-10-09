@@ -13,8 +13,25 @@ local ScoreTracker = {
     },
 }
 
+-- Enemies find score trackers through the shared registry (see enemy_chase_ai.lua).
+local function bodies(tag)
+    local all = rawget(_G, "AiCompanionBodies")
+    if all == nil then
+        all = {}
+        _G.AiCompanionBodies = all
+    end
+    local t = all[tag]
+    if t == nil then
+        t = {}
+        all[tag] = t
+    end
+    return t
+end
+
 function ScoreTracker:OnActivate()
     self.score = 0
+    self.key = tostring(self.entityId)
+    bodies("ScoreTracker")[self.key] = self.entityId
 
     -- Listen for score events
     self.scoreHandler = GameplayNotificationBus.Connect(self, GameplayNotificationId(self.entityId, "AddScore"))
@@ -24,6 +41,9 @@ function ScoreTracker:OnActivate()
 end
 
 function ScoreTracker:OnDeactivate()
+    if self.key then
+        bodies("ScoreTracker")[self.key] = nil
+    end
     if self.scoreHandler then
         self.scoreHandler:Disconnect()
     end

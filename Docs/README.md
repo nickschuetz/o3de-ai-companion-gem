@@ -113,6 +113,10 @@ end_undo_batch()
 rollback_last_batch()
 ```
 
+Rollback is one editor Undo step. On O3DE 26.10 an entity that carries a Lua
+Script component can survive it (see `rollback_last_batch` in the
+[API reference](api-reference.md)); delete it explicitly if it does.
+
 ### Safety
 
 All inputs are validated before reaching O3DE APIs:

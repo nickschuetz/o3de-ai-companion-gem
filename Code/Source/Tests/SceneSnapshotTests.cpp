@@ -31,6 +31,21 @@ namespace UnitTest
         EXPECT_NE(result.find("roots"), AZStd::string::npos);
     }
 
+    TEST_F(SceneSnapshotTestFixture, CaptureEntity_InvalidId_ReturnsErrorJson)
+    {
+        AZStd::string result = AiCompanion::SceneSnapshotProvider::CaptureEntity(AZ::EntityId());
+        EXPECT_NE(result.find("\"error\""), AZStd::string::npos);
+        EXPECT_EQ(result.find("\"components\""), AZStd::string::npos);
+    }
+
+    TEST_F(SceneSnapshotTestFixture, CaptureEntity_UnknownId_ReturnsErrorJson)
+    {
+        // No application context is running, so no entity can be found.
+        AZStd::string result = AiCompanion::SceneSnapshotProvider::CaptureEntity(AZ::EntityId(123456));
+        EXPECT_NE(result.find("\"error\""), AZStd::string::npos);
+        EXPECT_NE(result.find("123456"), AZStd::string::npos);
+    }
+
     TEST_F(SceneSnapshotTestFixture, ValidateScene_ReturnsValidJson)
     {
         AZStd::string result = AiCompanion::SceneSnapshotProvider::ValidateScene();

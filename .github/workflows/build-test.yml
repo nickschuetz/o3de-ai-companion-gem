@@ -1,13 +1,15 @@
 name: build-test
 
 # Builds the gem through a host O3DE project and runs its C++ unit tests
-# (including the BusSchema introspection tests).
+# (including the BusSchema introspection tests), and, with a second label,
+# runs the live editor suite (Tests/live) against a real Editor on Xvfb.
 #
-# This needs the full O3DE 26.05 SDK, a host project, and 3rdParty packages,
+# This needs a full O3DE SDK (26.05 or 26.10), a host project, and 3rdParty packages,
 # which GitHub-hosted runners do not have. It therefore runs ONLY on a
 # self-hosted runner labelled `o3de` (see docs/ci-self-hosted-runner.md). It is
-# opt-in: triggered manually, or on PRs a maintainer has labelled `ci:build`,
-# so ordinary contributors are never blocked by missing hardware.
+# opt-in: triggered manually, or on PRs a maintainer has labelled `ci:build`
+# (unit tests) or `ci:live` (unit tests, then the live suite), so ordinary
+# contributors are never blocked by missing hardware.
 #
 # lint.yml remains the always-on gate on GitHub-hosted runners; this is the
 # heavier, environment-dependent complement.
@@ -25,7 +27,8 @@ jobs:
     name: build and unit test
     if: >
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'ci:build')
+      contains(github.event.pull_request.labels.*.name, 'ci:build') ||
+      contains(github.event.pull_request.labels.*.name, 'ci:live')
     runs-on: [self-hosted, o3de]
     steps:
       - uses: actions/checkout@v4
@@ -46,3 +49,25 @@ jobs:
           BUILD_CONFIG: profile
           TEST_FILTER: "*"
         run: bash scripts/ci_build_test.sh
+
+  live-test:
+    name: live editor suite
+    needs: build-test
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:live')
+    runs-on: [self-hosted, o3de]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the live suite against a real editor
+        # Starts AssetProcessor, Xvfb and the Editor from the project built by
+        # the build-test job (same runner, same build tree), opens a level,
+        # runs Tests/live, and tears everything down. See
+        # docs/ci-self-hosted-runner.md for the runner requirements (Xvfb and
+        # a GPU with a working Vulkan driver, on top of the build ones).
+        env:
+          O3DE_ENGINE_PATH: ${{ vars.O3DE_ENGINE_PATH }}
+          AICOMPANION_PROJECT: ${{ vars.AICOMPANION_PROJECT }}
+          BUILD_CONFIG: profile
+        run: bash scripts/ci_live_test.sh

@@ -23,7 +23,7 @@ flowchart TB
         direction TB
 
         subgraph PythonAPI["Python API Layer  (Editor/Scripts/ai_companion/)"]
-            API["api.py<br/>29+ public functions"]
+            API["api.py<br/>32 public functions"]
 
             subgraph Builders["Builders"]
                 EB["EntityBuilder"]
@@ -108,7 +108,7 @@ agents. All functions return JSON strings for reliable parsing.
 
 | Component | Purpose |
 |-----------|---------|
-| **api.py** | Main entry point exposing 28+ public functions for scene setup, entity creation, inspection, and undo |
+| **api.py** | Main entry point exposing 32 public functions for scene setup, entity creation, inspection, and undo |
 | **Builders** | Fluent builder classes for constructing entities, scenes, lighting rigs, physics bodies, and terrain |
 | **Templates** | Pre-configured factory functions for common entity types (player, enemy, camera, pickup, projectile, environment) |
 | **Feedback** | Scene introspection: snapshots, entity inspection, and validation reports |
@@ -152,7 +152,14 @@ The AgentServer uses a length-prefixed JSON protocol over TCP:
 ```
 
 Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
-`get_entity_tree`, `validate_scene`, `execute_python`.
+`get_entity_tree`, `get_entity`, `validate_scene`, `get_bus_schema`,
+`execute_python`.
+
+`get_entity` takes `entity_id` (decimal, as a number or string) and returns one
+entity's transform, parent and component list; `get_bus_schema` takes an
+optional `bus_name` and returns the reflected EBus description from the live
+`BehaviorContext` (every bus name when `bus_name` is empty). Both are served
+in C++ with no Python involved.
 
 o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
 inside its `get_capabilities` tool to confirm the gem is present and report its
@@ -162,7 +169,7 @@ everything else (`run_editor_python` and the `begin_session` /
 `exec_in_session` tools).
 
 Requests that require main-thread access (`get_scene_snapshot`, `get_entity_tree`,
-`validate_scene`, `execute_python`) are dispatched via a lock-free queue from the
+`get_entity`, `validate_scene`, `get_bus_schema`, `execute_python`) are dispatched via a lock-free queue from the
 client thread to the `AZ::SystemTickBus` handler, which processes them every few
 milliseconds regardless of editor focus state. A 30-second timeout prevents
 deadlocks if the main thread is blocked.

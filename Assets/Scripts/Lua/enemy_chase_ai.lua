@@ -15,8 +15,32 @@ local EnemyChaseAI = {
         AttackRange = { default = 2.0, description = "Distance to start attacking" },
         AttackDamage = { default = 10.0, description = "Damage dealt per attack" },
         AttackCooldown = { default = 1.0, description = "Seconds between attacks" },
+        BodyTag = { default = "Enemy", description = "Registry name this enemy is listed under, for projectiles and pickups" },
+        Health = { default = 30.0, description = "Hit points; TakeDamage events reduce it, EnemyDefeated is sent at 0" },
     },
 }
+
+-- Shared registry of live bodies by tag (_G.AiCompanionBodies[tag][key] = EntityId).
+-- health_pickup.lua and damage_on_contact.lua scan it for contact by distance,
+-- since PhysX trigger and collision callbacks are not reachable from launcher Lua.
+local function bodies(tag)
+    local all = rawget(_G, "AiCompanionBodies")
+    if all == nil then
+        all = {}
+        _G.AiCompanionBodies = all
+    end
+    local t = all[tag]
+    if t == nil then
+        t = {}
+        all[tag] = t
+    end
+    return t
+end
+
+-- math.atan2 was removed in Lua 5.3; O3DE ships Lua 5.4, where math.atan takes (y, x).
+local function atan2(y, x)
+    return math.atan(y, x)
+end
 
 -- States
 local STATE_IDLE = "idle"
@@ -27,13 +51,46 @@ function EnemyChaseAI:OnActivate()
     self.state = STATE_IDLE
     self.attackTimer = 0
     self.targetEntityId = nil
+    -- The runtime ScriptComponent does not apply a .lua default for a property the
+    -- prefab did not bake, so every property added after the prefabs were authored
+    -- is read with a fallback.
+    self.bodyTag = self.Properties.BodyTag or "Enemy"
+    self.health = self.Properties.Health or 30.0
+    self.defeated = false
+
+    self.key = tostring(self.entityId)
+    bodies(self.bodyTag)[self.key] = self.entityId
 
     self.tickHandler = TickBus.Connect(self)
+    self.damageHandler = GameplayNotificationBus.Connect(self, GameplayNotificationId(self.entityId, "TakeDamage"))
 end
 
 function EnemyChaseAI:OnDeactivate()
+    if self.key then
+        bodies(self.bodyTag)[self.key] = nil
+    end
     if self.tickHandler then
         self.tickHandler:Disconnect()
+    end
+    if self.damageHandler then
+        self.damageHandler:Disconnect()
+    end
+end
+
+-- TakeDamage arrives here (GameplayNotificationBus addressed to this entity).
+function EnemyChaseAI:OnEventBegin(value)
+    if self.defeated then
+        return
+    end
+    self.health = self.health - (tonumber(value) or 0)
+    if self.health <= 0 then
+        self.defeated = true
+        -- Tell every registered score tracker, then remove ourselves.
+        for _, trackerId in pairs(bodies("ScoreTracker")) do
+            GameplayNotificationBus.Event.OnEventBegin(
+                GameplayNotificationId(trackerId, "EnemyDefeated"), 1)
+        end
+        GameEntityContextRequestBus.Broadcast.DestroyGameEntity(self.entityId)
     end
 end
 
@@ -67,6 +124,9 @@ function EnemyChaseAI:GetDistanceToTarget()
 end
 
 function EnemyChaseAI:OnTick(deltaTime, scriptTime)
+    if self.defeated then
+        return
+    end
     self.attackTimer = math.max(0, self.attackTimer - deltaTime)
 
     -- Try to find target if we don't have one
@@ -115,7 +175,7 @@ function EnemyChaseAI:Chase(deltaTime)
             self.entityId, Vector3(velocity.x, velocity.y, 0))
 
         -- Face the target
-        local angle = math.atan2(direction.x, direction.y)
+        local angle = atan2(direction.x, direction.y)
         TransformBus.Event.SetWorldRotationQuaternion(
             self.entityId, Quaternion.CreateRotationZ(-angle))
     end

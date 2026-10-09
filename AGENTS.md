@@ -17,7 +17,7 @@ Code/Include/AiCompanion/   Public C++ headers (EBus interfaces)
 Code/Source/                 C++ implementation (system components, AgentServer, snapshot, validation)
 Code/Source/Tests/           C++ unit tests (AZ::AzTest / Google Test)
 Editor/Scripts/ai_companion/ Python API package
-  api.py                    Main entry point (28+ public functions)
+  api.py                    Main entry point (32 public functions)
   builders/                 Fluent builder classes (entity, scene, lighting, physics, terrain)
   templates/                Pre-configured entity factories (player, enemy, camera, etc.)
   feedback/                 Scene introspection (snapshot, inspector, validation report)
@@ -30,15 +30,19 @@ Docs/                       Documentation
 
 ## Versioning
 
-This project is in **alpha** (0.x.y). The current version is defined in three places
+This project is in **alpha** (0.x.y). The current version is defined in five places
 that must stay in sync:
 
 - `gem.json` — `"version"` field (gem version)
 - `Editor/Scripts/ai_companion/version.py` — `__version__` (gem version) and `API_VERSION`
 - `Code/Source/Network/AgentServer.cpp` — `gem_version` and `api_version` string literals
 - `Code/Source/Tests/AgentServerTests.cpp` — expected version strings in tests
+- `sbom.cdx.json` — the component `version` and its `purl`
 
-When bumping the version, update all four files and add a CHANGELOG.md entry.
+When bumping the version, update all five files, move the `[Unreleased]` entries in
+CHANGELOG.md under the new version with the date, and add the release link at the
+bottom. The live suite's `test_api_version_matches_the_checkout` fails if the C++
+literal and `gem.json` disagree.
 
 ## License Headers
 
@@ -91,6 +95,7 @@ matching the file type:
 - Python: `unittest` framework, files named `Tests/test_*.py`
 - C++: `AZ::AzTest` (Google Test), files in `Code/Source/Tests/`
 - Run Python tests: `python -m pytest Tests/` or `python -m unittest discover Tests`
+- Live editor tests (`Tests/live/`, opt-in): `O3DE_LIVE_EDITOR_TEST=1 python -m pytest Tests/live` against a running editor, or `scripts/ci_live_test.sh` to bring one up on Xvfb first
 
 ## SBOM
 
@@ -141,6 +146,7 @@ query that answers the question:
 | Hierarchy only | `get_entity_tree()` | Medium — names and parent/child relationships |
 | Single entity | `inspect_entity(id)` | Light — one entity |
 | Issue check | `validate_scene()` | Light — problems only |
+| Single entity, no Python | `get_entity` AgentServer request type | Light — C++ only, works in secure mode |
 
 ### Cache discovery responses
 
@@ -174,7 +180,8 @@ These functions route through fast C++ entity traversal, bypassing Python:
 - `validate_scene()` → `SceneSnapshotProvider::ValidateScene()`
 
 They are also available as direct AgentServer request types (`get_scene_snapshot`,
-`get_entity_tree`, `validate_scene`), skipping `execute_python` entirely.
+`get_entity_tree`, `validate_scene`), skipping `execute_python` entirely, alongside
+`get_entity` (one entity by id) and `get_bus_schema` (live EBus reflection).
 
 ### Use `ping` for health checks
 

@@ -10,11 +10,36 @@ local TwinStickMovement = {
     Properties = {
         MoveSpeed = { default = 8.0, description = "Movement speed in units per second" },
         RotationSpeed = { default = 10.0, description = "Rotation interpolation speed" },
+        BodyTag = { default = "Player", description = "Registry name this entity is listed under, for pickups and enemy projectiles" },
         InputScheme = { default = "keyboard", description = "Input scheme: keyboard or gamepad" },
     },
 }
 
+
+-- Shared registry of live bodies by tag (_G.AiCompanionBodies[tag][key] = EntityId).
+-- health_pickup.lua and damage_on_contact.lua scan it for contact by distance,
+-- since PhysX trigger and collision callbacks are not reachable from launcher Lua.
+local function bodies(tag)
+    local all = rawget(_G, "AiCompanionBodies")
+    if all == nil then
+        all = {}
+        _G.AiCompanionBodies = all
+    end
+    local t = all[tag]
+    if t == nil then
+        t = {}
+        all[tag] = t
+    end
+    return t
+end
+
 function TwinStickMovement:OnActivate()
+    -- Properties added after the prefabs were authored need a fallback: the runtime
+    -- ScriptComponent does not apply a .lua default for a property the prefab did not bake.
+    self.bodyTag = self.Properties.BodyTag or "Player"
+    self.key = tostring(self.entityId)
+    bodies(self.bodyTag)[self.key] = self.entityId
+
     self.moveDirection = Vector3(0, 0, 0)
     self.aimDirection = Vector3(0, 1, 0)
 
@@ -44,6 +69,9 @@ function TwinStickMovement:OnActivate()
 end
 
 function TwinStickMovement:OnDeactivate()
+    if self.key then
+        bodies(self.bodyTag)[self.key] = nil
+    end
     if self.tickHandler then
         self.tickHandler:Disconnect()
     end

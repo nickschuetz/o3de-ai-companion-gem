@@ -145,10 +145,12 @@ Available prefabs: `Player_TwinStick`, `Enemy_Chaser`, `Enemy_Turret`,
 `Lighting_ThreePoint`, `Camera_TopDown`.
 
 The prefab file is located on disk before the prefab system is asked for it.
+On engines built before [o3de/o3de#20099](https://github.com/o3de/o3de/pull/20099)
+(merged into `development` on 2026-09-08, so not in the 26.10.0 builds),
 `PrefabPublicRequestBus.InstantiatePrefab` crashes the editor when the template
-cannot be loaded (observed on O3DE 26.10.0), and a C++ segfault cannot be caught
-from Python, so an unknown name never reaches the bus. Error responses carry a
-`details.code`:
+cannot be loaded, and a C++ segfault cannot be caught from Python, so an unknown
+name never reaches the bus. Newer engines return a failure on their own; the
+guard is kept for the older ones. Error responses carry a `details.code`:
 
 | Code | Meaning |
 |------|---------|
@@ -166,6 +168,26 @@ plain dict (not JSON) with `relative_path` (`Prefabs/<name>.prefab`), `found`
 for validating a name before a batch, or for locating a gem prefab from code
 that will call the prefab bus itself.
 
+## Agent Mode
+
+See [Agent Mode](agent-mode.md) for the full contract (settings-registry keys,
+the JSON sidecar, and the observed-state file).
+
+### `set_agent_mode(enabled=True, suppress_dialogs=True) -> str`
+Enable or disable runtime dialog suppression for unattended sessions. Writes
+the sidecar the editor system component polls; takes effect without a restart.
+
+### `get_agent_mode() -> str`
+Current runtime agent-mode state.
+
+### `configure_editor_prefs_for_agent(enabled=True) -> str`
+Persistent editor preferences for an agent-driven workflow: welcome dialog off
+and auto-load of the last level on. Applies on the next editor start; the
+editor must not be running when this is called. `enabled=False` restores them.
+
+### `get_agent_mode_status() -> str`
+Snapshot of both the runtime and the persistent state.
+
 ## Undo/Rollback
 
 ### `begin_undo_batch(label="AI Operation") -> str`
@@ -175,7 +197,16 @@ Manually begin an undo batch.
 End the current undo batch.
 
 ### `rollback_last_batch() -> str`
-Undo the last completed batch.
+Undo the last completed batch (one editor Undo step).
+
+Known limitation (O3DE 26.10): an entity that carries a Lua Script component
+may survive the undo. Undoing an entity creation re-instantiates the prefab,
+and if the script asset is already loaded the editor's
+`ScriptEditorComponent::LoadScript` opens an undo batch from inside the undo,
+which `ToolsApplication` rejects ("Can not create a new Undo/Redo batch while
+an Undo or Redo operation is running"). Entities without a Lua Script roll back
+reliably. When it matters, delete the entity explicitly after a failed
+rollback.
 
 ## Further Reading
 

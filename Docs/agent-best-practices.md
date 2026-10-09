@@ -142,8 +142,9 @@ These functions use fast C++ entity traversal (no Python overhead):
 - `get_scene_snapshot()` → `SceneSnapshotProvider::CaptureSnapshot()`
 - `get_entity_tree()` → `SceneSnapshotProvider::CaptureEntityTree()`
 - `validate_scene()` → `SceneSnapshotProvider::ValidateScene()`
+- `inspect_entity(id)` has a C++ counterpart in the `get_entity` request type → `SceneSnapshotProvider::CaptureEntity()`
 
-They are also available as direct AgentServer request types (`get_scene_snapshot`, `get_entity_tree`, `validate_scene`), bypassing Python entirely.
+They are also available as direct AgentServer request types (`get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene`, plus `get_bus_schema` for live EBus discovery), bypassing Python entirely.
 
 ### TLS performance implications
 
@@ -172,7 +173,7 @@ Use `get_api_version` to discover server capabilities in one call:
 
 ```json
 {"id": "init-1", "type": "get_api_version"}
-→ {"id": "init-1", "status": "ok", "output": "{\"protocol_version\": 1, \"gem_version\": \"0.2.0\", ...}", ...}
+→ {"id": "init-1", "status": "ok", "output": "{\"protocol_version\": 1, \"gem_version\": \"0.4.0\", ...}", ...}
 ```
 
 The response includes `secure_mode` and `tls_enabled` flags so agents can adapt.

@@ -118,12 +118,14 @@ safe, read-only operations via C++ EBus:
 - `get_api_version` — protocol and gem version info
 - `get_scene_snapshot` — full scene state
 - `get_entity_tree` — entity hierarchy
+- `get_entity` — one entity's transform, parent and components
 - `validate_scene` — scene validation
+- `get_bus_schema` — reflected EBus description from the live BehaviorContext
 
 This limits the attack surface when the server is exposed beyond localhost.
-o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree` and
-`validate_scene` tools use only these request types, so they keep working in
-secure mode; `run_editor_python`, the session tools and the `ai_companion`
+o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree`,
+`get_entity`, `validate_scene` and `get_bus_schema_live` tools use only these
+request types, so they keep working in secure mode; `run_editor_python`, the session tools and the `ai_companion`
 Python API do not.
 
 ### TLS Encryption
