@@ -170,7 +170,8 @@ if [ "$LIVE_SECURE" = "1" ]; then
     # dispatched to the main thread, so one of them answering means the
     # editor's main loop is up. The level was opened by the --runpython
     # startup script above; the native mutation test needs one, so the loop
-    # also waits for the entity tree to show at least one root.
+    # also waits for the entity tree to show at least one root and for a native
+    # create_entity probe to succeed (the root prefab can lag the entity tree).
     secure=0
     for _ in $(seq 1 60); do
         rc=0
@@ -189,7 +190,17 @@ except Exception:
     sys.exit(1)
 if tree.get("status") != "ok":
     sys.exit(1)
-sys.exit(0 if json.loads(tree["output"]).get("roots") else 3)
+if not json.loads(tree["output"]).get("roots"):
+    sys.exit(3)
+# A populated tree can precede the level's root prefab being assigned, and a
+# mutation then fails with "no root prefab is assigned"; prove a native
+# create works (and remove the probe) before the tests start.
+created = AgentClient(timeout=35).request("create_entity", name="SecureGateProbe")
+if created.get("status") != "ok":
+    sys.exit(4)
+probe_id = json.loads(created["output"])["entity_id"]
+AgentClient(timeout=35).request("delete_entity", entity_id=probe_id)
+sys.exit(0)
 PY
         case "$rc" in
             0) secure=1; break ;;

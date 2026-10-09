@@ -166,7 +166,14 @@ def with_undo_batch(label: str):
                 # created entities).
                 created = get_sandbox().created_entity_ids
                 kept = _end_undo()
-                if kept or (kept is None and created):
+                # Undo only when this call created something and the editor did
+                # not report the batch discarded. Observed on 26.10.0: a call
+                # that failed before touching the editor (a refused argument)
+                # still had the editor report its empty batch as kept, and the
+                # Undo then reverted the previous operation, resurrecting an
+                # entity an earlier call had deleted. Nothing created means
+                # nothing of ours to undo.
+                if created and kept is not False:
                     outcome = _undo(created)
                 else:
                     outcome = {"rolled_back": False, "leftover_entities_deleted": _delete_survivors(created)}
