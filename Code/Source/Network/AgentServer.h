@@ -126,9 +126,13 @@ namespace AiCompanion
         // Response builders
         AZStd::string BuildResponse(
             const AZStd::string& id, const char* status, const AZStd::string& output, const AZStd::string& error, AZ::s64 durationMs);
-        //! code, when given, is emitted as the reply's "code" field. Only the
-        //! unknown-request-type reply sets one.
+        //! code is emitted as the reply's "code" field; every error reply the
+        //! server sends passes one from the RequestError vocabulary.
         AZStd::string BuildErrorResponse(const AZStd::string& id, const AZStd::string& error, const char* code = nullptr);
+        //! The error reply for a failed bus event: splits the event's
+        //! RequestError::EncodeError text into code and message (a plain text
+        //! becomes engine_error) and builds the coded reply.
+        AZStd::string FailureResponse(const AZStd::string& id, const AZStd::string& encodedError);
 
         // Logging helpers
         void LogMinimal(const char* format, ...) const;

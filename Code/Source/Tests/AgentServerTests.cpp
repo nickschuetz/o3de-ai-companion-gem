@@ -7,6 +7,7 @@
 #include <AzCore/std/string/string_view.h>
 #include <AzTest/AzTest.h>
 
+#include "Network/RequestError.h"
 #include "Network/ResponseBuilding.h"
 
 #include <AzCore/JSON/document.h>
@@ -222,11 +223,12 @@ namespace UnitTest
         EXPECT_EQ(doc["duration_ms"].GetInt64(), 0);
     }
 
-    TEST_F(AgentServerProtocolTest, OtherErrorReplies_CarryNoCode)
+    TEST_F(AgentServerProtocolTest, ValidationErrorReply_CarriesTheValidationFailedCode)
     {
-        // Only the unknown-type reply has a code; a client must never see it
-        // on any other error, or it would fall back to Python for the wrong reason.
-        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse("req-8", "Missing 'type' field");
+        // The reply the server sends for a malformed request, e.g. a missing
+        // "type" field: the code is the client's branch, the message the reason.
+        const AZStd::string reply =
+            AiCompanion::ResponseBuilding::BuildErrorResponse("req-8", "Missing 'type' field", AiCompanion::RequestError::ValidationFailed);
 
         rapidjson::Document doc;
         doc.Parse(reply.c_str());
@@ -234,6 +236,44 @@ namespace UnitTest
         ASSERT_FALSE(doc.HasParseError());
         EXPECT_STREQ(doc["status"].GetString(), "error");
         EXPECT_STREQ(doc["error"].GetString(), "Missing 'type' field");
+        ASSERT_TRUE(doc.HasMember("code"));
+        EXPECT_STREQ(doc["code"].GetString(), "validation_failed");
+        // A client falls back to editor Python on unknown_request_type alone.
+        EXPECT_STRNE(doc["code"].GetString(), AiCompanion::ResponseBuilding::UnknownRequestTypeCode);
+    }
+
+    TEST_F(AgentServerProtocolTest, BusFailureReply_DecodesTheEventsCodeAndMessage)
+    {
+        // What AgentServer::FailureResponse does with a failed bus event: the
+        // event's encoded failure becomes the reply's code and error fields.
+        const AZStd::string encoded =
+            AiCompanion::RequestError::EncodeError(AiCompanion::RequestError::NotFound, "entity 987654321 does not exist");
+        AZStd::string code;
+        AZStd::string message;
+        AiCompanion::RequestError::DecodeError(encoded, code, message);
+        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse("req-10", message, code.c_str());
+
+        rapidjson::Document doc;
+        doc.Parse(reply.c_str());
+
+        ASSERT_FALSE(doc.HasParseError());
+        EXPECT_STREQ(doc["status"].GetString(), "error");
+        EXPECT_STREQ(doc["output"].GetString(), "");
+        EXPECT_STREQ(doc["error"].GetString(), "entity 987654321 does not exist");
+        EXPECT_STREQ(doc["code"].GetString(), "not_found");
+    }
+
+    TEST_F(AgentServerProtocolTest, ErrorReplyWithoutACode_OmitsTheKey)
+    {
+        // ResponseBuilding itself only writes "code" when given one; the
+        // server passes one on every error path.
+        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse("req-11", "plain");
+
+        rapidjson::Document doc;
+        doc.Parse(reply.c_str());
+
+        ASSERT_FALSE(doc.HasParseError());
+        EXPECT_STREQ(doc["status"].GetString(), "error");
         EXPECT_FALSE(doc.HasMember("code"));
     }
 

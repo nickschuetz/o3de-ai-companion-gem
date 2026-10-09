@@ -131,12 +131,22 @@ class TestProtocol(LiveEditorTest):
         self.assertIn("Unknown request type", response["error"])
         self.assertEqual(response.get("code"), "unknown_request_type", response)
 
-    def test_other_errors_carry_no_unknown_request_type_code(self):
-        # o3de-mcp falls back to editor Python on exactly this code, so no
-        # other error reply may carry it.
+    def test_other_errors_carry_their_own_code(self):
+        # Every error reply carries a code. o3de-mcp falls back to editor
+        # Python on unknown_request_type alone, so a malformed argument must
+        # answer validation_failed, never that one.
         response = self.client.request("get_entity", entity_id="not-an-id")
         self.assertEqual(response["status"], "error")
-        self.assertNotIn("code", response, response)
+        self.assertEqual(response.get("code"), "validation_failed", response)
+        self.assertIn("entity_id", response["error"])
+
+    def test_malformed_requests_are_validation_failures(self):
+        self.assertEqual(self.client.request("")["code"], "validation_failed")
+        missing_script = self.client.request("execute_python")
+        if missing_script.get("code") == "secure_mode":
+            self.skipTest("secure mode refuses execute_python before reading its script")
+        self.assertEqual(missing_script["status"], "error", missing_script)
+        self.assertEqual(missing_script["code"], "validation_failed", missing_script)
 
 
 class TestPythonPackage(LiveEditorTest):
@@ -204,13 +214,18 @@ class TestNativeRequestTypes(LiveEditorTest):
         as_string = self.native("get_entity", entity_id=f"[{sample['id']}]")
         self.assertEqual(json.loads(as_string["output"])["id"], sample["id"])
 
-    def test_get_entity_unknown_id_is_a_json_error(self):
+    def test_get_entity_unknown_id_is_not_found(self):
+        # A well-formed id that no entity has: status error with not_found,
+        # not an ok reply with an error object inside output.
         response = self.native("get_entity", entity_id=123456789)
-        self.assertEqual(response["status"], "ok", response)
-        self.assertIn("error", json.loads(response["output"]))
+        self.assertEqual(response["status"], "error", response)
+        self.assertEqual(response.get("code"), "not_found", response)
+        self.assertIn("No entity with id 123456789", response["error"])
+        self.assertEqual(response["output"], "")
 
         missing = self.native("get_entity")
         self.assertEqual(missing["status"], "error")
+        self.assertEqual(missing.get("code"), "validation_failed", missing)
 
     def test_get_bus_schema_describes_the_gem_bus(self):
         listing = json.loads(self.native("get_bus_schema")["output"])
@@ -220,8 +235,10 @@ class TestNativeRequestTypes(LiveEditorTest):
         events = {e["name"] for e in schema["events"]}
         self.assertTrue({"GetSceneSnapshot", "GetEntityTree", "ValidateScene"} <= events, events)
 
-        unknown = json.loads(self.native("get_bus_schema", bus_name="NoSuchBus_12345")["output"])
-        self.assertIn("error", unknown)
+        unknown = self.native("get_bus_schema", bus_name="NoSuchBus_12345")
+        self.assertEqual(unknown["status"], "error", unknown)
+        self.assertEqual(unknown.get("code"), "not_found", unknown)
+        self.assertIn("NoSuchBus_12345", unknown["error"])
 
 
 class TestNativeMutations(LiveEditorTest):
@@ -265,12 +282,21 @@ class TestNativeMutations(LiveEditorTest):
         before = self._ids()
         bad_name = self.native("create_entity", name="9bad")
         self.assertEqual(bad_name["status"], "error")
+        self.assertEqual(bad_name.get("code"), "validation_failed", bad_name)
         self.assertIn("invalid entity name", bad_name["error"])
         bad_pos = self.native("create_entity", name="Fine", position=[1, 2, 1e9])
         self.assertEqual(bad_pos["status"], "error")
+        self.assertEqual(bad_pos.get("code"), "validation_failed", bad_pos)
+        no_name = self.native("create_entity")
+        self.assertEqual(no_name.get("code"), "validation_failed", no_name)
         missing = self.native("set_transform", entity_id=987654321, position=[0, 0, 0])
         self.assertEqual(missing["status"], "error")
+        self.assertEqual(missing.get("code"), "not_found", missing)
         self.assertIn("does not exist", missing["error"])
+        bad_scale = self.native("set_transform", entity_id=987654321, scale="big")
+        self.assertEqual(bad_scale.get("code"), "validation_failed", bad_scale)
+        gone = self.native("delete_entity", entity_id=987654321)
+        self.assertEqual(gone.get("code"), "not_found", gone)
         self.assertEqual(self._ids(), before)
 
     def test_delete_refuses_the_level_root(self):
@@ -283,6 +309,7 @@ class TestNativeMutations(LiveEditorTest):
         root_id = root["id"]
         refused = self.native("delete_entity", entity_id=root_id)
         self.assertEqual(refused["status"], "error", refused)
+        self.assertEqual(refused.get("code"), "validation_failed", refused)
         self.assertIn("root", refused["error"])
         self.assertIn(int(root_id), self._ids())
 
@@ -306,8 +333,9 @@ class TestTemplatesAndRollback(LiveEditorTest):
         new_id = _entity_number(created["data"]["entity_id"])
         self.assertIn(new_id, self._entity_ids() - before)
 
-        entity = json.loads(self.client.request("get_entity", entity_id=new_id)["output"])
-        if "error" not in entity:
+        looked_up = self.client.request("get_entity", entity_id=new_id)
+        if looked_up.get("status") == "ok":
+            entity = json.loads(looked_up["output"])
             self.assertEqual(entity["name"], "LivePlayer")
             self.assertAlmostEqual(entity["position"][0], 1.0, places=3)
 
@@ -601,8 +629,8 @@ class TestAnimGraphs(LiveEditorTest):
         # gem's module (CommandSystem::GetCommandManager() is module-local and
         # null there; EMStudio::GetManager() is the cross-module accessor).
         created = self.native("create_anim_graph")
-        if created.get("status") == "error" and "EMotion Studio is not available" in created.get("error", ""):
-            self.skipTest("EMotion Studio (the Animation Editor's command system) is not loaded in this editor")
+        if created.get("status") == "error" and created.get("code") == "unavailable":
+            self.skipTest(f"EMotion Studio (the Animation Editor's command system) is not loaded: {created['error']}")
         self.assertEqual(created["status"], "ok", created)
         new_graph = json.loads(created["output"])
         self.assertIsInstance(new_graph["id"], int)
@@ -622,18 +650,30 @@ class TestAnimGraphs(LiveEditorTest):
         self.assertNotIn(new_graph["id"], [g["id"] for g in listing["anim_graphs"]])
         gone = self.native("remove_anim_graph", anim_graph_id=new_graph["id"])
         self.assertEqual(gone["status"], "error", gone)
+        self.assertEqual(gone.get("code"), "not_found", gone)
         self.assertIn("not found", gone["error"])
 
     def test_get_anim_graph_errors(self):
         unknown = self.native("get_anim_graph", anim_graph_id=4000000000)
         self.assertEqual(unknown["status"], "error", unknown)
+        self.assertEqual(unknown.get("code"), "not_found", unknown)
         self.assertIn("not found", unknown["error"])
-        self.assertNotIn("code", unknown)
         missing = self.native("get_anim_graph")
         self.assertEqual(missing["status"], "error", missing)
+        self.assertEqual(missing.get("code"), "validation_failed", missing)
         self.assertIn("anim_graph_id or file_name", missing["error"])
         bad = self.native("get_anim_graph", anim_graph_id="not-an-id")
         self.assertEqual(bad["status"], "error", bad)
+        self.assertEqual(bad.get("code"), "validation_failed", bad)
+
+    def test_remove_anim_graph_errors(self):
+        missing = self.native("remove_anim_graph")
+        self.assertEqual(missing["status"], "error", missing)
+        self.assertEqual(missing.get("code"), "validation_failed", missing)
+        self.assertIn("anim_graph_id", missing["error"])
+        unknown = self.native("remove_anim_graph", anim_graph_id=4000000000)
+        self.assertEqual(unknown["status"], "error", unknown)
+        self.assertEqual(unknown.get("code"), "not_found", unknown)
 
 
 class TestSecureMode(LiveEditorTest):
@@ -659,6 +699,7 @@ class TestSecureMode(LiveEditorTest):
     def test_execute_python_is_refused(self):
         response = self.client.execute_python("print(1)")
         self.assertEqual(response["status"], "error", response)
+        self.assertEqual(response.get("code"), "secure_mode", response)
         self.assertIn("secure mode", str(response.get("error", "")).lower())
 
     def test_read_only_request_types_answer(self):

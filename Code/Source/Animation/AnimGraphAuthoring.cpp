@@ -5,6 +5,8 @@
 
 #include "AnimGraphAuthoring.h"
 
+#include "Network/RequestError.h"
+
 #include <AzCore/JSON/stringbuffer.h>
 #include <AzCore/JSON/writer.h>
 
@@ -43,12 +45,14 @@ namespace AiCompanion::AnimGraphAuthoring
         CommandSystem::CommandManager* commandManager = FindCommandManager();
         if (!commandManager)
         {
-            return AZ::Failure(AZStd::string(StudioNotAvailable));
+            return AZ::Failure(RequestError::EncodeError(RequestError::Unavailable, StudioNotAvailable));
         }
         AZStd::string result;
         if (!commandManager->ExecuteCommand(commandLine, result))
         {
-            return AZ::Failure(result.empty() ? AZStd::string::format("command failed: %s", commandLine.c_str()) : result);
+            // The command system's own text when it gives one.
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::EngineError, result.empty() ? AZStd::string::format("command failed: %s", commandLine.c_str()) : result));
         }
         return AZ::Success(result);
     }
@@ -67,8 +71,9 @@ namespace AiCompanion::AnimGraphAuthoring
         EMotionFX::AnimGraph* graph = parsedOk ? FindGraph(static_cast<AZ::u32>(parsed)) : nullptr;
         if (!graph)
         {
-            return AZ::Failure(
-                AZStd::string::format("CreateAnimGraph answered '%s' but no graph with that id exists", run.GetValue().c_str()));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::EngineError,
+                AZStd::string::format("CreateAnimGraph answered '%s' but no graph with that id exists", run.GetValue().c_str())));
         }
 
         rapidjson::StringBuffer sb;
@@ -86,7 +91,8 @@ namespace AiCompanion::AnimGraphAuthoring
     {
         if (!FindGraph(animGraphId))
         {
-            return AZ::Failure(AZStd::string::format("anim graph not found: %u", animGraphId));
+            return AZ::Failure(
+                RequestError::EncodeError(RequestError::NotFound, AZStd::string::format("anim graph not found: %u", animGraphId)));
         }
         auto run = RunCommand(AZStd::string::format("RemoveAnimGraph -animGraphID %u", animGraphId));
         if (!run.IsSuccess())

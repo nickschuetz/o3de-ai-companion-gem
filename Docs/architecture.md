@@ -191,7 +191,8 @@ source and target node ids, wildcard, blend time, priority, disabled,
 conditions with type and summary), `parameters` (name, type, description,
 default, min, max, group) and `node_groups`. Node and transition ids are
 decimal strings. Both are read-only, run on the main thread and are allowed in
-secure mode; an unknown graph answers `anim graph not found: <selector>`.
+secure mode; an unknown graph answers `anim graph not found: <selector>` with
+the code `not_found`.
 
 o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
 inside its `get_capabilities` tool to confirm the gem is present and report its
@@ -222,12 +223,34 @@ reports the convention: `api_version` 0.3.0 and lower meant numbers. The
 Python API's own JSON keeps its bracketed `"[id]"` strings.
 
 Every reply is `{"id", "status", "output", "error", "duration_ms"}`, written by
-`Network/ResponseBuilding`. A request `type` the server does not serve answers
-with `"error": "Unknown request type: <type>"` and, alone among the server's
-error replies, `"code": "unknown_request_type"`, so a client can tell a missing
-request type from any other failure and fall back to `execute_python`. The
-`code` field inside the JSON the Python API prints to `output` is a separate,
-Python-side vocabulary.
+`Network/ResponseBuilding`, and every `error` reply adds a `code` from the
+vocabulary in `Network/RequestError`:
+
+| Code | When |
+|------|------|
+| `validation_failed` | A malformed or refused argument: invalid JSON, a missing `type` or `script` field, a bad base64 script, a missing or unparsable `entity_id` or `anim_graph_id`, an invalid entity name, a position outside the bound, a scale out of range, or a refusal to delete the level root |
+| `not_found` | The entity, anim graph or bus does not exist |
+| `unavailable` | A subsystem the request needs is not loaded: EMotion FX, EMotion Studio's command system, the gem's editor system component, the prefab system, or the editor's Python runner |
+| `engine_error` | The engine refused or failed the operation; `error` is the engine's own text (a prefab system message such as `no root prefab is assigned`, a failed EMotion FX command) |
+| `secure_mode` | `execute_python` refused because the server runs in secure mode |
+| `execution_failed` | The `execute_python` script raised; `error` holds the traceback and `output` what the script printed first |
+| `unknown_request_type` | The request `type` is not one the server serves; the one code a client falls back to editor Python on |
+| `timeout` | The editor's main thread did not answer within 30 seconds |
+| `shutting_down` | The server was stopping and dropped the request |
+
+The bus events the server calls (`AiCompanionEditorRequestBus::CreateEntity`,
+`SetTransform`, `DeleteEntity`, `ListAnimGraphs`, `GetAnimGraph`,
+`CreateAnimGraph`, `RemoveAnimGraph`) return their `AZ::Outcome` failure as the
+JSON text `{"code", "message"}` from `RequestError::EncodeError`; the server's
+`FailureResponse` decodes it into the reply's `code` and `error`, and a plain
+text that was never encoded decodes as `engine_error` with the text as the
+message. `SceneSnapshotProvider::CaptureEntity` and `BuildBusSchemaJson` keep
+answering their own `{"error": ...}` object (the Python package reads the
+former through the bus); the server turns that object into an `error` reply
+with `not_found`, or the `code` the object names, instead of relaying it as
+`ok`. The `code` inside the JSON the Python API prints to `output` is the
+package's own vocabulary; the two overlap on `validation_failed`, `not_found`
+and `engine_error` by design and differ where the layers differ.
 
 Requests that require main-thread access (every type except `ping` and
 `get_api_version`) are dispatched via a lock-free queue from the

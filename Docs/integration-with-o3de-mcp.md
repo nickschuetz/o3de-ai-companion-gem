@@ -69,14 +69,17 @@ keep working when the AgentServer runs in secure mode, which disables
 `execute_python`. o3de-mcp wrappers for `list_anim_graphs` and
 `get_anim_graph` are to follow; until then a client sends the request types
 directly. Both are read-only: `get_anim_graph` answers
-`anim graph not found: <selector>` for an unknown graph, and both answer
-`EMotion FX is not available` when the EMotionFX gem is not loaded.
+`anim graph not found: <selector>` (code `not_found`) for an unknown graph, and
+both answer `EMotion FX is not available` (code `unavailable`) when the
+EMotionFX gem is not loaded.
 
 ### Response format
 
 ```json
-{"id": "uuid", "status": "ok|error", "output": "...", "error": "...", "duration_ms": 123}
+{"id": "uuid", "status": "ok|error", "output": "...", "error": "...", "code": "...", "duration_ms": 123}
 ```
+
+`code` is present on every `error` reply and absent from `ok` replies.
 
 Three id forms exist, and o3de-mcp documents the same split: native JSON
 carries every 64-bit entity id as a decimal string (`API_VERSION` 0.4.0 and
@@ -84,13 +87,38 @@ up; 0.3.0 and lower sent JSON numbers, which a JavaScript parser corrupts above
 2^53), the editor-Python fallback sentences print bracketed `[id]`, and every
 tool and request field accepts either a number or a string.
 
-One error reply carries an extra `code`. A request `type` the server does not
-serve answers with `"code": "unknown_request_type"` and the message
-`"Unknown request type: <type>"`; a client that sees that code falls back to
-`execute_python` (o3de-mcp does this for its native-first tools). No other
-AgentServer error carries a `code`, so a client never falls back for a different
-reason. This code is the C++ server's own and is separate from the `code` field
-inside the JSON that the Python API functions print to `output`.
+Every error reply carries a `code` beside its `error` message, so a client
+branches on the code and shows the message. The vocabulary:
+
+| Code | When |
+|------|------|
+| `validation_failed` | A malformed or refused argument: invalid JSON, a missing `type` or `script` field, a bad base64 script, a missing or unparsable `entity_id` or `anim_graph_id`, an invalid entity name, a position outside the bound, a scale out of range, or a refusal to delete the level root |
+| `not_found` | The entity, anim graph or bus does not exist |
+| `unavailable` | A subsystem the request needs is not loaded: EMotion FX, EMotion Studio's command system, the gem's editor system component, the prefab system, or the editor's Python runner |
+| `engine_error` | The engine refused or failed the operation; `error` is the engine's own text (a prefab system message such as `no root prefab is assigned`, a failed EMotion FX command) |
+| `secure_mode` | `execute_python` refused because the server runs in secure mode |
+| `execution_failed` | The `execute_python` script raised; `error` holds the traceback and `output` what the script printed first |
+| `unknown_request_type` | The request `type` is not one the server serves; the one code a client falls back to editor Python on |
+| `timeout` | The editor's main thread did not answer within 30 seconds |
+| `shutting_down` | The server was stopping and dropped the request |
+
+A native type never answers `ok` with a failure hidden inside `output`: an
+unknown entity in `get_entity` and an unknown bus in `get_bus_schema` are
+`error` replies with `not_found`, and a validation refusal from the mutation
+or anim graph types is `validation_failed`. o3de-mcp converts any reply whose
+status is not `ok` into its own `{"status": "error", "code", "message"}`
+envelope and keeps the code, so an agent branches the same way on both sides.
+It falls back to `execute_python` on `unknown_request_type` alone.
+
+This vocabulary is the C++ server's own. The `code` field inside the JSON the
+Python API functions print to `output` is the Python package's (see the
+[API reference](api-reference.md#responses-and-error-codes)); the two overlap on
+purpose where they mean the same thing (`validation_failed`, `not_found`,
+`engine_error`) and differ where the layers differ (the server has
+`unavailable`, `secure_mode`, `execution_failed`, `unknown_request_type`,
+`timeout` and `shutting_down`; the package has `limit_exceeded`,
+`not_in_editor`, `editor_running`, `io_error`, `instantiate_failed` and
+`prefab_not_found`).
 
 See [Agent Best Practices](agent-best-practices.md) for token efficiency and performance tips.
 

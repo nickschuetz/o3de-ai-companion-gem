@@ -10,6 +10,7 @@
 #include "Animation/AnimGraphAuthoring.h"
 #include "Animation/AnimGraphInspector.h"
 #include "Introspection/BusSchema.h"
+#include "Network/RequestError.h"
 
 #include "Validation/InputValidator.h"
 #include <AzCore/Component/ComponentApplicationBus.h>
@@ -474,14 +475,16 @@ namespace AiCompanion
     {
         if (!InputValidator::IsValidEntityName(name))
         {
-            return AZ::Failure(AZStd::string::format(
-                "invalid entity name '%s' (letter first, then letters, digits, '_' or '-', at most %zu characters)",
-                name.c_str(),
-                InputValidator::MaxEntityNameLength));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::ValidationFailed,
+                AZStd::string::format(
+                    "invalid entity name '%s' (letter first, then letters, digits, '_' or '-', at most %zu characters)",
+                    name.c_str(),
+                    InputValidator::MaxEntityNameLength)));
         }
         if (!InputValidator::IsValidPosition(position.GetX(), position.GetY(), position.GetZ()))
         {
-            return AZ::Failure(AZStd::string("position out of bounds"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "position out of bounds"));
         }
         // AZ::EntityId(0) is a valid-looking id that no entity has; the invalid id is
         // all ones. An absent parent must be the default-constructed EntityId so the
@@ -489,7 +492,9 @@ namespace AiCompanion
         AZ::EntityId parent = (parentId != 0) ? AZ::EntityId(parentId) : AZ::EntityId();
         if (parentId != 0 && !EntityExists(parent))
         {
-            return AZ::Failure(AZStd::string::format("parent entity %llu does not exist", static_cast<unsigned long long>(parentId)));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::NotFound,
+                AZStd::string::format("parent entity %llu does not exist", static_cast<unsigned long long>(parentId))));
         }
 
         // Call the prefab system directly. ToolsApplication::CreateNewEntityAtPosition
@@ -500,18 +505,19 @@ namespace AiCompanion
         auto* prefabInterface = AZ::Interface<AzToolsFramework::Prefab::PrefabPublicInterface>::Get();
         if (!prefabInterface)
         {
-            return AZ::Failure(AZStd::string("prefab system is not available"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::Unavailable, "prefab system is not available"));
         }
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Create Entity");
         auto createResult = prefabInterface->CreateEntity(parent, position);
         if (!createResult.IsSuccess())
         {
-            return AZ::Failure(createResult.GetError());
+            // The engine's own text, e.g. "no root prefab is assigned".
+            return AZ::Failure(RequestError::EncodeError(RequestError::EngineError, createResult.GetError()));
         }
         const AZ::EntityId created = createResult.GetValue();
         if (!created.IsValid())
         {
-            return AZ::Failure(AZStd::string("the prefab system returned an invalid entity id"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::EngineError, "the prefab system returned an invalid entity id"));
         }
         AzToolsFramework::EditorEntityAPIBus::Event(created, &AzToolsFramework::EditorEntityAPIRequests::SetName, name);
         return AZ::Success(static_cast<AZ::u64>(created));
@@ -529,15 +535,16 @@ namespace AiCompanion
         AZ::EntityId id(entityId);
         if (!EntityExists(id))
         {
-            return AZ::Failure(AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId)));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::NotFound, AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId))));
         }
         if (setPosition && !InputValidator::IsValidPosition(position.GetX(), position.GetY(), position.GetZ()))
         {
-            return AZ::Failure(AZStd::string("position out of bounds"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "position out of bounds"));
         }
         if (setScale && !(uniformScale > 0.0f && uniformScale <= 1000.0f))
         {
-            return AZ::Failure(AZStd::string("scale must be in (0, 1000]"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "scale must be in (0, 1000]"));
         }
 
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Set Transform");
@@ -587,18 +594,19 @@ namespace AiCompanion
         AZ::EntityId id(entityId);
         if (!EntityExists(id))
         {
-            return AZ::Failure(AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId)));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::NotFound, AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId))));
         }
         if (IsLevelRoot(id))
         {
-            return AZ::Failure(AZStd::string("refusing to delete the level's root entity"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "refusing to delete the level's root entity"));
         }
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Delete Entity");
         AzToolsFramework::ToolsApplicationRequestBus::Broadcast(
             &AzToolsFramework::ToolsApplicationRequests::DeleteEntityAndAllDescendants, id);
         if (EntityExists(id))
         {
-            return AZ::Failure(AZStd::string("the editor did not delete the entity"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::EngineError, "the editor did not delete the entity"));
         }
         return AZ::Success();
     }

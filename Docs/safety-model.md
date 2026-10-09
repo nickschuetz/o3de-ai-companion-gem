@@ -130,6 +130,14 @@ validated mutation set:
   arguments go through the C++ `InputValidator`, missing entities and the level
   root are refused, and each call is its own editor undo batch
 
+An `execute_python` request in secure mode is answered with `status`
+`error`, the code `secure_mode` and a message that lists the request types the
+server does serve; it is never dispatched to the main thread. Every other
+refusal the native types make carries its own code (`validation_failed` for a
+refused argument or the level root, `not_found`, `unavailable`,
+`engine_error`), defined in the
+[integration guide](integration-with-o3de-mcp.md#response-format).
+
 This limits the attack surface when the server is exposed beyond localhost.
 o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree`,
 `get_entity`, `validate_scene` and `get_bus_schema_live` tools use only these

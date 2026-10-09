@@ -209,12 +209,22 @@ only way to change it.
 ### Error handling
 
 Check the `status` field in every response:
-- `"ok"` — operation succeeded, result in `output`
-- `"error"` — operation failed, details in `error`
+- `"ok"`: the operation succeeded, result in `output`
+- `"error"`: the operation failed; branch on `code`, show `error`
 
-A request `type` the server does not serve fails with
-`"code": "unknown_request_type"` next to the `"Unknown request type: <type>"`
-message. Branch on the code to fall back to `execute_python`; it is the only
-AgentServer error that carries a `code`.
+Every AgentServer error reply carries a `code`: `validation_failed` (fix the
+argument), `not_found` (the entity, anim graph or bus is gone; refresh your
+view of the scene), `unavailable` (a subsystem such as EMotion FX is not
+loaded; do not retry), `engine_error` (the engine's own refusal; `error` is
+its text), `secure_mode` (`execute_python` is off; use the native types),
+`execution_failed` (your script raised; `error` is the traceback),
+`unknown_request_type` (this build lacks the type; fall back to
+`execute_python`, the one code to fall back on), `timeout` and
+`shutting_down`. A native type never answers `ok` with an error hidden inside
+`output`, so there is no need to parse `output` for an `error` key. The
+[integration guide](integration-with-o3de-mcp.md#response-format) defines each
+code. The `code` inside a Python API function's JSON is the package's own
+vocabulary; it overlaps with the server's on `validation_failed`, `not_found`
+and `engine_error`.
 
 The `duration_ms` field helps identify slow operations for optimization.

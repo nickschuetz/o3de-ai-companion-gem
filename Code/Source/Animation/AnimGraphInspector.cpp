@@ -5,6 +5,8 @@
 
 #include "AnimGraphInspector.h"
 
+#include "Network/RequestError.h"
+
 #include <AzCore/Component/EntityId.h>
 #include <AzCore/Module/Environment.h>
 #include <AzCore/std/string/conversions.h>
@@ -508,7 +510,7 @@ namespace AiCompanion::AnimGraphInspector
         EMotionFX::AnimGraphManager* manager = emfx ? emfx->GetAnimGraphManager() : nullptr;
         if (!manager)
         {
-            return AZ::Failure(AZStd::string(NotAvailable));
+            return AZ::Failure(RequestError::EncodeError(RequestError::Unavailable, NotAvailable));
         }
 
         rapidjson::StringBuffer sb;
@@ -556,12 +558,13 @@ namespace AiCompanion::AnimGraphInspector
         EMotionFX::AnimGraphManager* manager = emfx ? emfx->GetAnimGraphManager() : nullptr;
         if (!manager)
         {
-            return AZ::Failure(AZStd::string(NotAvailable));
+            return AZ::Failure(RequestError::EncodeError(RequestError::Unavailable, NotAvailable));
         }
         EMotionFX::AnimGraph* graph = ResolveGraph(*manager, selector);
         if (!graph)
         {
-            return AZ::Failure(AZStd::string::format("anim graph not found: %s", selector.c_str()));
+            return AZ::Failure(
+                RequestError::EncodeError(RequestError::NotFound, AZStd::string::format("anim graph not found: %s", selector.c_str())));
         }
 
         EMotionFX::AnimGraphStateMachine* root = graph->GetRootStateMachine();

@@ -33,8 +33,10 @@ patterns (entity names, positions, asset paths), operations are sandboxed
 with configurable limits, and every change is captured in an undo batch that
 rolls back automatically on failure, deleting anything the editor's Undo
 leaves behind. Errors come back as JSON with a `code` to branch on, never as
-a traceback, and the AgentServer flags a request type it does not serve with a
-code of its own, so a client can fall back without parsing messages. System
+a traceback, and every AgentServer error reply carries a code of its own
+(`validation_failed`, `not_found`, `unavailable`, `engine_error`,
+`secure_mode`, `unknown_request_type` and a few more), so a client can branch
+without parsing messages. System
 entities are protected from modification, and the AgentServer supports TLS
 encryption and a secure mode that disables arbitrary code execution.
 

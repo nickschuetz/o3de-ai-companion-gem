@@ -15,6 +15,8 @@ set(FILES
     Source/Validation/InputValidator.cpp
     Source/Network/RequestParsing.h
     Source/Network/RequestParsing.cpp
+    Source/Network/RequestError.h
+    Source/Network/RequestError.cpp
     Source/Network/ResponseBuilding.h
     Source/Network/ResponseBuilding.cpp
 )
