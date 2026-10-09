@@ -188,8 +188,8 @@ namespace UnitTest
 
     TEST_F(AssetReadinessFixture, BuildAssetStatusJson_EchoesThePathAndTheWord)
     {
-        rapidjson::Document doc =
-            Parse(Readiness::BuildAssetStatusJson("Assets/Probe/thing.animgraph", AzFramework::AssetSystem::AssetStatus_Compiled));
+        rapidjson::Document doc = Parse(Readiness::BuildAssetStatusJson(
+            "Assets/Probe/thing.animgraph", "Assets/Probe/thing.animgraph", AzFramework::AssetSystem::AssetStatus_Compiled));
         EXPECT_STREQ(doc["path"].GetString(), "Assets/Probe/thing.animgraph");
         EXPECT_STREQ(doc["status"].GetString(), "compiled");
         EXPECT_TRUE(doc["connected"].GetBool());
@@ -291,5 +291,24 @@ namespace UnitTest
         EXPECT_FALSE(second.HasMember("status_detail"));
         EXPECT_TRUE(second["log"].IsNull());
         EXPECT_FALSE(second.HasMember("truncated"));
+    }
+    TEST_F(AssetReadinessFixture, NormalizeQueryPath_RelativizesFullPathsUnderARoot)
+    {
+        const AZStd::vector<AZStd::string> roots = { "/work/project", "/opt/engine" };
+        EXPECT_EQ(Readiness::NormalizeQueryPath("/work/project/Assets/Probe/thing.animgraph", roots), "Assets/Probe/thing.animgraph");
+        EXPECT_EQ(Readiness::NormalizeQueryPath("/opt/engine/Gems/X/Assets/a.fbx", roots), "Gems/X/Assets/a.fbx");
+        EXPECT_EQ(Readiness::NormalizeQueryPath("/work/project/../project/Assets/b.fbx", roots), "Assets/b.fbx");
+        EXPECT_EQ(Readiness::NormalizeQueryPath("Assets/Probe/thing.animgraph", roots), "Assets/Probe/thing.animgraph");
+        EXPECT_EQ(Readiness::NormalizeQueryPath("/elsewhere/c.fbx", roots), "/elsewhere/c.fbx");
+        EXPECT_EQ(Readiness::NormalizeQueryPath("/work/project", roots), "/work/project");
+    }
+
+    TEST_F(AssetReadinessFixture, BuildAssetStatusJson_ReportsTheQueryPathWhenItDiffers)
+    {
+        rapidjson::Document doc = Parse(
+            Readiness::BuildAssetStatusJson("/work/project/Assets/x.fbx", "Assets/x.fbx", AzFramework::AssetSystem::AssetStatus_Queued));
+        EXPECT_STREQ(doc["path"].GetString(), "/work/project/Assets/x.fbx");
+        EXPECT_STREQ(doc["query_path"].GetString(), "Assets/x.fbx");
+        EXPECT_STREQ(doc["status"].GetString(), "queued");
     }
 } // namespace UnitTest

@@ -828,6 +828,16 @@ namespace AiCompanion
         {
             return RequestError::EncodeError(RequestError::ValidationFailed, "invalid path: " + reason);
         }
+
+        //! The project and engine roots, for turning a full path into the
+        //! root-relative form the Asset Processor answers for.
+        AZStd::vector<AZStd::string> AssetQueryRoots()
+        {
+            AZStd::vector<AZStd::string> roots;
+            roots.push_back(AZStd::string(AZ::Utils::GetProjectPath().c_str()));
+            roots.push_back(AZStd::string(AZ::Utils::GetEnginePath().c_str()));
+            return roots;
+        }
     } // namespace
 
     AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAssetStatus(AZStd::string path, bool flushIo)
@@ -841,17 +851,19 @@ namespace AiCompanion
         {
             return AZ::Failure(NotConnectedError());
         }
+        const AZStd::string queryPath = AssetReadiness::NormalizeQueryPath(path, AssetQueryRoots());
         AzFramework::AssetSystem::AssetStatus status = AzFramework::AssetSystem::AssetStatus_Unknown;
         if (flushIo)
         {
             AzFramework::AssetSystemRequestBus::BroadcastResult(
-                status, &AzFramework::AssetSystemRequestBus::Events::GetAssetStatus_FlushIO, path);
+                status, &AzFramework::AssetSystemRequestBus::Events::GetAssetStatus_FlushIO, queryPath);
         }
         else
         {
-            AzFramework::AssetSystemRequestBus::BroadcastResult(status, &AzFramework::AssetSystemRequestBus::Events::GetAssetStatus, path);
+            AzFramework::AssetSystemRequestBus::BroadcastResult(
+                status, &AzFramework::AssetSystemRequestBus::Events::GetAssetStatus, queryPath);
         }
-        return AZ::Success(AssetReadiness::BuildAssetStatusJson(path, status));
+        return AZ::Success(AssetReadiness::BuildAssetStatusJson(path, queryPath, status));
     }
 
     AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAssetJobs(
@@ -867,8 +879,9 @@ namespace AiCompanion
             return AZ::Failure(NotConnectedError());
         }
         AZ::Outcome<AzToolsFramework::AssetSystem::JobInfoContainer> jobs = AZ::Failure();
+        const AZStd::string queryPath = AssetReadiness::NormalizeQueryPath(sourcePath, AssetQueryRoots());
         AzToolsFramework::AssetSystemJobRequestBus::BroadcastResult(
-            jobs, &AzToolsFramework::AssetSystemJobRequestBus::Events::GetAssetJobsInfo, sourcePath, escalate);
+            jobs, &AzToolsFramework::AssetSystemJobRequestBus::Events::GetAssetJobsInfo, queryPath, escalate);
         if (!jobs.IsSuccess())
         {
             return AZ::Failure(RequestError::EncodeError(

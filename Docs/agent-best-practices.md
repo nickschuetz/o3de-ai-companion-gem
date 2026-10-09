@@ -221,12 +221,21 @@ build.
    source path relative to its scan folder (`Assets/MyGraphs/Walk.animgraph`),
    the product path (`assets/mygraphs/walk.animgraph`) or a full path.
 2. Poll `get_asset_status` without `flush_io` about once a second until
-   `status` is `compiled` or `failed`. `missing` and `unknown` right after a
-   write mean the Asset Processor has not registered the file yet; `queued`
-   and `compiling` mean it has. Asking also moves the asset up the build queue.
-3. On `failed`, call `get_asset_jobs` with `source_path` and
-   `include_logs: true`: each failed job carries its `log` (cut at 64 KB) and
-   `error_count`.
+   `status` is `compiled` or `failed`. `queued` and `compiling` mean the Asset
+   Processor has the file. Asking also moves the asset up the build queue.
+   Observed on O3DE 26.10.0: a source whose job failed keeps answering
+   `missing` (a failed source has no products), the same word as a file the
+   Asset Processor has not registered yet, so `missing` that lasts more than a
+   few seconds after a write is not "still waiting": go to step 3.
+3. On `failed`, or on a lasting `missing`, call `get_asset_jobs` with
+   `source_path` and `include_logs: true`: a job with `status` `failed` is the
+   build failure, and each failed job carries its `log` (cut at 64 KB) and
+   `error_count`. A source the Asset Processor has never seen answers
+   `engine_error` here (it has no job record), which tells the two cases
+   apart. A full path under the project or engine root is turned into the
+   root-relative form before either query (the reply's `query_path` shows
+   it); on 26.10.0 the engine answers `missing` for a full source path asked
+   as is, although its header lists full paths as accepted.
 4. `get_asset_processor_status` says whether the editor is connected at all
    (`connected`, `ping_ms`); the two queries answer `unavailable` without a
    connection.

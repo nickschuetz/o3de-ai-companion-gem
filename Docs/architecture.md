@@ -271,7 +271,14 @@ would block the editor's main thread until the build finished: an agent polls
 `get_asset_status` until `compiled` or `failed`, then reads the failed job's
 log with `get_asset_jobs` and `include_logs` (cut at 64 KB, `truncated`:
 true). The status words are `unknown`, `missing`, `queued`, `compiling`,
-`compiled`, `failed`; a job's are `queued`, `in_progress`, `failed`,
+`compiled`, `failed`. Two observed 26.10.0 behaviours shape the contract: a
+source whose job failed answers `missing` from `get_asset_status` (a failed
+source has no products), so a lasting `missing` after a write means "ask
+`get_asset_jobs`", where the failed job appears and a never-seen source answers
+`engine_error`; and the engine answers `missing` for a full source path asked
+as is, so the gem converts a full path under the project or engine root into
+the root-relative form before either query and reports it as `query_path`.
+A job's status words are `queued`, `in_progress`, `failed`,
 `completed`, `missing`, with `status_detail`
 `invalid_source_name_exceeds_max_limit` on the engine's over-long-name
 failure, and each job names the `source_file` and `watch_folder` the Asset

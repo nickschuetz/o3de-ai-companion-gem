@@ -50,7 +50,11 @@ ANIM_GRAPH_ASSET_TIMEOUT_S = 120.0
 # The asset readiness probes: copies of the anim graph fixture (one intact, one
 # deliberately broken) that TestAssetReadiness writes next to it and removes.
 READINESS_PROBE_NAME = "ReadinessProbe.animgraph"
-READINESS_BROKEN_NAME = "ReadinessBroken.animgraph"
+# An .fbx whose contents are not FBX: the scene builder parses the file and
+# fails the job, which is what the failed-job and log assertions need. (A
+# junk .animgraph does not do: that builder copies the file without parsing
+# it, so its job completes; observed on 26.10.0.)
+READINESS_BROKEN_NAME = "ReadinessBroken.fbx"
 READINESS_NEVER_SEEN_PATH = "assets/aicompanionlivetest/never_written_probe.animgraph"
 READINESS_STATUS_WORDS = {"unknown", "missing", "queued", "compiling", "compiled", "failed"}
 READINESS_JOB_WORDS = {"queued", "in_progress", "failed", "completed", "missing"}
@@ -1345,16 +1349,31 @@ class TestAssetReadiness(LiveEditorTest):
         escalated = self._jobs(jobs_path, escalate=True)
         self.assertTrue(escalated, "escalate=true returned no jobs")
 
-        # A file that cannot be an anim graph fails its job; the failed job
-        # carries a log when include_logs is set.
-        broken.write_text("not xml\n", encoding="utf-8")
-        first_broken, final_broken, elapsed_broken, _ = self._wait_for_status(broken_relpath, {"compiled", "failed"}, first_flush=True)
-        self._note(f"broken copy: first status {first_broken}, reached {final_broken!r} after {elapsed_broken:.1f} s")
-        self.assertEqual(final_broken, "failed")
+        # A file that is not an FBX fails the scene builder's job; the failed
+        # job carries a log when include_logs is set.
+        broken.write_text("not an fbx file\n", encoding="utf-8")
+        # Observed on 26.10.0: get_asset_status answers "missing" for a source
+        # whose job failed (the failed source has no products), so the failed
+        # state is visible only through get_asset_jobs. Poll the jobs, and
+        # record what the status query says meanwhile.
         broken_jobs_path = broken_relpath if "source relpath" in accepted else str(broken)
-        broken_jobs = self._jobs(broken_jobs_path, include_logs=True)
-        failed = [job for job in broken_jobs if job["status"] == "failed"]
-        self.assertTrue(failed, broken_jobs)
+        first_broken = json.loads(self.native("get_asset_status", path=broken_relpath, flush_io=True)["output"])["status"]
+        status_words: set[str] = {first_broken}
+        failed: list[dict] = []
+        started = time.monotonic()
+        while time.monotonic() - started < 120.0:
+            broken_jobs = self._jobs(broken_jobs_path, include_logs=True)
+            failed = [job for job in broken_jobs if job["status"] == "failed"]
+            if failed:
+                break
+            status_words.add(json.loads(self.native("get_asset_status", path=broken_relpath)["output"])["status"])
+            time.sleep(1.0)
+        elapsed_broken = time.monotonic() - started
+        self._note(
+            f"broken copy: first status {first_broken}, status words while waiting {sorted(status_words)}, "
+            f"failed job seen after {elapsed_broken:.1f} s"
+        )
+        self.assertTrue(failed, "no failed job for the junk .fbx within 120 s")
         self._note(
             "failed job(s): "
             + ", ".join(

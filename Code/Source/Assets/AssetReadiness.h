@@ -65,6 +65,14 @@ namespace AiCompanion::AssetReadiness
     //! full path to either. `outReason` says what was wrong.
     bool IsAcceptablePath(const AZStd::string& path, AZStd::string& outReason);
 
+    //! The path to hand the Asset Processor. A full path under one of the
+    //! given roots (the project root, the engine root) becomes that root's
+    //! relative path with forward slashes; anything else is returned as is.
+    //! Observed on O3DE 26.10.0: GetAssetStatus answers "missing" for a full
+    //! source path under the project although the engine header lists full
+    //! paths as accepted, while the project-relative form answers correctly.
+    AZStd::string NormalizeQueryPath(const AZStd::string& path, const AZStd::vector<AZStd::string>& roots);
+
     //! One job as get_asset_jobs reports it, already converted to words.
     struct JobRecord
     {
@@ -92,7 +100,10 @@ namespace AiCompanion::AssetReadiness
     };
 
     //! {"path": <as given>, "status": <word>, "connected": true}
-    AZStd::string BuildAssetStatusJson(const AZStd::string& path, AzFramework::AssetSystem::AssetStatus status);
+    //! "query_path" is added when the path handed to the Asset Processor
+    //! differs from the one the caller sent (see NormalizeQueryPath).
+    AZStd::string BuildAssetStatusJson(
+        const AZStd::string& path, const AZStd::string& queryPath, AzFramework::AssetSystem::AssetStatus status);
 
     //! {"source_path": <as given>, "jobs": [{"job_key", "platform",
     //!  "builder", "source_file", "watch_folder", "status", "status_detail"?,

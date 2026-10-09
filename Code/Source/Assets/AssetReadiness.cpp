@@ -5,6 +5,8 @@
 
 #include "AssetReadiness.h"
 
+#include <AzCore/IO/Path/Path.h>
+
 #include <AzCore/JSON/stringbuffer.h>
 #include <AzCore/JSON/writer.h>
 
@@ -103,13 +105,19 @@ namespace AiCompanion::AssetReadiness
         return true;
     }
 
-    AZStd::string BuildAssetStatusJson(const AZStd::string& path, AzFramework::AssetSystem::AssetStatus status)
+    AZStd::string BuildAssetStatusJson(
+        const AZStd::string& path, const AZStd::string& queryPath, AzFramework::AssetSystem::AssetStatus status)
     {
         rapidjson::StringBuffer buffer;
         rapidjson::Writer<rapidjson::StringBuffer> w(buffer);
         w.StartObject();
         w.Key("path");
         w.String(path.c_str(), static_cast<rapidjson::SizeType>(path.size()));
+        if (queryPath != path)
+        {
+            w.Key("query_path");
+            w.String(queryPath.c_str(), static_cast<rapidjson::SizeType>(queryPath.size()));
+        }
         w.Key("status");
         w.String(AssetStatusWord(status));
         w.Key("connected");
@@ -193,5 +201,31 @@ namespace AiCompanion::AssetReadiness
         w.Double(std::isfinite(pingMs) ? static_cast<double>(pingMs) : 0.0);
         w.EndObject();
         return buffer.GetString();
+    }
+    AZStd::string NormalizeQueryPath(const AZStd::string& path, const AZStd::vector<AZStd::string>& roots)
+    {
+        const AZ::IO::Path candidate(path);
+        if (!candidate.IsAbsolute())
+        {
+            return path;
+        }
+        const AZ::IO::Path normalized = candidate.LexicallyNormal();
+        for (const AZStd::string& root : roots)
+        {
+            if (root.empty())
+            {
+                continue;
+            }
+            const AZ::IO::Path rootPath = AZ::IO::Path(root).LexicallyNormal();
+            if (normalized.IsRelativeTo(rootPath))
+            {
+                const AZ::IO::Path relative = normalized.LexicallyRelative(rootPath);
+                if (!relative.empty() && relative.Native() != ".")
+                {
+                    return relative.StringAsPosix();
+                }
+            }
+        }
+        return path;
     }
 } // namespace AiCompanion::AssetReadiness
