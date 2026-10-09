@@ -86,6 +86,7 @@ def get_available_functions() -> str:
         {"name": "validate_scene", "args": [], "description": "Validate scene for common issues"},
         {"name": "list_prefabs", "args": [], "description": "List available AiCompanion prefabs"},
         {"name": "spawn_prefab", "args": ["prefab_name", "position?"], "description": "Instantiate a prefab"},
+        {"name": "find_prefab_file", "args": ["prefab_name"], "description": "Locate a prefab file on disk (returns a dict, not JSON)"},
         {"name": "begin_undo_batch", "args": ["label?"], "description": "Start a manual undo batch"},
         {"name": "end_undo_batch", "args": [], "description": "End the current undo batch"},
         {"name": "rollback_last_batch", "args": [], "description": "Undo the last batch"},
