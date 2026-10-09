@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
 """
-AI Companion API — Main entry point for AI-driven game development in O3DE.
+AI Companion API: main entry point for AI-driven game development in O3DE.
 
 All functions return JSON strings for structured parsing by MCP servers.
 All mutating functions are wrapped in undo batches for automatic rollback on failure.
@@ -20,7 +20,7 @@ from .version import API_VERSION
 from .safety import rollback as _rollback
 from .safety.rollback import with_undo_batch
 from .safety.sandbox import get_sandbox, reset_sandbox, SandboxLimitError
-from .safety.validators import validate_entity_name, validate_position, is_protected_entity
+from .safety.validators import validate_entity_name, validate_position
 from .utils.json_output import success, error, batch_result
 from .utils.component_registry import list_components, get_categories
 

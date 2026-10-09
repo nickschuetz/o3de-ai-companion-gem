@@ -34,11 +34,15 @@ project on the machine, not just the one with the AiCompanion gem.
 ## 2. Runtime dialog suppression
 
 The runtime layer asks the gem's C++ editor system component to install a
-QApplication event filter and auto-dismiss known modal dialogs that block
-agent workflows: the welcome dialog if it appears mid-session, the
-"unsaved level" prompt during agent-initiated level switches, and the
-component-uuid-resolution error log that fires when a level prefab
-references gems that are not enabled.
+QApplication event filter (`Code/Source/AgentMode/AgentModeFilter.cpp`) that
+keeps modal dialogs from blocking an unattended editor. Its policy, by window
+title: "Welcome to O3DE" is closed; "Unsaved files detected", "Error Log" and
+"Startup Errors" are logged and passed through untouched; and any other
+`QMessageBox` is rejected (its title and text are written to the editor log
+first), because a message box the editor raises during an agent request, such
+as the "Entity Creation Error" box from the prefab integration layer, would
+otherwise block the main thread until a human clicks it and time out every
+AgentServer request from then on.
 
 The toggle is exposed in Python:
 
@@ -68,12 +72,13 @@ Example input file:
 ```
 
 The C++ editor system component polls this file once per second on
-`OnSystemTick`. When the file flips to enabled, it installs a QObject
-event filter on `qApp` that auto-dismisses the "Welcome to O3DE" dialog
-on `QEvent::Show`. Other known modals ("Unsaved files detected", "Error
-Log", "Startup Errors") are recognized but not yet auto-dismissed; their
-dismissal policy is deferred until we have real-world traces of when
-they fire.
+`OnSystemTick`. When the file flips to enabled (with `suppress_dialogs`
+true), it installs a QObject event filter on `qApp` that acts on
+`QEvent::Show` by window title: it closes the "Welcome to O3DE" dialog,
+leaves "Unsaved files detected", "Error Log" and "Startup Errors" alone
+after logging them (their dismissal policy waits for real-world traces of
+when they fire), and rejects every other `QMessageBox` after logging its
+title and text. When the file flips back, the filter is removed.
 
 ### Observed-state file (introspection)
 
@@ -101,10 +106,11 @@ what state it has actually applied:
   Python write.
 - `observed_at` is when the C++ side last polled.
 
-`get_agent_mode_status()` exposes all three layers (input, observed,
-persistent) in a single payload. The most reliable way to confirm a
-toggle has taken effect is to check that `observed.source_updated_at`
-equals `runtime.updated_at`.
+`get_agent_mode_status()` exposes all three layers (`runtime`, the input
+file; `observed`, this file; `persistent`, the editor preferences) in a
+single payload. The most reliable way to confirm a toggle has taken effect
+is to check that `observed.source_updated_at` equals `runtime.updated_at`
+and `observed.filter_installed` is true.
 
 The post-init editor log does not capture `AZ_Printf` output, so the
 observed-state file is the canonical way for tools and tests to verify
@@ -117,7 +123,7 @@ from ai_companion.api import get_agent_mode_status
 print(get_agent_mode_status())
 ```
 
-Returns both layers in one payload:
+Returns all three layers in one payload:
 
 ```json
 {
@@ -128,6 +134,15 @@ Returns both layers in one payload:
       "suppress_dialogs": true,
       "updated_at": 1779218374,
       "state_path": "/home/you/.local/state/o3de-ai-companion/agent_mode.json"
+    },
+    "observed": {
+      "available": true,
+      "enabled": true,
+      "suppress_dialogs": true,
+      "filter_installed": true,
+      "source_updated_at": 1779218374,
+      "observed_at": 1779218375,
+      "state_path": "/home/you/.local/state/o3de-ai-companion/agent_mode_observed.json"
     },
     "persistent": {
       "available": true,
@@ -140,3 +155,7 @@ Returns both layers in one payload:
   }
 }
 ```
+
+`observed` is `{"available": false, "reason": "..."}` until the editor has
+polled the input file once (or when it is not running), so a caller can tell
+"not yet applied" from "applied".

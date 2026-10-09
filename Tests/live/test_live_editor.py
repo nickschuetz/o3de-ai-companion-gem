@@ -313,6 +313,49 @@ class TestNativeMutations(LiveEditorTest):
         self.assertIn("root", refused["error"])
         self.assertIn(int(root_id), self._ids())
 
+    def test_mutations_refuse_a_protected_entity(self):
+        # Protected names (EditorGlobal, SystemEntity, AZ::*) are refused by
+        # the native mutations in C++ and by the Python package before it
+        # touches an existing entity. The name validator never lets
+        # create_entity make an "AZ::" name, so the probe is made the way a
+        # system entity already exists: through editor Python.
+        before = self._ids()
+        printed = self.client.run(
+            "import azlmbr.bus as bus\n"
+            "import azlmbr.editor as editor\n"
+            "import azlmbr.entity as entity\n"
+            "eid = editor.ToolsApplicationRequestBus(bus.Broadcast, 'CreateNewEntity', entity.EntityId())\n"
+            "editor.EditorEntityAPIBus(bus.Event, 'SetName', eid, 'AZ::Probe')\n"
+            "print(eid)\n"
+        )
+        probe_id = _entity_number(printed.strip().splitlines()[-1])
+        self.assertIn(probe_id, self._ids() - before)
+        try:
+            deleted = self.native("delete_entity", entity_id=probe_id)
+            self.assertEqual(deleted["status"], "error", deleted)
+            self.assertEqual(deleted.get("code"), "validation_failed", deleted)
+            self.assertIn("entity is protected", deleted["error"])
+            moved = self.native("set_transform", entity_id=probe_id, position=[1, 2, 3])
+            self.assertEqual(moved["status"], "error", moved)
+            self.assertEqual(moved.get("code"), "validation_failed", moved)
+            self.assertIn("entity is protected", moved["error"])
+            self.assertIn(probe_id, self._ids())
+            # The Python package's only mutation that names an existing entity
+            # is parenting a new one under it; it refuses before creating anything.
+            result = self.client.api(f'create_projectile_spawner("ProtectedParentProbe", parent_entity_id={probe_id})')
+            self.assertEqual(result["status"], "error", result)
+            self.assertEqual(result["code"], "validation_failed", result)
+            self.assertIn("entity is protected", result["message"])
+            self.assertEqual(self._ids() - before, {probe_id})
+        finally:
+            self.client.run(
+                "import azlmbr.bus as bus\n"
+                "import azlmbr.editor as editor\n"
+                "import azlmbr.entity as entity\n"
+                f"editor.ToolsApplicationRequestBus(bus.Broadcast, 'DeleteEntityById', entity.EntityId({probe_id}))\n"
+            )
+        self.assertEqual(self._ids(), before)
+
 
 class TestTemplatesAndRollback(LiveEditorTest):
     def _entity_ids(self) -> set[int]:

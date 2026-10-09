@@ -121,17 +121,14 @@ class TestSandbox(unittest.TestCase):
         with self.assertRaises(SandboxLimitError):
             sandbox.check_entity_limit(1)
 
-    def test_depth_limit(self):
-        from ai_companion.safety.sandbox import OperationSandbox, SandboxLimitError
+    def test_no_recursion_depth_limit(self):
+        """The sandbox limits entity count and elapsed time; a recursion depth
+        limit was declared once but never enforced, and is gone."""
+        from ai_companion.safety import sandbox as sandbox_module
 
-        sandbox = OperationSandbox(max_depth=3)
-        sandbox.begin()
-        sandbox.check_depth()
-        sandbox.check_depth()
-        sandbox.check_depth()
-
-        with self.assertRaises(SandboxLimitError):
-            sandbox.check_depth()
+        self.assertFalse(hasattr(sandbox_module, "MAX_RECURSION_DEPTH"))
+        self.assertFalse(hasattr(sandbox_module.OperationSandbox, "check_depth"))
+        self.assertFalse(hasattr(sandbox_module.OperationSandbox, "exit_depth"))
 
     def test_timeout(self):
         from ai_companion.safety.sandbox import OperationSandbox, SandboxLimitError

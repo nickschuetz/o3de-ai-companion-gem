@@ -5,7 +5,9 @@
 
 import sys
 import os
+import types
 import unittest
+from unittest import mock
 
 # Add the Editor/Scripts directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Editor', 'Scripts'))
@@ -16,6 +18,7 @@ from ai_companion.safety.validators import (
     validate_position,
     validate_asset_path,
     validate_float,
+    validate_target_entity,
     is_protected_entity,
 )
 
@@ -181,6 +184,75 @@ class TestProtectedEntities(unittest.TestCase):
     def test_not_protected(self):
         self.assertFalse(is_protected_entity("Player"))
         self.assertFalse(is_protected_entity("Enemy1"))
+
+
+def _stub_editor_names(names, calls=None):
+    """Stub azlmbr modules whose EditorEntityInfoRequestBus answers GetName
+    from ``names`` (entity number -> name). ``calls`` collects the EntityId
+    values the bus was asked about."""
+
+    def info_bus(call_type, event, eid):
+        if calls is not None:
+            calls.append(eid)
+        if event == "GetName":
+            return names.get(eid[1])
+        raise AssertionError(f"unexpected EditorEntityInfoRequestBus event {event!r}")
+
+    bus = types.ModuleType("azlmbr.bus")
+    bus.Broadcast = object()
+    bus.Event = object()
+    editor = types.ModuleType("azlmbr.editor")
+    editor.EditorEntityInfoRequestBus = info_bus
+    entity = types.ModuleType("azlmbr.entity")
+    entity.EntityId = lambda value: ("EntityId", value)
+    root = types.ModuleType("azlmbr")
+    root.__path__ = []
+    return {"azlmbr": root, "azlmbr.bus": bus, "azlmbr.editor": editor, "azlmbr.entity": entity}
+
+
+class TestTargetEntityValidation(unittest.TestCase):
+    """validate_target_entity resolves the entity's name in the editor and
+    refuses the protected system entities; it is what the Python package runs
+    before a mutation that names an existing entity."""
+
+    NAMES = {1: "EditorGlobal", 2: "SystemEntity", 3: "AZ::Probe", 4: "Player"}
+
+    def test_protected_names_are_refused(self):
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES)):
+            for number in (1, 2, 3):
+                with self.subTest(entity=number):
+                    ok, err = validate_target_entity(number)
+                    self.assertFalse(ok)
+                    self.assertIn("entity is protected", err)
+                    self.assertIn(self.NAMES[number], err)
+
+    def test_ordinary_entity_is_accepted(self):
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES)):
+            self.assertEqual(validate_target_entity(4), (True, ""))
+
+    def test_accepts_every_id_form(self):
+        calls = []
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES, calls)):
+            self.assertFalse(validate_target_entity("[3]")[0])
+            self.assertFalse(validate_target_entity("3")[0])
+            self.assertFalse(validate_target_entity(("EntityId", 3))[0])
+        self.assertEqual(calls, [("EntityId", 3)] * 3)
+
+    def test_unparsable_id_is_refused(self):
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES)):
+            ok, err = validate_target_entity("not-an-id")
+            self.assertFalse(ok)
+            self.assertIn("Invalid entity id", err)
+
+    def test_unknown_entity_has_no_name_and_passes(self):
+        # An id the editor does not know answers no name; the engine then
+        # reports the missing entity itself.
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES)):
+            self.assertEqual(validate_target_entity(99), (True, ""))
+
+    def test_outside_the_editor_every_id_passes(self):
+        self.assertNotIn("azlmbr", sys.modules)
+        self.assertEqual(validate_target_entity(1), (True, ""))
 
 
 if __name__ == "__main__":

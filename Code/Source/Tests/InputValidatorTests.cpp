@@ -146,4 +146,26 @@ namespace UnitTest
     {
         EXPECT_EQ(AiCompanion::InputValidator::SanitizeEntityName("123abc"), "abc");
     }
+
+    // --- Protected entity names ---
+
+    TEST_F(InputValidatorTestFixture, ProtectedEntityName_SystemEntities)
+    {
+        EXPECT_TRUE(AiCompanion::InputValidator::IsProtectedEntityName("EditorGlobal"));
+        EXPECT_TRUE(AiCompanion::InputValidator::IsProtectedEntityName("SystemEntity"));
+        EXPECT_TRUE(AiCompanion::InputValidator::IsProtectedEntityName("AZ::SystemEntity"));
+        EXPECT_TRUE(AiCompanion::InputValidator::IsProtectedEntityName("AZ::Probe"));
+        EXPECT_TRUE(AiCompanion::InputValidator::IsProtectedEntityName("AZ::"));
+    }
+
+    TEST_F(InputValidatorTestFixture, ProtectedEntityName_OrdinaryNames)
+    {
+        EXPECT_FALSE(AiCompanion::InputValidator::IsProtectedEntityName("Player"));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsProtectedEntityName("Level"));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsProtectedEntityName(""));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsProtectedEntityName("AZ:Probe"));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsProtectedEntityName("az::probe"));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsProtectedEntityName("EditorGlobal2"));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsProtectedEntityName("MyAZ::Thing"));
+    }
 } // namespace UnitTest

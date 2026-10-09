@@ -20,16 +20,16 @@ report what the editor accepted.
 Beneath the Python API, a C++ native layer serves requests with no Python
 at all. The SceneSnapshotProvider traverses entities at engine speed and
 serializes scene state as JSON, while the InputValidator enforces the same
-safety rules in compiled code. The AgentServer answers scene snapshots, entity
-trees, single entities, validation, live EBus schemas and views of EMotion FX
-anim graphs (`list_anim_graphs`, `get_anim_graph`) straight from C++, authors
-anim graphs through the Animation Editor's command system (create, load and
-save a graph, add and remove nodes and parameters, set the entry state, wire
-transitions with conditions and blend tree ports, adjust nodes), and
-serves a validated mutation set (`create_entity`, `set_transform`,
+safety rules in compiled code. The AgentServer serves 28 request types. It answers scene
+snapshots, entity trees, single entities, validation, live EBus schemas and
+views of EMotion FX anim graphs (`list_anim_graphs`, `get_anim_graph`) straight
+from C++, authors anim graphs through the Animation Editor's command system
+(create, load and save a graph, add and remove nodes and parameters, set the
+entry state, wire transitions with conditions and blend tree ports, adjust
+nodes), and serves a validated mutation set (`create_entity`, `set_transform`,
 `delete_entity`) that runs in its own undo batch, so an agent on a secure-mode
 editor, where arbitrary code execution is disabled, can still build and tidy a
-scene.
+scene. Everything but `execute_python` works in secure mode.
 
 A safety layer wraps every mutation. Inputs are validated against strict
 patterns (entity names, positions, asset paths), operations are sandboxed
@@ -39,9 +39,11 @@ leaves behind. Errors come back as JSON with a `code` to branch on, never as
 a traceback, and every AgentServer error reply carries a code of its own
 (`validation_failed`, `not_found`, `unavailable`, `engine_error`,
 `secure_mode`, `unknown_request_type` and a few more), so a client can branch
-without parsing messages. System
-entities are protected from modification, and the AgentServer supports TLS
-encryption and a secure mode that disables arbitrary code execution.
+without parsing messages. The protected system entities (`EditorGlobal`,
+`SystemEntity` and any `AZ::` name) are refused by the native `set_transform`
+and `delete_entity` and by the Python package before it parents a new entity
+under one, and the AgentServer supports TLS encryption and a secure mode that
+disables arbitrary code execution.
 
 See the [architecture document](Docs/architecture.md) for the full system
 diagram.
@@ -131,8 +133,8 @@ print(get_scene_snapshot())
 | Check | What it proves | How |
 |-------|----------------|-----|
 | Python unit suite | The package's logic, with `azlmbr` stubbed | `python -m pytest Tests/`, on Linux and Windows in CI |
-| C++ unit suite | The AgentServer protocol, validators, snapshot and request parsing | `scripts/ci_build_test.sh` on a self-hosted runner (`ci:build` label) |
-| Live editor suite | The package inside a real editor: native request types, templates, rollback, the prefab guard, multi-entity persistence, secure mode | `scripts/ci_live_test.sh` (`LIVE_SECURE=1` for secure mode), `ci:live` label |
+| C++ unit suite | The AgentServer protocol, validators, snapshot, request parsing, error codes and the anim graph command text | `scripts/ci_build_test.sh` on a self-hosted runner (`ci:build` label) |
+| Live editor suite | The package inside a real editor: native request types, the validated mutations and their refusals, templates, rollback, the prefab guard, multi-entity persistence, anim graph reads and authoring, secure mode | `scripts/ci_live_test.sh` (`LIVE_SECURE=1` for secure mode), `ci:live` label |
 | Launcher gameplay check | The Lua scripts running in a GameLauncher: registry, pickup, chase and attack, contact damage, no Lua errors | `scripts/ci_launcher_test.sh`, same label |
 
 See [docs/ci-self-hosted-runner.md](docs/ci-self-hosted-runner.md) for the

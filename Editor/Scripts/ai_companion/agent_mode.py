@@ -9,10 +9,11 @@ Two layers of effects, each independently usable.
    at ``$XDG_STATE_HOME/o3de-ai-companion/agent_mode.json`` (default
    ``~/.local/state/o3de-ai-companion/agent_mode.json``). The C++ editor
    system component watches that file on tick and, when ``enabled`` is
-   true, installs a QApplication event filter that auto-dismisses common
-   modal dialogs (welcome screen, level-unsaved prompt during agent-driven
-   level switches, missing-component-UUID error logs). The Python toggle
-   is the agent-facing surface.
+   true, installs a QApplication event filter that closes the welcome
+   dialog, logs and passes through the unsaved-files, error-log and
+   startup-error dialogs, and rejects any other QMessageBox so no modal
+   blocks an unattended editor (Code/Source/AgentMode/AgentModeFilter.cpp).
+   The Python toggle is the agent-facing surface.
 
 2. Persistent editor preferences. ``configure_editor_prefs(enabled=True)``
    updates ``~/.config/O3DE/O3DE Editor.conf`` (a Qt INI file) to set
@@ -154,10 +155,10 @@ def set_agent_mode(enabled: bool = True, suppress_dialogs: bool = True) -> str:
         "suppress_dialogs": state["suppress_dialogs"],
         "state_path": str(_state_path()),
         "note": (
-            "Runtime enforcement is performed by the AiCompanion C++ editor "
-            "system component; until that ships, this toggle is recorded but "
-            "has no in-editor side effect. The persistent prefs route works "
-            "today; see Docs/agent-mode.md."
+            "The AiCompanion C++ editor system component polls this file once "
+            "a second and installs or removes its dialog filter to match; "
+            "get_agent_mode_status()['observed'] shows what it has applied. "
+            "See Docs/agent-mode.md."
         ),
     })
 

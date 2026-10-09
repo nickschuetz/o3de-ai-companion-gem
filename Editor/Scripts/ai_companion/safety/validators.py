@@ -6,7 +6,7 @@ any azlmbr calls to prevent injection and invalid state."""
 
 import math
 import re
-from typing import Tuple
+from typing import Any, Optional, Tuple
 
 # Entity names: start with letter, then alphanumeric/underscore/hyphen
 _ENTITY_NAME_PATTERN = re.compile(r'^[A-Za-z][A-Za-z0-9_-]*$')
@@ -118,3 +118,49 @@ def is_protected_entity(name: str) -> bool:
     if name.startswith("AZ::"):
         return True
     return False
+
+
+def _to_entity_id(value: Any, entity_api) -> Optional[Any]:
+    """An ``azlmbr.entity.EntityId`` for an int, a bracketed ``"[id]"`` string,
+    a decimal string, or an EntityId proxy; ``None`` when nothing parses."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return entity_api.EntityId(value)
+    if isinstance(value, str):
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if not digits:
+            return None
+        return entity_api.EntityId(int(digits))
+    return value
+
+
+def validate_target_entity(entity_id: Any) -> Tuple[bool, str]:
+    """Refuse a mutation aimed at a protected system entity. Returns (valid, error_message).
+
+    Resolves the entity's name through the editor (``EditorEntityInfoRequestBus``
+    ``GetName``) and refuses it when ``is_protected_entity`` matches: ``EditorGlobal``,
+    ``SystemEntity`` and any ``AZ::``-prefixed name. The message starts with
+    ``entity is protected``, the text the native request types answer too.
+    Outside the editor, where ``azlmbr`` is not importable, every id passes.
+    """
+    try:
+        import azlmbr.bus as bus
+        import azlmbr.editor as editor
+        import azlmbr.entity as entity_api
+    except ImportError:
+        return True, ""
+
+    eid = _to_entity_id(entity_id, entity_api)
+    if eid is None:
+        return False, f"Invalid entity id: {entity_id!r}"
+    try:
+        name = editor.EditorEntityInfoRequestBus(bus.Event, "GetName", eid)
+    except (AttributeError, TypeError, RuntimeError):
+        # The bus is not reflected on this build; the native request types
+        # keep the same rule in C++ (InputValidator::IsProtectedEntityName).
+        name = None
+    name = str(name) if name is not None else ""
+    if is_protected_entity(name):
+        return False, f"entity is protected: '{name}'"
+    return True, ""

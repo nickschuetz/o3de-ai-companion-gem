@@ -36,5 +36,10 @@ namespace AiCompanion
         //! Returns a sanitized version of the entity name, replacing invalid characters.
         //! Returns an empty string if the name cannot be salvaged.
         static AZStd::string SanitizeEntityName(const AZStd::string& name);
+
+        //! Whether an entity name belongs to a protected system entity that no agent
+        //! request may modify or delete: "EditorGlobal", "SystemEntity", or any name
+        //! starting with "AZ::". Mirrors is_protected_entity in the Python package.
+        static bool IsProtectedEntityName(const AZStd::string& name);
     };
 } // namespace AiCompanion

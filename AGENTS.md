@@ -22,7 +22,10 @@ Editor/Scripts/ai_companion/ Python API package
   templates/                Pre-configured entity factories (player, enemy, camera, etc.)
   feedback/                 Scene introspection (snapshot, inspector, validation report)
   safety/                   Input validation, sandboxing, undo/rollback
-  utils/                    Component registry, JSON helpers, transform helpers
+  utils/                    Component registry (component_registry.py), JSON helpers,
+                            transform helpers, id helpers (id_helpers.py), asset path
+                            resolution (asset_paths.py)
+  agent_mode.py             Agent Mode: the JSON sidecar and the editor preferences
   version.py                Version constants (__version__, API_VERSION)
 Tests/                      Python unit tests (unittest)
 Tests/live/                 Live editor suite and launcher check (opt-in; stdlib AgentServer client)
@@ -37,19 +40,25 @@ docs/                       Maintainer documentation (self-hosted runner)
 This project is in **alpha** (0.x.y). The current version is defined in six places
 that must stay in sync:
 
-- `gem.json` — `"version"` field (gem version)
-- `Editor/Scripts/ai_companion/version.py` — `__version__` (gem version) and `API_VERSION`
-- `Code/Source/Network/AgentServer.cpp` — `gem_version` and `api_version` string literals
-- `Code/Source/Tests/AgentServerTests.cpp` — expected version strings in tests
-- `sbom.cdx.json` — the component `version` and its `purl`
+- `gem.json`: `"version"` field (gem version)
+- `Editor/Scripts/ai_companion/version.py`: `__version__` (gem version) and `API_VERSION`
+- `Code/Source/Network/AgentServer.cpp`: `gem_version` and `api_version` string literals
+- `Code/Source/Tests/AgentServerTests.cpp`: expected version strings in tests
+- `sbom.cdx.json`: the component `version` and its `purl`
 - `repo.json`: the remote gem repository manifest. Bump the gem entry's `version`,
   its `download_source_uri` (the `vX.Y.Z.zip` tag archive), `source_control_ref`,
   the matching `versions_data` entry, and both `last_updated` dates. The gem entry
   mirrors `gem.json`, so any field changed there is changed here too.
 
-When bumping the version, update all six files, move the `[Unreleased]` entries in
-CHANGELOG.md under the new version with the date, and add the release link at the
-bottom. `repo.json` is only correct once the `vX.Y.Z` tag exists on GitHub, since
+Three doc examples carry the gem version as well and are bumped with it: the
+`o3de download --gem-name AiCompanion==X.Y.Z` line in `Docs/README.md`, the
+`get_api_version` reply in `Docs/agent-best-practices.md`, and the
+`get_capabilities` reply in `Docs/integration-with-o3de-mcp.md` (which also
+shows `API_VERSION`).
+
+When bumping the version, update all six files and the three doc examples, move
+the `[Unreleased]` entries in CHANGELOG.md under the new version with the date,
+and add the release link at the bottom. `repo.json` is only correct once the `vX.Y.Z` tag exists on GitHub, since
 its download URL points at that tag's archive. The live suite's
 `test_api_version_matches_the_checkout` fails if the C++ literal and `gem.json`
 disagree.
@@ -123,7 +132,12 @@ for any user-facing changes.
 - **JSON everywhere**: All Python API responses are JSON strings so AI agents can
   reliably parse them. Use `utils/json_output.success()` and `.error()`.
 - **Safety first**: Never bypass validators or skip undo batches for mutating ops.
-  Protected entities (EditorGlobal, SystemEntity, AZ::*) must never be modified.
+  The protected system entities (`EditorGlobal`, `SystemEntity`, any `AZ::` name)
+  are refused by every path that modifies an existing entity: the native
+  `set_transform` and `delete_entity` (C++ `InputValidator::IsProtectedEntityName`)
+  and the Python package's `validate_target_entity`, which `EntityBuilder.with_parent`
+  runs before a new entity is parented under one. Keep that true for any new
+  mutation that takes an entity id.
 - **No third-party Python deps**: The Python package uses only the standard library
   and O3DE's `azlmbr` bindings. Keep it that way.
 - **Prefab Version fields**: The `"Version": "1.0.0"` inside `.prefab` files is an
@@ -153,18 +167,18 @@ query that answers the question:
 
 | Need | Function | Cost |
 |------|----------|------|
-| Full state | `get_scene_snapshot()` | Heavy — all entities, all components |
-| Hierarchy only | `get_entity_tree()` | Medium — names and parent/child relationships |
-| Single entity | `inspect_entity(id)` | Light — one entity |
-| Issue check | `validate_scene()` | Light — problems only |
-| Single entity, no Python | `get_entity` AgentServer request type | Light — C++ only, works in secure mode |
+| Full state | `get_scene_snapshot()` | Heavy: all entities, all components |
+| Hierarchy only | `get_entity_tree()` | Medium: names and parent/child relationships |
+| Single entity | `inspect_entity(id)` | Light: one entity |
+| Issue check | `validate_scene()` | Light: problems only |
+| Single entity, no Python | `get_entity` AgentServer request type | Light: C++ only, works in secure mode |
 
 ### Cache discovery responses
 
 Call these once per session, not per operation:
-- `get_api_version` — protocol version, gem version, secure mode, TLS status
-- `get_available_functions()` — all API functions with signatures
-- `get_component_catalog()` — all available component types
+- `get_api_version`: protocol version, gem version, secure mode, TLS status
+- `get_available_functions()`: all API functions with signatures
+- `get_component_catalog()`: all available component types
 
 ### Batch operations and undo
 
@@ -185,16 +199,30 @@ Each script runs in a fresh `exec()` context, so always include imports.
 
 ### Prefer C++ EBus paths for read-only queries
 
-These functions route through fast C++ entity traversal, bypassing Python:
-- `get_scene_snapshot()` → `SceneSnapshotProvider::CaptureSnapshot()`
-- `get_entity_tree()` → `SceneSnapshotProvider::CaptureEntityTree()`
-- `validate_scene()` → `SceneSnapshotProvider::ValidateScene()`
+These functions route through fast C++ entity traversal, bypassing Python, and
+return the C++ JSON verbatim: plain decimal-string ids and no `status`/`data`
+envelope. Only the package's own results use the bracketed `"[id]"` form.
+- `get_scene_snapshot()` calls `SceneSnapshotProvider::CaptureSnapshot()`
+- `get_entity_tree()` calls `SceneSnapshotProvider::CaptureEntityTree()`
+- `validate_scene()` calls `SceneSnapshotProvider::ValidateScene()`
 
-They are also available as direct AgentServer request types (`get_scene_snapshot`,
-`get_entity_tree`, `validate_scene`), skipping `execute_python` entirely, alongside
-`get_entity` (one entity by id), `get_bus_schema` (live EBus reflection) and the
-validated mutation set `create_entity`, `set_transform`, `delete_entity`, which work
-in secure mode and each run in their own undo batch.
+The AgentServer serves 28 request types. Every one but `execute_python` is served
+in C++ with no Python and stays available in secure mode:
+- `ping` and `get_api_version`, answered on the network thread
+- the reads `get_scene_snapshot`, `get_entity_tree`, `validate_scene`, `get_entity`
+  (one entity by id) and `get_bus_schema` (live EBus reflection)
+- the validated mutation set `create_entity`, `set_transform`, `delete_entity`,
+  each in its own undo batch, refusing missing entities, the level root and the
+  protected system entities
+- the anim graph reads `list_anim_graphs` and `get_anim_graph`
+- the anim graph writes `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
+  `save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,
+  `set_anim_graph_entry_state`, `add_anim_graph_parameter`,
+  `remove_anim_graph_parameter`, `add_anim_graph_transition`,
+  `remove_anim_graph_transition`, `set_anim_graph_transition`,
+  `connect_anim_graph_ports`, `disconnect_anim_graph_ports` and
+  `set_anim_graph_node`, one Animation Editor command (or command group) each
+- `execute_python`, refused in secure mode
 
 ### Use `ping` for health checks
 
@@ -210,11 +238,18 @@ plaintext is safe and faster.
 ### Response conventions
 
 All API responses are JSON. Check the `status` field:
-- `"ok"` — succeeded, result in `data`
-- `"error"` — failed; branch on `code` (`validation_failed`, `limit_exceeded`,
+- `"ok"`: succeeded, result in `data`
+- `"error"`: failed; branch on `code` (`validation_failed`, `limit_exceeded`,
   `not_in_editor`, `not_found`, `editor_running`, `io_error`, `engine_error`,
   `instantiate_failed`, `prefab_not_found`), read `message` for the reason, and
-  `rolled_back: true` means the batch was undone and anything it created deleted
+  `rolled_back: true` means the call left no changes behind: the batch was undone
+  when the editor kept it and anything the call created was deleted
+  (`details.rolled_back` says whether an Undo step ran)
+
+The three feedback reads (`get_scene_snapshot`, `get_entity_tree`,
+`validate_scene`) are the exception to the envelope: when the C++ bus answers they
+return its JSON verbatim, with decimal-string ids and no `status`/`data` wrapper.
+`build_entity` returns an `EntityBuilder` and `find_prefab_file` a dict.
 
 AgentServer replies (`{"id", "status", "output", "error", "duration_ms"}`)
 carry their own `code` on every `error` reply: `validation_failed`, `not_found`,

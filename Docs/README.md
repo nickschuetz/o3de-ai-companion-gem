@@ -1,4 +1,4 @@
-# AI Companion for O3DE — Documentation
+# AI Companion for O3DE: Documentation
 
 ## Overview
 
@@ -14,18 +14,28 @@ AI Agent (Claude, etc.)
     v
 o3de-mcp (MCP Server)
     |
-    v  run_editor_python()
-O3DE Editor
+    v  length-prefixed JSON over TCP
+AgentServer (AiCompanion C++ layer inside the O3DE Editor)
     |
-    v  import ai_companion
-AI Companion Python API
+    +-- native request types, no Python: scene reads, get_entity, get_bus_schema,
+    |   create_entity / set_transform / delete_entity (validated, own undo batch),
+    |   anim graph reads and authoring; all available in secure mode
+    |       |
+    |       v  AiCompanionRequestBus / AiCompanionEditorRequestBus
+    |   SceneSnapshotProvider, InputValidator, BusSchema, AnimGraph*
     |
-    +-- Builders (entity, scene, lighting, physics, terrain)
-    +-- Templates (player, enemy, camera, pickup, projectile)
-    +-- Feedback (scene snapshot, entity inspector, validation)
-    +-- Safety (validators, sandbox, rollback)
-    |
-    v  azlmbr / EBus
+    +-- execute_python (run_editor_python(), sessions)
+            |
+            v  import ai_companion
+        AI Companion Python API
+            |
+            +-- Builders (entity, scene, lighting, physics, terrain)
+            +-- Templates (player, enemy, camera, pickup, projectile, environment)
+            +-- Feedback (scene snapshot, entity inspector, validation)
+            +-- Safety (validators, sandbox, rollback)
+            +-- Agent Mode (agent_mode.py)
+            |
+            v  azlmbr / EBus
 O3DE Engine (entities, components, physics, rendering)
 ```
 
@@ -36,8 +46,8 @@ O3DE Engine (entities, components, physics, rendering)
 1. O3DE 2305.0 or later installed (the 2.7.0, 24.09, 26.05.0, and 26.10.0 engine versions are also supported; 26.10.0 is what the test suites run against)
 2. A project created with O3DE
 3. The following Gems enabled in your project:
-   - **EditorPythonBindings** — Provides the `azlmbr` Python API
-   - **EMotionFX**: declared as a dependency in `gem.json`; the editor module links it to serve the `list_anim_graphs` and `get_anim_graph` request types
+   - **EditorPythonBindings**: provides the `azlmbr` Python API
+   - **EMotionFX**: declared as a dependency in `gem.json`; the editor module links it to serve the anim graph request types (the reads and the authoring set)
 
 ### Steps
 
@@ -118,7 +128,8 @@ print(get_scene_snapshot())
 
 ### JSON Responses
 
-Every API function returns a JSON string for reliable parsing:
+Every API function returns a JSON string for reliable parsing (the exceptions
+are listed at the top of the [API reference](api-reference.md)):
 
 ```json
 {
@@ -126,10 +137,19 @@ Every API function returns a JSON string for reliable parsing:
     "data": {
         "entity_id": "[6524019704300593900]",
         "name": "Player",
-        "component_ids": {"Mesh": 1, "PhysX Primitive Collider": 2}
+        "position": [0.0, 0.0, 1.0],
+        "component_ids": {
+            "Mesh": "<EntityComponentIdPair>",
+            "PhysX Primitive Collider": "<EntityComponentIdPair>"
+        }
     }
 }
 ```
+
+`entity_id` is the bracketed decimal form `azlmbr` prints. `component_ids` maps
+each component type to the editor's component id in its JSON-safe form: the
+sanitized proxy name shown above on current engines, where the pair is a
+`PythonProxyObject` without a numeric form, or an integer on older builds.
 
 ### Undo/Rollback
 
@@ -157,7 +177,9 @@ All inputs are validated before reaching O3DE APIs:
 - Entity names must match `^[A-Za-z][A-Za-z0-9_-]*$`
 - Positions must be finite and within +-10,000
 - Script paths cannot contain `..` (path traversal)
-- System entities are protected from modification
+- The protected system entities (`EditorGlobal`, `SystemEntity`, any `AZ::` name)
+  are refused by the native `set_transform` and `delete_entity`, and by the
+  builder before it parents a new entity under one
 
 ## Verifying an installation
 
@@ -170,9 +192,11 @@ bash scripts/ci_live_test.sh
 
 It starts AssetProcessor, a virtual display and the editor, opens a level, and
 runs `Tests/live/`: the package imports and reports its version, the native
-request types answer, the templates create entities that `rollback_last_batch`
-removes, multi-entity calls keep every entity, and `spawn_prefab` refuses a
-missing prefab with the editor still alive. `scripts/ci_launcher_test.sh` goes
+request types answer, the validated mutations create, move and delete an entity
+and refuse bad input, the level root and the protected entities, the templates
+create entities that `rollback_last_batch` removes, multi-entity calls keep
+every entity, the anim graph types read and author a graph, and `spawn_prefab`
+refuses a missing prefab with the editor still alive. `scripts/ci_launcher_test.sh` goes
 one step further and runs the Lua gameplay scripts in your project's
 GameLauncher. Both are described in
 [docs/ci-self-hosted-runner.md](../docs/ci-self-hosted-runner.md).
