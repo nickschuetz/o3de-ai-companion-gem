@@ -1022,9 +1022,9 @@ namespace AiCompanion
         w.Key("protocol_version");
         w.Int(1);
         w.Key("gem_version");
-        w.String("0.3.0");
+        w.String("0.4.0");
         w.Key("api_version");
-        w.String("0.1.0");
+        w.String("0.2.0");
         w.Key("secure_mode");
         w.Bool(m_secureMode.load());
         w.Key("tls_enabled");

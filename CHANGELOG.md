@@ -7,10 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-08
+
 ### Removed
 - The Twin-Stick Shooter example (`Examples/TwinStickShooter/`), its walkthrough (`Docs/twin-stick-example.md`) and the runner's smoke test. The example built its scene but was never verified end to end as a playable game: the pickup and contact-damage scripts are no-ops because `PhysicsComponentNotificationBus` does not exist in current O3DE, and mouse aim was observed not to dispatch in editor Play mode. It is preserved at the git tag `archive/twin-stick-example`, including the step functions and the session-based batched runner (`steps.py`, `run_batched.py`) added since 0.3.0, which were never part of a release. The API it used (`bootstrap_twin_stick_arena`, `create_player(movement="twin_stick")`, the prefabs and Lua scripts) is unchanged; `Docs/lua-scripts.md` now states the scripts' known limitations. References to the example and the "full game in ~10 calls" claim are removed from the README and docs.
 
 ### Added
+- `API_VERSION` is `0.2.0`: new functions (`find_prefab_file`, the native request types), the undo functions now returning JSON, and the prefab guard's error codes. Gem version `0.4.0` is reported by `get_api_version` on both the C++ and Python sides.
 - Two native AgentServer request types served in C++ with no Python: `get_entity` (parameter `entity_id`, decimal as number or string) returns one entity's transform, parent and component list through the new `SceneSnapshotProvider::CaptureEntity` and `AiCompanionRequestBus::GetEntity`; `get_bus_schema` (optional `bus_name`) returns the reflected EBus description from the live `BehaviorContext` through the existing `AiCompanionEditorRequestBus::GetBusSchema`. Both are allowed in secure mode. A missing entity or bus returns a JSON `error` rather than an empty result.
 - A live editor suite, `Tests/live/`, run against a real O3DE Editor through a standard-library AgentServer client (no extra Python packages). It checks what the stubbed unit suites cannot: the package imports inside the editor and reports the checkout's versions, every advertised API function exists, the native request types answer and agree with each other, the templates create real entities that `rollback_last_batch` removes, and `spawn_prefab` refuses a missing prefab with the editor still alive. Opt-in with `O3DE_LIVE_EDITOR_TEST=1`; `scripts/ci_live_test.sh` brings up AssetProcessor, Xvfb and the Editor on its own port, opens a level, runs the suite and tears everything down. The self-hosted `build-test` workflow runs it on pull requests labelled `ci:live`.
 - `find_prefab_file(prefab_name)` in `ai_companion.api`: locates `Prefabs/<name>.prefab` on disk under the gem's `Assets` folder, then the project and engine roots, without touching the prefab system. `Tests/test_spawn_prefab.py` runs `spawn_prefab` against stub `azlmbr` modules and asserts the prefab bus is never reached for an unknown name.
@@ -29,12 +32,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Docs: o3de-mcp install instructions in `Docs/integration-with-o3de-mcp.md` offer PyPI (`pip install o3de-mcp`, 0.4.0 or later) alongside the editable checkout and `PYTHONPATH` routes.
 - Docs: the architecture diagram shows o3de-mcp's native request path into the AgentServer alongside `run_editor_python`; the API reference documents `spawn_prefab`'s guard, its error codes and `find_prefab_file`; agent best practices cover o3de-mcp sessions and the native snapshot tools; the prefab catalog and safety model note the guard and which tools work in secure mode.
 - `Docs/integration-with-o3de-mcp.md`: documents the current o3de-mcp tool surface (66 tools, five groups), the client env vars `O3DE_EDITOR_CONNECT_TIMEOUT`, `O3DE_EDITOR_TIMEOUT`, `O3DE_PROJECT_PATH` and `O3DE_CAPTURE_WAIT`, the `mcp` 2.x requirement, and what `get_capabilities()` now reports (`ai_companion_gem`, `agent_server` versions via the native `get_api_version` request).
-- `gem.json` `compatible_engines`: add `o3de >= 26.10.0`. The C++ suite (50 tests) and Python suite (107 tests) pass against a 26.10.0 build; README and Docs/README list 26.10.0.
+- `gem.json` `compatible_engines`: add `o3de >= 26.10.0`. The C++ suite (52 tests), the Python suite (111 tests) and the live editor suite pass against a 26.10.0 build; README and Docs/README list 26.10.0.
 - `COMPONENT_CATALOG`: PhysX component names updated to match the 26050 editor display names (`PhysX Primitive Collider`, `PhysX Dynamic Rigid Body`, `PhysX Mesh Collider`); pre-rename names kept as aliases. Added `Input` component entry.
 - `transform_helpers`: Quaternion factory uses module-level `Quaternion_CreateFromEulerAnglesDegrees` when available (2310+), falls back to the class-static form. Scale handling uses `SetLocalUniformScale`; non-uniform scale falls back to the largest axis as uniform when the Non-uniform Scale component is unavailable.
 - `feedback.scene_snapshot`: new `_enumerate_all_entities` helper tries `ToolsApplicationRequestBus.GetAllEntities` first, falls back to `entity.SearchBus.SearchEntities("*")` on builds where `GetAllEntities` was removed. `feedback.validation_report` uses the same helper.
 - `feedback.entity_inspector`, `feedback.validation_report`: switch raw `int()` casts to `id_to_jsonable` for stable proxy-aware output.
-- `safety.rollback`: undo-batch begin/end/undo prefer `ToolsApplicationRequestBus` (2310+) and fall back to `azlmbr.legacy.general`.
+- `safety.rollback`: undo-batch begin/end prefer `ToolsApplicationRequestBus` (2310+) and fall back to `azlmbr.legacy.general`; undo itself goes through `azlmbr.legacy.general.undo()` (see Fixed).
 - `gem.json` `compatible_engines`: declare `24.09` and `26.05.0` alongside the legacy `2305.0` entry.
 - `gem.json` `compatible_engines`: add `o3de >= 2.7.0` for newer engine builds that report the `2.7.0` version, alongside the existing `2305.0`, `24.09`, and `26.05.0` entries.
 - Docs and tests updated for the renamed PhysX components; README adds Agent Mode link to Further Reading.
@@ -227,6 +230,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-platform support (Linux, Windows, macOS)
 - Apache-2.0 OR MIT dual license
 
+[0.4.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.4.0
 [0.3.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nickschuetz/o3de-ai-companion-gem/releases/tag/v0.1.0

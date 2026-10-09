@@ -208,9 +208,9 @@ namespace UnitTest
         w.Key("protocol_version");
         w.Int(1);
         w.Key("gem_version");
-        w.String("0.2.0");
+        w.String("0.4.0");
         w.Key("api_version");
-        w.String("0.1.0");
+        w.String("0.2.0");
         w.Key("secure_mode");
         w.Bool(false);
         w.Key("tls_enabled");
@@ -222,8 +222,8 @@ namespace UnitTest
 
         EXPECT_FALSE(doc.HasParseError());
         EXPECT_EQ(doc["protocol_version"].GetInt(), 1);
-        EXPECT_STREQ(doc["gem_version"].GetString(), "0.2.0");
-        EXPECT_STREQ(doc["api_version"].GetString(), "0.1.0");
+        EXPECT_STREQ(doc["gem_version"].GetString(), "0.4.0");
+        EXPECT_STREQ(doc["api_version"].GetString(), "0.2.0");
         EXPECT_FALSE(doc["secure_mode"].GetBool());
         EXPECT_TRUE(doc["tls_enabled"].GetBool());
     }
