@@ -4,7 +4,7 @@ name: build-test
 # (including the BusSchema introspection tests), and, with a second label,
 # runs the live editor suite (Tests/live) against a real Editor on Xvfb.
 #
-# This needs the full O3DE 26.05 SDK, a host project, and 3rdParty packages,
+# This needs a full O3DE SDK (26.05 or 26.10), a host project, and 3rdParty packages,
 # which GitHub-hosted runners do not have. It therefore runs ONLY on a
 # self-hosted runner labelled `o3de` (see docs/ci-self-hosted-runner.md). It is
 # opt-in: triggered manually, or on PRs a maintainer has labelled `ci:build`

@@ -168,6 +168,26 @@ plain dict (not JSON) with `relative_path` (`Prefabs/<name>.prefab`), `found`
 for validating a name before a batch, or for locating a gem prefab from code
 that will call the prefab bus itself.
 
+## Agent Mode
+
+See [Agent Mode](agent-mode.md) for the full contract (settings-registry keys,
+the JSON sidecar, and the observed-state file).
+
+### `set_agent_mode(enabled=True, suppress_dialogs=True) -> str`
+Enable or disable runtime dialog suppression for unattended sessions. Writes
+the sidecar the editor system component polls; takes effect without a restart.
+
+### `get_agent_mode() -> str`
+Current runtime agent-mode state.
+
+### `configure_editor_prefs_for_agent(enabled=True) -> str`
+Persistent editor preferences for an agent-driven workflow: welcome dialog off
+and auto-load of the last level on. Applies on the next editor start; the
+editor must not be running when this is called. `enabled=False` restores them.
+
+### `get_agent_mode_status() -> str`
+Snapshot of both the runtime and the persistent state.
+
 ## Undo/Rollback
 
 ### `begin_undo_batch(label="AI Operation") -> str`

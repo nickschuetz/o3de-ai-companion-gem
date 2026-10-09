@@ -4,7 +4,7 @@ The `lint` workflow (SPDX headers, hygiene, Python unit tests) runs on standard
 GitHub-hosted runners and is the always-on gate.
 
 The `build-test` workflow compiles the gem's C++ and runs its C++ unit tests
-(including the `BusSchema` introspection tests). That needs the full O3DE 26.05
+(including the `BusSchema` introspection tests). That needs a full O3DE SDK (26.05 or 26.10)5
 SDK, a host project, and the 3rdParty packages, none of which exist on
 GitHub-hosted runners. It therefore runs only on a **self-hosted** runner and is
 **opt-in**.
@@ -23,7 +23,7 @@ and without the runner, the job simply does not run.
 Register a self-hosted runner with the labels `self-hosted` and `o3de`, on a
 machine that has:
 
-- The O3DE 26.05 SDK (with `scripts/o3de.sh` and `bin/Linux/profile/Default/AzTestRunner`).
+- An O3DE SDK (26.05 and 26.10 are what the gem is built and tested against) with `scripts/o3de.sh` and `bin/Linux/profile/Default/AzTestRunner`.
 - A host O3DE project to build the gem through.
 - A C++ toolchain and CMake/Ninja matching the engine's requirements.
 
