@@ -44,7 +44,7 @@ GEM_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # AssetProcessor, and TestAnimGraphs copies it itself when it is missing.
 ANIM_GRAPH_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "AiCompanionSample.animgraph"
 ANIM_GRAPH_PROJECT_SUBDIR = Path("Assets") / "AiCompanionLiveTest"
-ANIM_GRAPH_PRODUCT_PATH = "aicompanionlivetest/aicompanionsample.animgraph"
+ANIM_GRAPH_PRODUCT_PATH = "assets/aicompanionlivetest/aicompanionsample.animgraph"
 ANIM_GRAPH_ASSET_TIMEOUT_S = 120.0
 
 
