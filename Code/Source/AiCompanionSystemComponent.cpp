@@ -34,6 +34,8 @@ namespace AiCompanion
         {
             behaviorContext->EBus<AiCompanionRequestBus>("AiCompanionRequestBus")
                 ->Attribute(AZ::Script::Attributes::Category, "AiCompanion")
+                ->Attribute(AZ::Script::Attributes::Module, "ai_companion")
+                ->Attribute(AZ::Script::Attributes::Scope, AZ::Script::Attributes::ScopeFlags::Common)
                 ->Event("GetSceneSnapshot", &AiCompanionRequestBus::Events::GetSceneSnapshot)
                 ->Event("GetEntityTree", &AiCompanionRequestBus::Events::GetEntityTree)
                 ->Event("GetEntity", &AiCompanionRequestBus::Events::GetEntity)

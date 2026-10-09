@@ -31,6 +31,11 @@ namespace AiCompanion
 {
     void AiCompanionEditorSystemComponent::Reflect(AZ::ReflectContext* context)
     {
+        // The editor module registers only this component, so the base class's
+        // reflection (including AiCompanionRequestBus for Python) has to be
+        // invoked from here or azlmbr.ai_companion never exists in the editor.
+        AiCompanionSystemComponent::Reflect(context);
+
         if (auto* serializeContext = azrtti_cast<AZ::SerializeContext*>(context))
         {
             serializeContext->Class<AiCompanionEditorSystemComponent, AZ::Component>()->Version(1);
