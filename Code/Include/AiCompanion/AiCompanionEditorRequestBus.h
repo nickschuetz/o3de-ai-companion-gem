@@ -91,7 +91,9 @@ namespace AiCompanion
         //! JSON: {"editor_mode", "anim_graphs": [{"id", "file_name",
         //! "owned_by_runtime", "owned_by_asset", "dirty", "num_nodes",
         //! "num_parameters", "instances": [{"entity_id", "actor_instance_id",
-        //! "motion_set"}]}]}. Read-only; must be called on the main thread.
+        //! "motion_set"}]}]}. The 64-bit entity id is a decimal string or
+        //! null; the anim graph id is a number. Read-only; must be called on
+        //! the main thread.
         //! Fails with "EMotion FX is not available" when that gem is absent.
         virtual AZ::Outcome<AZStd::string, AZStd::string> ListAnimGraphs() = 0;
 

@@ -182,8 +182,8 @@ in C++ with no Python involved.
 number or string, or `file_name`) read EMotion FX anim graphs through the
 AnimGraphInspector. The listing gives each graph's `id`, `file_name`,
 `owned_by_runtime`, `owned_by_asset`, `dirty`, `num_nodes`, `num_parameters`
-and `instances` (each with `entity_id`, `actor_instance_id`, `motion_set`),
-plus the engine's `editor_mode` flag. The description gives
+and `instances` (each with `entity_id` as a decimal string or null,
+`actor_instance_id`, `motion_set`), plus the engine's `editor_mode` flag. The description gives
 `root_state_machine_id`, `nodes` (id, name, type, palette name, category,
 parent id, state and pose flags, enabled, position, input ports with their
 incoming `connection`, output ports), `transitions` (id, state machine,

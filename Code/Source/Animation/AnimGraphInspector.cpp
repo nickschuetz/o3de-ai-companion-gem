@@ -121,9 +121,11 @@ namespace AiCompanion::AnimGraphInspector
                 w.Key("entity_id");
                 const EMotionFX::ActorInstance* actorInstance = instance->GetActorInstance();
                 const AZ::EntityId entityId = actorInstance ? actorInstance->GetEntityId() : AZ::EntityId();
+                // Entity ids are 64-bit and travel as decimal strings, like
+                // node and transition ids; the u32 anim graph id stays a number.
                 if (entityId.IsValid())
                 {
-                    w.Uint64(static_cast<AZ::u64>(entityId));
+                    w.String(AZStd::string::format("%llu", static_cast<unsigned long long>(static_cast<AZ::u64>(entityId))).c_str());
                 }
                 else
                 {
@@ -468,11 +470,22 @@ namespace AiCompanion::AnimGraphInspector
                     }
                 }
             }
+            // The engine stores graph file names with forward slashes on every
+            // platform (AnimGraphAssetHandler normalizes to POSIX form), so a
+            // selector typed with backslashes is normalized the same way.
+            AZStd::string fileName = selector;
+            for (char& c : fileName)
+            {
+                if (c == '\\')
+                {
+                    c = '/';
+                }
+            }
             const size_t count = manager.GetNumAnimGraphs();
             for (size_t i = 0; i < count; ++i)
             {
                 EMotionFX::AnimGraph* graph = manager.GetAnimGraph(i);
-                if (graph && graph->GetFileNameString() == selector)
+                if (graph && graph->GetFileNameString() == fileName)
                 {
                     return graph;
                 }
@@ -480,7 +493,7 @@ namespace AiCompanion::AnimGraphInspector
             for (size_t i = 0; i < count; ++i)
             {
                 EMotionFX::AnimGraph* graph = manager.GetAnimGraph(i);
-                if (graph && EndsWithNoCase(graph->GetFileNameString(), selector))
+                if (graph && EndsWithNoCase(graph->GetFileNameString(), fileName))
                 {
                     return graph;
                 }

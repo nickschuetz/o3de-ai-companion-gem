@@ -30,6 +30,7 @@ import shutil
 import sys
 import time
 import unittest
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "Editor", "Scripts"))
@@ -41,10 +42,22 @@ GEM_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # The anim graph fixture (see Tests/live/fixtures/README.md) and where it goes
 # in the host project; scripts/ci_live_test.sh copies it there before starting
 # AssetProcessor, and TestAnimGraphs copies it itself when it is missing.
-ANIM_GRAPH_FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "AiCompanionSample.animgraph")
-ANIM_GRAPH_PROJECT_SUBDIR = os.path.join("Assets", "AiCompanionLiveTest")
+ANIM_GRAPH_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "AiCompanionSample.animgraph"
+ANIM_GRAPH_PROJECT_SUBDIR = Path("Assets") / "AiCompanionLiveTest"
 ANIM_GRAPH_PRODUCT_PATH = "aicompanionlivetest/aicompanionsample.animgraph"
 ANIM_GRAPH_ASSET_TIMEOUT_S = 120.0
+
+
+def _is_fixture_graph(file_name: str) -> bool:
+    """Whether an anim graph's reported file name is the fixture.
+
+    The engine reports the absolute path of the loaded product, with the
+    platform's separators (backslashes on Windows) and the catalog's casing,
+    so normalize separators and case and compare the product-path tail.
+    """
+    normalized = PurePosixPath(file_name.replace("\\", "/").lower())
+    tail = PurePosixPath(ANIM_GRAPH_PRODUCT_PATH)
+    return normalized.parts[-len(tail.parts):] == tail.parts
 
 if os.environ.get("O3DE_LIVE_EDITOR_TEST", "").strip() != "1":
     raise unittest.SkipTest("live editor tests are opt-in; set O3DE_LIVE_EDITOR_TEST=1")
@@ -399,7 +412,7 @@ class TestAnimGraphs(LiveEditorTest):
 
     entity_id: int = 0
     graph_id: int | None = None
-    copied_fixture: str | None = None
+    copied_fixture: Path | None = None
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -420,21 +433,22 @@ class TestAnimGraphs(LiveEditorTest):
         if cls.entity_id:
             cls.client.request("delete_entity", entity_id=cls.entity_id)
             cls.entity_id = 0
-        if cls.copied_fixture and os.path.exists(cls.copied_fixture):
-            os.remove(cls.copied_fixture)
+        if cls.copied_fixture and cls.copied_fixture.exists():
+            cls.copied_fixture.unlink()
             try:
-                os.rmdir(os.path.dirname(cls.copied_fixture))
+                cls.copied_fixture.parent.rmdir()
             except OSError:
                 pass  # the directory holds something else; leave it
             cls.copied_fixture = None
 
     @classmethod
     def _place_fixture(cls, project: str) -> None:
-        target_dir = os.path.join(project, ANIM_GRAPH_PROJECT_SUBDIR)
-        target = os.path.join(target_dir, os.path.basename(ANIM_GRAPH_FIXTURE))
-        if os.path.exists(target):
+        # The copy lives here, not only in scripts/ci_live_test.sh, so the
+        # class works wherever the suite runs (the script is Linux-only).
+        target = Path(project) / ANIM_GRAPH_PROJECT_SUBDIR / ANIM_GRAPH_FIXTURE.name
+        if target.exists():
             return  # scripts/ci_live_test.sh put it there and will remove it
-        os.makedirs(target_dir, exist_ok=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ANIM_GRAPH_FIXTURE, target)
         cls.copied_fixture = target
 
@@ -495,7 +509,7 @@ class TestAnimGraphs(LiveEditorTest):
             if response.get("status") == "ok":
                 last = json.loads(response["output"])
                 for graph in last.get("anim_graphs", []):
-                    if graph["file_name"].lower().endswith(ANIM_GRAPH_PRODUCT_PATH.rsplit("/", 1)[-1]):
+                    if _is_fixture_graph(graph["file_name"]):
                         return int(graph["id"])
             else:
                 last = response
@@ -507,11 +521,14 @@ class TestAnimGraphs(LiveEditorTest):
         listing = json.loads(self.native("list_anim_graphs")["output"])
         self.assertIn("editor_mode", listing)
         graph = next(g for g in listing["anim_graphs"] if g["id"] == self.graph_id)
-        self.assertTrue(graph["file_name"].lower().endswith("aicompanionsample.animgraph"), graph)
+        self.assertTrue(_is_fixture_graph(graph["file_name"]), graph)
         self.assertTrue(graph["owned_by_asset"], graph)
         self.assertEqual(graph["num_nodes"], 3)
         self.assertEqual(graph["num_parameters"], 1)
         self.assertIsInstance(graph["instances"], list)
+        for instance in graph["instances"]:
+            # 64-bit entity ids travel as decimal strings (or null).
+            self.assertTrue(instance["entity_id"] is None or re.fullmatch(r"\d+", instance["entity_id"]), instance)
 
     def test_get_anim_graph_by_id(self):
         response = self.native("get_anim_graph", anim_graph_id=self.graph_id)
