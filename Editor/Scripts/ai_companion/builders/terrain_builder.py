@@ -14,10 +14,18 @@ def create_ground(
     size: Number = 50.0,
     name: str = "Ground",
 ) -> str:
-    """Create a flat ground plane with physics collision.
+    """Create a flat ground slab with physics collision, its top face at z = 0.
+
+    The slab is a uniformly scaled cube sunk half-way into the floor. A thin
+    (size, size, 0.1) plane would need the Non-uniform Scale component; where
+    that is unavailable the scale falls back to uniform, which made the ground
+    a size-wide cube centred at the origin with its top face size/2 up.
+    Entities placed just above z = 0 would then start inside it. A thick slab
+    whose top is at z = 0 needs no non-uniform scale and gives the same
+    walkable surface either way.
 
     Args:
-        size: Width and depth of the ground plane.
+        size: Width and depth of the ground; also its thickness.
         name: Entity name for the ground.
 
     Returns:
@@ -26,8 +34,8 @@ def create_ground(
     half = float(size) / 2.0
     return (
         EntityBuilder(name)
-        .at_position(0, 0, 0)
-        .with_scale(float(size), float(size), 0.1)
+        .at_position(0, 0, -half)
+        .with_scale(float(size))
         .with_mesh("primitive_cube")
         .with_physics(body_type="static")
         .with_collider(shape="box")
