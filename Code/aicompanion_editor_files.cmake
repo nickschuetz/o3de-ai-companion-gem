@@ -21,6 +21,8 @@ set(FILES
     Source/Animation/AnimGraphAuthoring.cpp
     Source/Animation/AnimGraphCommandText.h
     Source/Animation/AnimGraphCommandText.cpp
+    Source/Assets/AssetReadiness.h
+    Source/Assets/AssetReadiness.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
     Source/Network/RequestParsing.h

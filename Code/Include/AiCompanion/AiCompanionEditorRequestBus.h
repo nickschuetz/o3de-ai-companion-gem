@@ -23,7 +23,8 @@ namespace AiCompanion
     //! AddAnimGraphNode, RemoveAnimGraphNode, SetAnimGraphEntryState,
     //! AddAnimGraphParameter, RemoveAnimGraphParameter, AddAnimGraphTransition,
     //! RemoveAnimGraphTransition, SetAnimGraphTransition, ConnectAnimGraphPorts,
-    //! DisconnectAnimGraphPorts, SetAnimGraphNode) return their failure as
+    //! DisconnectAnimGraphPorts, SetAnimGraphNode, GetAssetStatus,
+    //! GetAssetJobs, GetAssetProcessorStatus) return their failure as
     //! the JSON text {"code": "<code>", "message": "<text>"} written by
     //! RequestError::EncodeError, with the code from the RequestError
     //! vocabulary (validation_failed, not_found, unavailable, engine_error).
@@ -235,6 +236,42 @@ namespace AiCompanion
         //! node's "motionIds"). Success JSON: the node object as
         //! GetAnimGraph emits it.
         virtual AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphNode(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
+
+        //! The asset readiness events are read-only queries to the Asset
+        //! Processor over the editor's own connection: synchronous round trips
+        //! with the engine's timeout, main thread only. They never call
+        //! CompileAssetSync, which would block the editor for a whole build.
+        //! GetAssetStatus and GetAssetJobs fail unavailable, "not connected to
+        //! the Asset Processor", without a connection, and validation_failed
+        //! for an empty, over-long or control-character path (see
+        //! Assets/AssetReadiness.h for the words and reply shapes).
+
+        //! The build status of one asset. `path` is a source relative path, a
+        //! product relative path, or a full path to either, the forms the
+        //! engine's GetAssetStatus takes. Asking also escalates the asset's
+        //! build priority. `flushIo` makes the Asset Processor flush its file
+        //! change queue first, for a file written a moment ago. Success JSON:
+        //! {"path", "status": unknown|missing|queued|compiling|compiled|failed,
+        //! "connected": true}.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> GetAssetStatus(AZStd::string path, bool flushIo) = 0;
+
+        //! The Asset Processor's jobs for one source file. `escalate` moves
+        //! its queued jobs to the front of the queue; `includeLogs` attaches
+        //! each failed job's log, cut at 64 KB with "truncated": true, or
+        //! null when the Asset Processor has none. Success JSON:
+        //! {"source_path", "jobs": [{"job_key", "platform", "builder",
+        //! "source_file", "watch_folder", "status": queued|in_progress|failed|
+        //! completed|missing, "status_detail"?, "error_count", "warning_count",
+        //! "job_run_key": "<decimal>", "log"?, "truncated"?}]}; a file with no
+        //! jobs answers an empty array. Fails engine_error when the Asset
+        //! Processor does not answer the query.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> GetAssetJobs(AZStd::string sourcePath, bool escalate, bool includeLogs) = 0;
+
+        //! Whether the editor is connected to the Asset Processor and the
+        //! last measured ping. Success JSON: {"connected": bool, "ping_ms":
+        //! number}; without a connection it answers connected false and
+        //! ping_ms 0 rather than failing.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> GetAssetProcessorStatus() = 0;
     };
 
     using AiCompanionEditorRequestBus = AZ::EBus<AiCompanionEditorRequests>;

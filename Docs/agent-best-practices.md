@@ -144,7 +144,7 @@ These functions use fast C++ entity traversal (no Python overhead):
 - `validate_scene()` → `SceneSnapshotProvider::ValidateScene()`
 - `inspect_entity(id)` has a C++ counterpart in the `get_entity` request type → `SceneSnapshotProvider::CaptureEntity()`
 
-They are also available as direct AgentServer request types (`get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene`, plus `get_bus_schema` for live EBus discovery), bypassing Python entirely.
+They are also available as direct AgentServer request types (`get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene`, plus `get_bus_schema` for live EBus discovery and `get_asset_status`, `get_asset_jobs`, `get_asset_processor_status` for Asset Processor readiness), bypassing Python entirely.
 
 ### TLS performance implications
 
@@ -205,6 +205,38 @@ request types directly. They are the cheapest way to look at the scene, and the
 only way when the AgentServer runs in secure mode, where the native
 `create_entity`, `set_transform` and `delete_entity` request types are also the
 only way to change it.
+
+### Wait for an asset you just wrote
+
+Writing a source file (an anim graph, a prefab, a texture) starts an Asset
+Processor job, and the product is not usable until that job completes. Poll
+the native `get_asset_status` request type instead of sleeping, and never ask
+the engine to compile synchronously: the gem does not expose
+`CompileAssetSync`, which would hold the editor's main thread for the whole
+build.
+
+1. Right after the write, call `get_asset_status` once with `flush_io: true`.
+   The Asset Processor flushes its file change queue before answering, so the
+   file is seen even if the OS has not finished writing it. `path` is the
+   source path relative to its scan folder (`Assets/MyGraphs/Walk.animgraph`),
+   the product path (`assets/mygraphs/walk.animgraph`) or a full path.
+2. Poll `get_asset_status` without `flush_io` about once a second until
+   `status` is `compiled` or `failed`. `missing` and `unknown` right after a
+   write mean the Asset Processor has not registered the file yet; `queued`
+   and `compiling` mean it has. Asking also moves the asset up the build queue.
+3. On `failed`, call `get_asset_jobs` with `source_path` and
+   `include_logs: true`: each failed job carries its `log` (cut at 64 KB) and
+   `error_count`.
+4. `get_asset_processor_status` says whether the editor is connected at all
+   (`connected`, `ping_ms`); the two queries answer `unavailable` without a
+   connection.
+
+```json
+{"id": "w-1", "type": "get_asset_status", "path": "Assets/MyGraphs/Walk.animgraph", "flush_io": true}
+→ {"id": "w-1", "status": "ok", "output": "{\"path\": \"Assets/MyGraphs/Walk.animgraph\", \"status\": \"queued\", \"connected\": true}", ...}
+```
+
+o3de-mcp's `wait_for_asset` tool (to follow) runs this loop for you.
 
 ### Error handling
 

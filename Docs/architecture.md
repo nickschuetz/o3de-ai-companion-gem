@@ -72,12 +72,12 @@ flowchart TB
     Agent -->|"MCP tool calls"| MCP
     Agent -->|"TCP JSON"| AgentSrv
     MCP -->|"run_editor_python() / sessions"| API
-    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph,<br/>create/remove/load/save_anim_graph,<br/>add/remove_anim_graph_node, set_anim_graph_entry_state,<br/>add/remove_anim_graph_parameter,<br/>add/remove/set_anim_graph_transition,<br/>connect/disconnect_anim_graph_ports, set_anim_graph_node"| AgentSrv
+    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph,<br/>create/remove/load/save_anim_graph,<br/>add/remove_anim_graph_node, set_anim_graph_entry_state,<br/>add/remove_anim_graph_parameter,<br/>add/remove/set_anim_graph_transition,<br/>connect/disconnect_anim_graph_ports, set_anim_graph_node,<br/>get_asset_status, get_asset_jobs, get_asset_processor_status"| AgentSrv
     AgentSrv --> AS
     AS --> RP
     AS -->|"every reply"| RSP
     AS -->|"request queue"| SysComp
-    AS -->|"mutations, bus schema, anim graphs"| EdComp
+    AS -->|"mutations, bus schema, anim graphs, asset readiness"| EdComp
     EdComp -->|"validated, own undo batch"| Engine
     EdComp --> AGI
     AGI -->|"read-only, main thread"| Engine
@@ -176,7 +176,8 @@ Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
 `remove_anim_graph_parameter`, `add_anim_graph_transition`,
 `remove_anim_graph_transition`, `set_anim_graph_transition`,
 `connect_anim_graph_ports`, `disconnect_anim_graph_ports`,
-`set_anim_graph_node`, `execute_python`.
+`set_anim_graph_node`, `get_asset_status`, `get_asset_jobs`,
+`get_asset_processor_status`, `execute_python`.
 
 `get_entity` takes `entity_id` (decimal, as a number or string) and returns one
 entity's transform, parent and component list; `get_bus_schema` takes an
@@ -253,6 +254,32 @@ source, existing nodes and parameters in conditions, same blend tree and
 compatible, free ports with no cycle for a connection, and a unique new node
 name.
 
+Three types report Asset Processor readiness, read-only and allowed in secure
+mode: `get_asset_status` (`path`, optional `flush_io`), `get_asset_jobs`
+(`source_path`, optional `escalate` and `include_logs`) and
+`get_asset_processor_status` (no parameters). They are the editor's own round
+trips to the Asset Processor (`AzFramework::AssetSystemRequestBus`
+`GetAssetStatus` / `GetAssetStatus_FlushIO`,
+`AzToolsFramework::AssetSystemJobRequestBus` `GetAssetJobsInfo` / `GetJobLog`),
+run on the main thread with the engine's timeout. `path` takes the three forms
+the engine's `GetAssetStatus` takes: a source relative path, a product relative
+path, or a full path to either. Asking for a status escalates that asset's
+build priority (the engine's behaviour, and the point of asking); `flush_io`
+makes the Asset Processor flush its file change queue first and is for the
+first poll after writing a file. The gem never calls `CompileAssetSync`, which
+would block the editor's main thread until the build finished: an agent polls
+`get_asset_status` until `compiled` or `failed`, then reads the failed job's
+log with `get_asset_jobs` and `include_logs` (cut at 64 KB, `truncated`:
+true). The status words are `unknown`, `missing`, `queued`, `compiling`,
+`compiled`, `failed`; a job's are `queued`, `in_progress`, `failed`,
+`completed`, `missing`, with `status_detail`
+`invalid_source_name_exceeds_max_limit` on the engine's over-long-name
+failure, and each job names the `source_file` and `watch_folder` the Asset
+Processor matched. Without a connection the two queries answer `unavailable`;
+`get_asset_processor_status` answers `connected: false` instead. Implemented
+in `AiCompanionEditorSystemComponent`, with the words, path rule and reply
+shapes in `Code/Source/Assets/AssetReadiness`, which the unit tests cover.
+
 o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
 inside its `get_capabilities` tool to confirm the gem is present and report its
 versions, the four C++ read types behind its `get_scene_snapshot`,
@@ -262,7 +289,9 @@ first in `get_bus_schema_live`, the three mutation types first in its
 editor Python when the reply carries `unknown_request_type`), and
 `execute_python` for everything else (`run_editor_python` and the
 `begin_session` / `exec_in_session` tools). o3de-mcp wrappers for
-`list_anim_graphs` and `get_anim_graph` are to follow.
+`list_anim_graphs` and `get_anim_graph` are to follow, as are its
+`get_asset_status`, `get_asset_jobs` and `wait_for_asset` wrappers over the
+asset readiness types.
 
 `create_entity` (`name`, optional `position` and `parent_id`), `set_transform`
 (`entity_id` plus any of `position`, `rotation` as Euler degrees, `scale`) and
