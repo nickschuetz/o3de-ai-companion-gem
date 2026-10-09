@@ -17,13 +17,37 @@ import json
 from typing import Any, Dict, List, Optional, Union
 
 from .version import API_VERSION
-from .safety.rollback import with_undo_batch, begin_undo_batch, end_undo_batch, rollback_last_batch
+from .safety import rollback as _rollback
+from .safety.rollback import with_undo_batch
 from .safety.sandbox import get_sandbox, reset_sandbox, SandboxLimitError
 from .safety.validators import validate_entity_name, validate_position, is_protected_entity
 from .utils.json_output import success, error, batch_result
 from .utils.component_registry import list_components, get_categories
 
 Number = Union[int, float]
+
+
+# ---------------------------------------------------------------------------
+# Undo / rollback
+# ---------------------------------------------------------------------------
+
+
+def begin_undo_batch(label: str = "AI Operation") -> str:
+    """Manually begin an undo batch. Pair it with ``end_undo_batch()``."""
+    _rollback.begin_undo_batch(label)
+    return success({"label": label, "depth": _rollback._batch_depth})
+
+
+def end_undo_batch() -> str:
+    """End the current manual undo batch."""
+    _rollback.end_undo_batch()
+    return success({"depth": _rollback._batch_depth})
+
+
+def rollback_last_batch() -> str:
+    """Undo the last completed undo batch (one editor Undo step)."""
+    _rollback.rollback_last_batch()
+    return success({"rolled_back": True})
 
 
 # ---------------------------------------------------------------------------
