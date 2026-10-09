@@ -1,7 +1,10 @@
 # Self-hosted runner for build-test CI
 
 The `lint` workflow (SPDX headers, hygiene, Python unit tests) runs on standard
-GitHub-hosted runners and is the always-on gate.
+GitHub-hosted runners and is the always-on gate. The Python unit tests run twice
+there, on `ubuntu-latest` (the required check) and on `windows-latest`
+(advisory), so a path or line-ending assumption that only holds on Linux is
+caught before it reaches a Windows user of the gem.
 
 The `build-test` workflow compiles the gem's C++ and runs its C++ unit tests
 (including the `BusSchema` introspection tests). That needs a full O3DE SDK (26.05 or 26.10)5
