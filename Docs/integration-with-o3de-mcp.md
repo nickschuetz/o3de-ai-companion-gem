@@ -177,7 +177,10 @@ gem:
   Python, and `get_bus_schema_live` asks the gem's native `get_bus_schema`
   first. o3de-mcp's `create_entity`, `set_transform` and `delete_entity` try
   the gem's native mutation request types first and fall back to editor Python
-  on an older gem (nickschuetz/o3de-mcp#18, in review at the time of writing).
+  only when the gem answers `unknown_request_type` (nickschuetz/o3de-mcp#18).
+  `create_level` creates and opens a level through the engine's six-argument
+  `create_level_no_prompt` binding (nickschuetz/o3de-mcp#20; earlier versions
+  never created one).
 - `instantiate_prefab` accepts gem-shipped prefabs such as
   `Prefabs/Player_TwinStick.prefab`; it checks the asset catalog, not only the
   project root, before calling the prefab system.
@@ -201,7 +204,7 @@ bare socket from the gem:
 "editor": {
   "status": "connected",
   "ai_companion_gem": true,
-  "agent_server": {"protocol_version": 1, "gem_version": "0.4.0", "api_version": "0.2.0"}
+  "agent_server": {"protocol_version": 1, "gem_version": "0.5.0", "api_version": "0.3.0"}
 }
 ```
 

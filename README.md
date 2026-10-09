@@ -13,7 +13,9 @@ directly via the built-in AgentServer (TCP with length-prefixed JSON). Both
 paths feed into a Python API layer that exposes 32 functions for entity
 creation, scene setup, lighting, physics, cameras, and scene inspection, so
 that a configured entity is one call instead of the eight or so raw
-create/add-component/set-property calls it replaces.
+create/add-component/set-property calls it replaces. The builders apply the
+physics settings they are given (a rigid body's mass, a collider's shape) and
+report what the editor accepted.
 
 Beneath the Python API, a C++ native layer serves requests with no Python
 at all. The SceneSnapshotProvider traverses entities at engine speed and
@@ -30,9 +32,10 @@ patterns (entity names, positions, asset paths), operations are sandboxed
 with configurable limits, and every change is captured in an undo batch that
 rolls back automatically on failure, deleting anything the editor's Undo
 leaves behind. Errors come back as JSON with a `code` to branch on, never as
-a traceback. System entities are protected from modification, and the
-AgentServer supports TLS encryption and a secure mode that disables arbitrary
-code execution.
+a traceback, and the AgentServer flags a request type it does not serve with a
+code of its own, so a client can fall back without parsing messages. System
+entities are protected from modification, and the AgentServer supports TLS
+encryption and a secure mode that disables arbitrary code execution.
 
 See the [architecture document](Docs/architecture.md) for the full system
 diagram.
