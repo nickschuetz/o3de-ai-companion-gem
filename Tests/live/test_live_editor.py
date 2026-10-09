@@ -131,12 +131,22 @@ class TestProtocol(LiveEditorTest):
         self.assertIn("Unknown request type", response["error"])
         self.assertEqual(response.get("code"), "unknown_request_type", response)
 
-    def test_other_errors_carry_no_unknown_request_type_code(self):
-        # o3de-mcp falls back to editor Python on exactly this code, so no
-        # other error reply may carry it.
+    def test_other_errors_carry_their_own_code(self):
+        # Every error reply carries a code. o3de-mcp falls back to editor
+        # Python on unknown_request_type alone, so a malformed argument must
+        # answer validation_failed, never that one.
         response = self.client.request("get_entity", entity_id="not-an-id")
         self.assertEqual(response["status"], "error")
-        self.assertNotIn("code", response, response)
+        self.assertEqual(response.get("code"), "validation_failed", response)
+        self.assertIn("entity_id", response["error"])
+
+    def test_malformed_requests_are_validation_failures(self):
+        self.assertEqual(self.client.request("")["code"], "validation_failed")
+        missing_script = self.client.request("execute_python")
+        if missing_script.get("code") == "secure_mode":
+            self.skipTest("secure mode refuses execute_python before reading its script")
+        self.assertEqual(missing_script["status"], "error", missing_script)
+        self.assertEqual(missing_script["code"], "validation_failed", missing_script)
 
 
 class TestPythonPackage(LiveEditorTest):
@@ -204,13 +214,18 @@ class TestNativeRequestTypes(LiveEditorTest):
         as_string = self.native("get_entity", entity_id=f"[{sample['id']}]")
         self.assertEqual(json.loads(as_string["output"])["id"], sample["id"])
 
-    def test_get_entity_unknown_id_is_a_json_error(self):
+    def test_get_entity_unknown_id_is_not_found(self):
+        # A well-formed id that no entity has: status error with not_found,
+        # not an ok reply with an error object inside output.
         response = self.native("get_entity", entity_id=123456789)
-        self.assertEqual(response["status"], "ok", response)
-        self.assertIn("error", json.loads(response["output"]))
+        self.assertEqual(response["status"], "error", response)
+        self.assertEqual(response.get("code"), "not_found", response)
+        self.assertIn("No entity with id 123456789", response["error"])
+        self.assertEqual(response["output"], "")
 
         missing = self.native("get_entity")
         self.assertEqual(missing["status"], "error")
+        self.assertEqual(missing.get("code"), "validation_failed", missing)
 
     def test_get_bus_schema_describes_the_gem_bus(self):
         listing = json.loads(self.native("get_bus_schema")["output"])
@@ -220,8 +235,10 @@ class TestNativeRequestTypes(LiveEditorTest):
         events = {e["name"] for e in schema["events"]}
         self.assertTrue({"GetSceneSnapshot", "GetEntityTree", "ValidateScene"} <= events, events)
 
-        unknown = json.loads(self.native("get_bus_schema", bus_name="NoSuchBus_12345")["output"])
-        self.assertIn("error", unknown)
+        unknown = self.native("get_bus_schema", bus_name="NoSuchBus_12345")
+        self.assertEqual(unknown["status"], "error", unknown)
+        self.assertEqual(unknown.get("code"), "not_found", unknown)
+        self.assertIn("NoSuchBus_12345", unknown["error"])
 
 
 class TestNativeMutations(LiveEditorTest):
@@ -265,12 +282,21 @@ class TestNativeMutations(LiveEditorTest):
         before = self._ids()
         bad_name = self.native("create_entity", name="9bad")
         self.assertEqual(bad_name["status"], "error")
+        self.assertEqual(bad_name.get("code"), "validation_failed", bad_name)
         self.assertIn("invalid entity name", bad_name["error"])
         bad_pos = self.native("create_entity", name="Fine", position=[1, 2, 1e9])
         self.assertEqual(bad_pos["status"], "error")
+        self.assertEqual(bad_pos.get("code"), "validation_failed", bad_pos)
+        no_name = self.native("create_entity")
+        self.assertEqual(no_name.get("code"), "validation_failed", no_name)
         missing = self.native("set_transform", entity_id=987654321, position=[0, 0, 0])
         self.assertEqual(missing["status"], "error")
+        self.assertEqual(missing.get("code"), "not_found", missing)
         self.assertIn("does not exist", missing["error"])
+        bad_scale = self.native("set_transform", entity_id=987654321, scale="big")
+        self.assertEqual(bad_scale.get("code"), "validation_failed", bad_scale)
+        gone = self.native("delete_entity", entity_id=987654321)
+        self.assertEqual(gone.get("code"), "not_found", gone)
         self.assertEqual(self._ids(), before)
 
     def test_delete_refuses_the_level_root(self):
@@ -283,6 +309,7 @@ class TestNativeMutations(LiveEditorTest):
         root_id = root["id"]
         refused = self.native("delete_entity", entity_id=root_id)
         self.assertEqual(refused["status"], "error", refused)
+        self.assertEqual(refused.get("code"), "validation_failed", refused)
         self.assertIn("root", refused["error"])
         self.assertIn(int(root_id), self._ids())
 
@@ -306,8 +333,9 @@ class TestTemplatesAndRollback(LiveEditorTest):
         new_id = _entity_number(created["data"]["entity_id"])
         self.assertIn(new_id, self._entity_ids() - before)
 
-        entity = json.loads(self.client.request("get_entity", entity_id=new_id)["output"])
-        if "error" not in entity:
+        looked_up = self.client.request("get_entity", entity_id=new_id)
+        if looked_up.get("status") == "ok":
+            entity = json.loads(looked_up["output"])
             self.assertEqual(entity["name"], "LivePlayer")
             self.assertAlmostEqual(entity["position"][0], 1.0, places=3)
 
@@ -424,7 +452,11 @@ class TestPrefabGuard(LiveEditorTest):
 
 
 class TestAnimGraphs(LiveEditorTest):
-    """list_anim_graphs / get_anim_graph served in C++ from EMotion FX.
+    """The anim graph request types served in C++ from EMotion FX.
+
+    The read types (``list_anim_graphs``, ``get_anim_graph``) are checked
+    against the asset-loaded fixture; the authoring types build, save, reload
+    and tear down their own graph through EMotion Studio's command system.
 
     The fixture graph is copied into the host project (``AICOMPANION_PROJECT``),
     built by AssetProcessor, and loaded by an Anim Graph component on an entity
@@ -596,16 +628,536 @@ class TestAnimGraphs(LiveEditorTest):
         self.assertEqual(by_id["id"], self.graph_id)
         self.assertEqual(by_name["id"], self.graph_id)
 
+    def test_create_and_remove_anim_graph(self):
+        # The write path: EMotion Studio's command system reached from the
+        # gem's module (CommandSystem::GetCommandManager() is module-local and
+        # null there; EMStudio::GetManager() is the cross-module accessor).
+        created = self.native("create_anim_graph")
+        if created.get("status") == "error" and created.get("code") == "unavailable":
+            self.skipTest(f"EMotion Studio (the Animation Editor's command system) is not loaded: {created['error']}")
+        self.assertEqual(created["status"], "ok", created)
+        new_graph = json.loads(created["output"])
+        self.assertIsInstance(new_graph["id"], int)
+        self.assertEqual(new_graph["file_name"], "")
+        try:
+            listing = json.loads(self.native("list_anim_graphs")["output"])
+            entry = next(g for g in listing["anim_graphs"] if g["id"] == new_graph["id"])
+            self.assertFalse(entry["owned_by_asset"], entry)
+            described = json.loads(self.native("get_anim_graph", anim_graph_id=new_graph["id"])["output"])
+            self.assertEqual(len(described["nodes"]), 1, described["nodes"])  # the root state machine
+            self.assertEqual(described["nodes"][0]["type"], "AnimGraphStateMachine")
+        finally:
+            removed = self.native("remove_anim_graph", anim_graph_id=new_graph["id"])
+        self.assertEqual(removed["status"], "ok", removed)
+        self.assertEqual(json.loads(removed["output"])["removed"], new_graph["id"])
+        listing = json.loads(self.native("list_anim_graphs")["output"])
+        self.assertNotIn(new_graph["id"], [g["id"] for g in listing["anim_graphs"]])
+        gone = self.native("remove_anim_graph", anim_graph_id=new_graph["id"])
+        self.assertEqual(gone["status"], "error", gone)
+        self.assertEqual(gone.get("code"), "not_found", gone)
+        self.assertIn("not found", gone["error"])
+
     def test_get_anim_graph_errors(self):
         unknown = self.native("get_anim_graph", anim_graph_id=4000000000)
         self.assertEqual(unknown["status"], "error", unknown)
+        self.assertEqual(unknown.get("code"), "not_found", unknown)
         self.assertIn("not found", unknown["error"])
-        self.assertNotIn("code", unknown)
         missing = self.native("get_anim_graph")
         self.assertEqual(missing["status"], "error", missing)
+        self.assertEqual(missing.get("code"), "validation_failed", missing)
         self.assertIn("anim_graph_id or file_name", missing["error"])
         bad = self.native("get_anim_graph", anim_graph_id="not-an-id")
         self.assertEqual(bad["status"], "error", bad)
+        self.assertEqual(bad.get("code"), "validation_failed", bad)
+
+    def test_remove_anim_graph_errors(self):
+        missing = self.native("remove_anim_graph")
+        self.assertEqual(missing["status"], "error", missing)
+        self.assertEqual(missing.get("code"), "validation_failed", missing)
+        self.assertIn("anim_graph_id", missing["error"])
+        unknown = self.native("remove_anim_graph", anim_graph_id=4000000000)
+        self.assertEqual(unknown["status"], "error", unknown)
+        self.assertEqual(unknown.get("code"), "not_found", unknown)
+
+    # Authoring
+
+    AUTHORED_RELATIVE = ANIM_GRAPH_PROJECT_SUBDIR / "Authored.animgraph"
+
+    def _create_editable_graph(self) -> int:
+        created = self.native("create_anim_graph")
+        if created.get("status") == "error" and created.get("code") == "unavailable":
+            self.skipTest(f"EMotion Studio (the Animation Editor's command system) is not loaded: {created['error']}")
+        self.assertEqual(created["status"], "ok", created)
+        return int(json.loads(created["output"])["id"])
+
+    def _describe(self, graph_id: int) -> tuple[dict, dict]:
+        """The described graph and its nodes keyed by name."""
+        response = self.native("get_anim_graph", anim_graph_id=graph_id)
+        self.assertEqual(response["status"], "ok", response)
+        described = json.loads(response["output"])
+        return described, {n["name"]: n for n in described["nodes"]}
+
+    def _expect_error(self, response: dict, code: str, fragment: str | None = None) -> None:
+        self.assertEqual(response["status"], "error", response)
+        self.assertEqual(response.get("code"), code, response)
+        if fragment:
+            self.assertIn(fragment, response["error"], response)
+
+    def test_authoring_round_trip(self):
+        # Build a graph node by node, save it into the project, load it back
+        # and remove everything, so the editor and the project are left as
+        # found. Every write is one step in the Animation Editor's undo
+        # history (not the editor's main Undo), which this does not exercise.
+        project = Path(os.environ["AICOMPANION_PROJECT"])
+        target = project / self.AUTHORED_RELATIVE
+        owned = [self._create_editable_graph()]
+        graph_id = owned[0]
+        try:
+            idle = self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type="AnimGraphMotionNode", name="Idle", position=[0, 0])
+            self.assertEqual(idle["status"], "ok", idle)
+            idle = json.loads(idle["output"])
+            walk = self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type="Motion", name="Walk", position=[240, 0])
+            self.assertEqual(walk["status"], "ok", walk)
+            walk = json.loads(walk["output"])
+
+            described, nodes = self._describe(graph_id)
+            root = nodes["Root"]
+            self.assertEqual(root["id"], described["root_state_machine_id"])
+            self.assertEqual(set(nodes), {"Root", "Idle", "Walk"})
+            for node in (idle, walk):
+                self.assertEqual(node["type"], "AnimGraphMotionNode")
+                self.assertEqual(node["parent_id"], root["id"])
+                self.assertTrue(re.fullmatch(r"\d+", node["id"]), node)
+                # The write reply is the same object get_anim_graph emits.
+                self.assertEqual(nodes[node["name"]], node)
+            self.assertEqual(idle["position"], [0, 0])
+            self.assertEqual(walk["position"], [240, 0])
+            # The first state added to a state machine becomes its entry state.
+            self.assertEqual(root["entry_state_id"], idle["id"])
+            self.assertIsNone(idle["entry_state_id"])
+
+            entry = self.native("set_anim_graph_entry_state", anim_graph_id=graph_id, node_id=walk["id"])
+            self.assertEqual(entry["status"], "ok", entry)
+            self.assertEqual(json.loads(entry["output"])["entry_state_id"], walk["id"])
+            _, nodes = self._describe(graph_id)
+            self.assertEqual(nodes["Root"]["entry_state_id"], walk["id"])
+
+            speed = self.native(
+                "add_anim_graph_parameter",
+                anim_graph_id=graph_id,
+                name="Speed",
+                parameter_type="FloatSlider",
+                default=0.2,
+                min=0,
+                max=1,
+                description="Walk speed",
+            )
+            self.assertEqual(speed["status"], "ok", speed)
+            speed = json.loads(speed["output"])
+            self.assertEqual(speed["name"], "Speed")
+            self.assertEqual(speed["description"], "Walk speed")
+            self.assertIsNone(speed["group"])
+            self.assertAlmostEqual(float(speed["default"]), 0.2, places=5)
+            self.assertAlmostEqual(float(speed["min"]), 0.0, places=5)
+            self.assertAlmostEqual(float(speed["max"]), 1.0, places=5)
+            described, _ = self._describe(graph_id)
+            self.assertEqual(described["parameters"], [speed])
+
+            # A group that does not exist yet is created in the same step.
+            crouch = self.native(
+                "add_anim_graph_parameter", anim_graph_id=graph_id, name="Crouch", parameter_type="Bool", default=True, group="Locomotion"
+            )
+            self.assertEqual(crouch["status"], "ok", crouch)
+            crouch = json.loads(crouch["output"])
+            self.assertEqual(crouch["group"], "Locomotion")
+            self.assertIsNone(crouch["min"])
+            described, _ = self._describe(graph_id)
+            self.assertEqual([p["name"] for p in described["parameters"]], ["Speed", "Crouch"])
+
+            removed = self.native("remove_anim_graph_parameter", anim_graph_id=graph_id, name="Speed")
+            self.assertEqual(removed["status"], "ok", removed)
+            self.assertEqual(json.loads(removed["output"])["removed"], "Speed")
+            described, _ = self._describe(graph_id)
+            self.assertEqual([p["name"] for p in described["parameters"]], ["Crouch"])
+
+            removed = self.native("remove_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"])
+            self.assertEqual(removed["status"], "ok", removed)
+            self.assertEqual(json.loads(removed["output"])["removed"], idle["id"])
+            _, nodes = self._describe(graph_id)
+            self.assertEqual(set(nodes), {"Root", "Walk"})
+
+            saved = self.native("save_anim_graph", anim_graph_id=graph_id, file_name=str(self.AUTHORED_RELATIVE))
+            self.assertEqual(saved["status"], "ok", saved)
+            saved = json.loads(saved["output"])
+            self.assertEqual(saved["id"], graph_id)
+            self.assertTrue(target.is_file(), saved)
+            self.assertIn("AnimGraphMotionNode", target.read_text(encoding="utf-8"))
+            self.assertEqual(PurePosixPath(saved["file_name"].replace("\\", "/")).name, target.name, saved)
+            listing = json.loads(self.native("list_anim_graphs")["output"])
+            entry = next(g for g in listing["anim_graphs"] if g["id"] == graph_id)
+            self.assertFalse(entry["dirty"], entry)
+
+            # The same path answers the graph already loaded under that file
+            # name: CommandLoadAnimGraph reuses a command-loaded graph instead
+            # of loading twice (AnimGraphCommands.cpp:79-93).
+            reloaded = self.native("load_anim_graph", file_name=str(target))
+            self.assertEqual(reloaded["status"], "ok", reloaded)
+            self.assertEqual(json.loads(reloaded["output"])["id"], graph_id)
+
+            # Once removed, the file loads as a new graph with the saved
+            # content; a project-relative path resolves the same file.
+            removed_graph = self.native("remove_anim_graph", anim_graph_id=graph_id)
+            self.assertEqual(removed_graph["status"], "ok", removed_graph)
+            owned.remove(graph_id)
+            fresh = self.native("load_anim_graph", file_name=str(self.AUTHORED_RELATIVE))
+            self.assertEqual(fresh["status"], "ok", fresh)
+            fresh = json.loads(fresh["output"])
+            owned.append(int(fresh["id"]))
+            described, nodes = self._describe(fresh["id"])
+            self.assertEqual(set(nodes), {"Root", "Walk"})
+            self.assertEqual(nodes["Root"]["entry_state_id"], nodes["Walk"]["id"])
+            self.assertEqual([p["name"] for p in described["parameters"]], ["Crouch"])
+            self.assertEqual(described["parameters"][0]["group"], "Locomotion")
+        finally:
+            for gid in owned:
+                self.client.request("remove_anim_graph", anim_graph_id=gid)
+            if target.exists():
+                target.unlink()
+
+    def test_authoring_refusals(self):
+        graph_id = self._create_editable_graph()
+        try:
+            self._expect_error(
+                self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type="NoSuchNode"), "validation_failed", "known:"
+            )
+            self._expect_error(
+                self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type="Motion", parent_id="123456789"), "not_found"
+            )
+            self._expect_error(
+                self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type="Motion", name='Say "hi"'), "validation_failed"
+            )
+            # A final node only belongs in a blend tree; the root is a state machine.
+            self._expect_error(self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type="BlendTreeFinalNode"), "validation_failed")
+            self._expect_error(self.native("add_anim_graph_node", anim_graph_id=graph_id), "validation_failed", "node_type")
+            self._expect_error(
+                self.native("add_anim_graph_parameter", anim_graph_id=graph_id, name="Flag", parameter_type="Bool", min=0),
+                "validation_failed",
+                "min",
+            )
+            self._expect_error(
+                self.native("add_anim_graph_parameter", anim_graph_id=graph_id, name="Flag", parameter_type="Quaternion"),
+                "validation_failed",
+                "known:",
+            )
+            self._expect_error(self.native("remove_anim_graph_parameter", anim_graph_id=graph_id, name="Nope"), "not_found")
+            self._expect_error(self.native("save_anim_graph", anim_graph_id=graph_id, file_name="../outside.animgraph"), "validation_failed")
+            self._expect_error(self.native("save_anim_graph", anim_graph_id=graph_id), "validation_failed", "file_name")
+            self._expect_error(
+                self.native("load_anim_graph", file_name=str(ANIM_GRAPH_PROJECT_SUBDIR / "DoesNotExist.animgraph")), "not_found"
+            )
+            described, nodes = self._describe(graph_id)
+            self._expect_error(
+                self.native("remove_anim_graph_node", anim_graph_id=graph_id, node_id=described["root_state_machine_id"]),
+                "validation_failed",
+                "root",
+            )
+            self._expect_error(self.native("remove_anim_graph_node", anim_graph_id=graph_id, node_id="not-an-id"), "validation_failed")
+            # The fixture graph belongs to its asset; writes to it are refused.
+            self._expect_error(
+                self.native("add_anim_graph_node", anim_graph_id=self.graph_id, node_type="Motion"), "validation_failed", "owned by"
+            )
+            self._expect_error(self.native("remove_anim_graph", anim_graph_id=self.graph_id), "validation_failed", "owned by")
+            # Nothing above touched the graph.
+            self.assertEqual(set(nodes), {"Root"})
+            self.assertEqual(described["parameters"], [])
+        finally:
+            removed = self.native("remove_anim_graph", anim_graph_id=graph_id)
+        self.assertEqual(removed["status"], "ok", removed)
+
+    def _add_node(self, graph_id: int, node_type: str, name: str, **fields) -> dict:
+        response = self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type=node_type, name=name, **fields)
+        self.assertEqual(response["status"], "ok", response)
+        return json.loads(response["output"])
+
+    def test_transitions_connections_and_node_edits(self):
+        # The second authoring batch: state transitions with conditions, blend
+        # tree port connections and node adjustments, each verified through
+        # get_anim_graph and torn down with the graph.
+        graph_id = self._create_editable_graph()
+        try:
+            idle = self._add_node(graph_id, "Motion", "Idle")
+            walk = self._add_node(graph_id, "Motion", "Walk", position=[240, 0])
+            speed = self.native("add_anim_graph_parameter", anim_graph_id=graph_id, name="Speed", parameter_type="FloatSlider")
+            self.assertEqual(speed["status"], "ok", speed)
+
+            # A transition with a blend time and a parameter condition, built
+            # as one command group (create, adjust, add condition).
+            added = self.native(
+                "add_anim_graph_transition",
+                anim_graph_id=graph_id,
+                source_node_id=idle["id"],
+                target_node_id=walk["id"],
+                blend_time=0.25,
+                conditions=[
+                    {"condition_type": "ParameterCondition", "attributes": {"parameterName": "Speed", "function": "GREATER", "testValue": 0.5}}
+                ],
+            )
+            self.assertEqual(added["status"], "ok", added)
+            transition = json.loads(added["output"])
+            self.assertTrue(re.fullmatch(r"\d+", transition["id"]), transition)
+            self.assertEqual(transition["source_node_id"], idle["id"])
+            self.assertEqual(transition["target_node_id"], walk["id"])
+            self.assertFalse(transition["wildcard"])
+            self.assertAlmostEqual(transition["blend_time"], 0.25, places=5)
+            self.assertEqual(transition["priority"], 0)
+            self.assertFalse(transition["disabled"])
+            self.assertEqual(len(transition["conditions"]), 1, transition)
+            self.assertEqual(transition["conditions"][0]["type"], "AnimGraphParameterCondition")
+            # The engine's summary: "...: Parameter Name='Speed', Test Function='param > testValue', Test Value=0.50, ..."
+            self.assertIn("Speed", transition["conditions"][0]["summary"])
+            self.assertIn("param > testValue", transition["conditions"][0]["summary"])
+            self.assertIn("0.50", transition["conditions"][0]["summary"])
+            described, nodes = self._describe(graph_id)
+            self.assertEqual(transition["state_machine_id"], nodes["Root"]["id"])
+            # The write reply is the same object get_anim_graph emits.
+            self.assertEqual(described["transitions"], [transition])
+
+            # A wildcard transition names no source.
+            added = self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=None, target_node_id=idle["id"])
+            self.assertEqual(added["status"], "ok", added)
+            wildcard = json.loads(added["output"])
+            self.assertTrue(wildcard["wildcard"])
+            self.assertIsNone(wildcard["source_node_id"])
+            self.assertEqual(wildcard["target_node_id"], idle["id"])
+            self.assertEqual(wildcard["conditions"], [])
+            described, _ = self._describe(graph_id)
+            self.assertEqual({t["id"] for t in described["transitions"]}, {transition["id"], wildcard["id"]})
+
+            adjusted = self.native(
+                "set_anim_graph_transition", anim_graph_id=graph_id, transition_id=transition["id"], disabled=True, priority=3, blend_time=0.1
+            )
+            self.assertEqual(adjusted["status"], "ok", adjusted)
+            adjusted = json.loads(adjusted["output"])
+            self.assertEqual(adjusted["id"], transition["id"])
+            self.assertTrue(adjusted["disabled"])
+            self.assertEqual(adjusted["priority"], 3)
+            self.assertAlmostEqual(adjusted["blend_time"], 0.1, places=5)
+            self.assertEqual(len(adjusted["conditions"]), 1)  # adjusting keeps the conditions
+            described, _ = self._describe(graph_id)
+            self.assertIn(adjusted, described["transitions"])
+
+            for transition_id in (transition["id"], wildcard["id"]):
+                removed = self.native("remove_anim_graph_transition", anim_graph_id=graph_id, transition_id=transition_id)
+                self.assertEqual(removed["status"], "ok", removed)
+                self.assertEqual(json.loads(removed["output"])["removed"], transition_id)
+            described, _ = self._describe(graph_id)
+            self.assertEqual(described["transitions"], [])
+
+            # Blend tree wiring: a Blend Two node's output pose into the final node.
+            tree = self._add_node(graph_id, "BlendTree", "Tree")
+            final = self._add_node(graph_id, "BlendTreeFinalNode", "Final", parent_id=tree["id"])
+            blend = self._add_node(graph_id, "Blend Two", "Blend", parent_id=tree["id"])
+            connected = self.native(
+                "connect_anim_graph_ports",
+                anim_graph_id=graph_id,
+                source_node_id=blend["id"],
+                source_port="Output Pose",
+                target_node_id=final["id"],
+                target_port="Input Pose",
+            )
+            self.assertEqual(connected["status"], "ok", connected)
+            port = json.loads(connected["output"])
+            self.assertEqual(port["index"], 0)
+            self.assertEqual(port["name"], "Input Pose")
+            self.assertEqual(port["connection"], {"source_node_id": blend["id"], "source_port": 0})
+            _, nodes = self._describe(graph_id)
+            self.assertEqual(nodes["Final"]["input_ports"], [port])
+            # The port's connection is the one entry an input port holds.
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=blend["id"],
+                    source_port=0,
+                    target_node_id=final["id"],
+                    target_port=0,
+                ),
+                "validation_failed",
+                "already has a connection",
+            )
+            disconnected = self.native("disconnect_anim_graph_ports", anim_graph_id=graph_id, target_node_id=final["id"], target_port=0)
+            self.assertEqual(disconnected["status"], "ok", disconnected)
+            self.assertTrue(re.fullmatch(r"\d+", json.loads(disconnected["output"])["removed"]), disconnected)
+            _, nodes = self._describe(graph_id)
+            self.assertIsNone(nodes["Final"]["input_ports"][0]["connection"])
+
+            # Node adjustments: rename and move, then the motion node's motion
+            # ids (the engine stores them with random-selection weights), then
+            # disable.
+            renamed = self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], name="Stand", position=[10, 20])
+            self.assertEqual(renamed["status"], "ok", renamed)
+            renamed = json.loads(renamed["output"])
+            self.assertEqual(renamed["id"], idle["id"])
+            self.assertEqual(renamed["name"], "Stand")
+            self.assertEqual(renamed["position"], [10, 20])
+            self.assertEqual(renamed["motion_ids"], [])
+            motions = self.native(
+                "set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], attributes={"motionIds": ["jack_idle_zup"], "loop": False}
+            )
+            self.assertEqual(motions["status"], "ok", motions)
+            motions = json.loads(motions["output"])
+            self.assertEqual(motions["motion_ids"], ["jack_idle_zup"])
+            _, nodes = self._describe(graph_id)
+            self.assertEqual(nodes["Stand"], motions)
+            self.assertEqual(nodes["Stand"]["motion_ids"], ["jack_idle_zup"])
+            self.assertIsNone(nodes["Tree"]["motion_ids"])
+            disabled = self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=walk["id"], enabled=False)
+            self.assertEqual(disabled["status"], "ok", disabled)
+            self.assertFalse(json.loads(disabled["output"])["enabled"])
+            _, nodes = self._describe(graph_id)
+            self.assertFalse(nodes["Walk"]["enabled"])
+        finally:
+            removed = self.native("remove_anim_graph", anim_graph_id=graph_id)
+        self.assertEqual(removed["status"], "ok", removed)
+
+    def test_transition_and_connection_refusals(self):
+        graph_id = self._create_editable_graph()
+        try:
+            idle = self._add_node(graph_id, "Motion", "Idle")
+            walk = self._add_node(graph_id, "Motion", "Walk")
+            sub = self._add_node(graph_id, "AnimGraphStateMachine", "Sub")
+            inner = self._add_node(graph_id, "Motion", "Inner", parent_id=sub["id"])
+            tree = self._add_node(graph_id, "BlendTree", "Tree")
+            final = self._add_node(graph_id, "BlendTreeFinalNode", "Final", parent_id=tree["id"])
+            blend = self._add_node(graph_id, "Blend Two", "Blend", parent_id=tree["id"])
+            const = self._add_node(graph_id, "Float Constant", "Const", parent_id=tree["id"])
+            # The states of different state machines cannot be joined.
+            self._expect_error(
+                self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=idle["id"], target_node_id=inner["id"]),
+                "validation_failed",
+                "same state machine",
+            )
+            # A blend tree node is not a state.
+            self._expect_error(
+                self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=blend["id"], target_node_id=final["id"]),
+                "validation_failed",
+                "not a state",
+            )
+            self._expect_error(
+                self.native(
+                    "add_anim_graph_transition",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    target_node_id=walk["id"],
+                    conditions=[{"condition_type": "NoSuchCondition"}],
+                ),
+                "validation_failed",
+                "known:",
+            )
+            self._expect_error(
+                self.native(
+                    "add_anim_graph_transition",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    target_node_id=walk["id"],
+                    conditions=[{"condition_type": "TimeCondition", "attributes": {"parameterName": "Speed"}}],
+                ),
+                "validation_failed",
+                "supported:",
+            )
+            self._expect_error(
+                self.native(
+                    "add_anim_graph_transition",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    target_node_id=walk["id"],
+                    conditions=[{"condition_type": "ParameterCondition", "attributes": {"parameterName": "Nope"}}],
+                ),
+                "validation_failed",
+                "no value parameter",
+            )
+            self._expect_error(
+                self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=idle["id"], target_node_id=walk["id"], blend_time=-1),
+                "validation_failed",
+                "blend_time",
+            )
+            self._expect_error(self.native("remove_anim_graph_transition", anim_graph_id=graph_id, transition_id="123456789"), "not_found")
+            self._expect_error(
+                self.native("set_anim_graph_transition", anim_graph_id=graph_id, transition_id="123456789", disabled=True), "not_found"
+            )
+            # Ports: a state has none to connect, and names are checked.
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    source_port=0,
+                    target_node_id=walk["id"],
+                    target_port=0,
+                ),
+                "validation_failed",
+                "add_anim_graph_transition",
+            )
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=blend["id"],
+                    source_port="Output Pose",
+                    target_node_id=final["id"],
+                    target_port="Pose In",
+                ),
+                "validation_failed",
+                '"Input Pose" (0)',
+            )
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=blend["id"],
+                    source_port="Output Pose",
+                    target_node_id=blend["id"],
+                    target_port="Pose 1",
+                ),
+                "validation_failed",
+                "same node",
+            )
+            # A float output into a pose input carries the wrong data.
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=const["id"],
+                    source_port=0,
+                    target_node_id=final["id"],
+                    target_port="Input Pose",
+                ),
+                "validation_failed",
+                "incompatible",
+            )
+            self._expect_error(
+                self.native("disconnect_anim_graph_ports", anim_graph_id=graph_id, target_node_id=final["id"], target_port="Input Pose"),
+                "not_found",
+                "no connection",
+            )
+            # Node edits: unknown fields are listed, names stay unique.
+            self._expect_error(
+                self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], attributes={"motionId": ["x"]}),
+                "validation_failed",
+                "motionIds",
+            )
+            self._expect_error(
+                self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], name="Walk"), "validation_failed", "already exists"
+            )
+            self._expect_error(self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"]), "validation_failed", "at least one")
+            # Nothing above touched the graph.
+            described, nodes = self._describe(graph_id)
+            self.assertEqual(described["transitions"], [])
+            self.assertEqual(set(nodes), {"Root", "Idle", "Walk", "Sub", "Inner", "Tree", "Final", "Blend", "Const"})
+            self.assertIsNone(nodes["Final"]["input_ports"][0]["connection"])
+        finally:
+            removed = self.native("remove_anim_graph", anim_graph_id=graph_id)
+        self.assertEqual(removed["status"], "ok", removed)
 
 
 class TestSecureMode(LiveEditorTest):
@@ -631,6 +1183,7 @@ class TestSecureMode(LiveEditorTest):
     def test_execute_python_is_refused(self):
         response = self.client.execute_python("print(1)")
         self.assertEqual(response["status"], "error", response)
+        self.assertEqual(response.get("code"), "secure_mode", response)
         self.assertIn("secure mode", str(response.get("error", "")).lower())
 
     def test_read_only_request_types_answer(self):
@@ -687,6 +1240,27 @@ class TestSecureMode(LiveEditorTest):
         self.assertEqual(deleted["status"], "ok", deleted)
         ids = {int(e["id"]) for e in json.loads(self.client.request("get_scene_snapshot")["output"])["entities"]}
         self.assertNotIn(new_id, ids)
+
+    def test_anim_graph_authoring_works_without_python(self):
+        # The authoring types are validated C++ paths, so they stay available
+        # in secure mode; this builds and removes a graph with no execute_python.
+        created = self.client.request("create_anim_graph")
+        if created.get("status") == "error" and created.get("code") in ("unknown_request_type", "unavailable"):
+            self.skipTest(f"anim graph authoring is not available here: {created.get('error')}")
+        self.assertEqual(created["status"], "ok", created)
+        graph_id = json.loads(created["output"])["id"]
+        try:
+            node = self.client.request("add_anim_graph_node", anim_graph_id=graph_id, node_type="Motion", name="Idle")
+            self.assertEqual(node["status"], "ok", node)
+            self.assertEqual(json.loads(node["output"])["name"], "Idle")
+            parameter = self.client.request("add_anim_graph_parameter", anim_graph_id=graph_id, name="Speed", parameter_type="Float")
+            self.assertEqual(parameter["status"], "ok", parameter)
+            described = json.loads(self.client.request("get_anim_graph", anim_graph_id=graph_id)["output"])
+            self.assertEqual({n["name"] for n in described["nodes"]}, {"Root", "Idle"})
+            self.assertEqual([p["name"] for p in described["parameters"]], ["Speed"])
+        finally:
+            removed = self.client.request("remove_anim_graph", anim_graph_id=graph_id)
+        self.assertEqual(removed["status"], "ok", removed)
 
 
 if __name__ == "__main__":

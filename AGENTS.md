@@ -216,6 +216,14 @@ All API responses are JSON. Check the `status` field:
   `instantiate_failed`, `prefab_not_found`), read `message` for the reason, and
   `rolled_back: true` means the batch was undone and anything it created deleted
 
+AgentServer replies (`{"id", "status", "output", "error", "duration_ms"}`)
+carry their own `code` on every `error` reply: `validation_failed`, `not_found`,
+`unavailable`, `engine_error`, `secure_mode`, `execution_failed`,
+`unknown_request_type`, `timeout`, `shutting_down` (`Network/RequestError.h`).
+A native type never answers `ok` with an error inside `output`. Bus events the
+server calls return their `AZ::Outcome` failure as
+`RequestError::EncodeError(code, message)` text; the server decodes it.
+
 Native request types return 64-bit entity ids as decimal strings (API_VERSION
 0.4.0 and up); the Python package returns them bracketed (`"[id]"`); request
 fields accept a number or a string. Never emit a 64-bit id as a JSON number.

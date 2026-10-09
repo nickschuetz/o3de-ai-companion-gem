@@ -7,6 +7,7 @@
 
 #include <AiCompanion/AgentServerBus.h>
 #include <AiCompanion/AiCompanionBus.h>
+#include <AiCompanion/AiCompanionEditorRequestBus.h>
 
 #include <AzCore/std/containers/deque.h>
 #include <AzCore/std/parallel/atomic.h>
@@ -120,13 +121,39 @@ namespace AiCompanion
         AZStd::string HandleDeleteEntity(const AZStd::string& id, const rapidjson::Document& doc);
         AZStd::string HandleListAnimGraphs(const AZStd::string& id);
         AZStd::string HandleGetAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleCreateAnimGraph(const AZStd::string& id);
+        AZStd::string HandleRemoveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleLoadAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleSaveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        //! The add types hand the whole request object to the editor event,
+        //! which reads node_type / parameter_type and the optional fields.
+        AZStd::string HandleAddAnimGraphNode(const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest);
+        AZStd::string HandleRemoveAnimGraphNode(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleSetAnimGraphEntryState(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleAddAnimGraphParameter(
+            const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest);
+        AZStd::string HandleRemoveAnimGraphParameter(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleRemoveAnimGraphTransition(const AZStd::string& id, const rapidjson::Document& doc);
+        //! The anim graph request types whose arguments the engine-facing
+        //! code reads from the request itself: the handler checks
+        //! anim_graph_id and forwards the whole JSON.
+        AZStd::string HandleAnimGraphJsonRequest(
+            const AZStd::string& id,
+            const rapidjson::Document& doc,
+            const AZStd::string& jsonRequest,
+            const char* requestType,
+            AZ::Outcome<AZStd::string, AZStd::string> (AiCompanionEditorRequests::*event)(AZ::u32, AZStd::string));
 
         // Response builders
         AZStd::string BuildResponse(
             const AZStd::string& id, const char* status, const AZStd::string& output, const AZStd::string& error, AZ::s64 durationMs);
-        //! code, when given, is emitted as the reply's "code" field. Only the
-        //! unknown-request-type reply sets one.
+        //! code is emitted as the reply's "code" field; every error reply the
+        //! server sends passes one from the RequestError vocabulary.
         AZStd::string BuildErrorResponse(const AZStd::string& id, const AZStd::string& error, const char* code = nullptr);
+        //! The error reply for a failed bus event: splits the event's
+        //! RequestError::EncodeError text into code and message (a plain text
+        //! becomes engine_error) and builds the coded reply.
+        AZStd::string FailureResponse(const AZStd::string& id, const AZStd::string& encodedError);
 
         // Logging helpers
         void LogMinimal(const char* format, ...) const;

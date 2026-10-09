@@ -47,7 +47,7 @@ class AgentClient:
         """Execute a script and return its printed output, raising on a protocol error."""
         response = self.execute_python(script)
         if response.get("status") != "ok":
-            raise RuntimeError(f"execute_python failed: {response.get('error')}")
+            raise RuntimeError(f"execute_python failed ({response.get('code')}): {response.get('error')}")
         return str(response.get("output", ""))
 
     def api(self, expression: str, imports: str = "") -> Any:

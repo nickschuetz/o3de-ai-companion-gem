@@ -60,6 +60,21 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `delete_entity` | Delete `entity_id` and descendants; refuses the level root, undoable | No (C++) |
 | `list_anim_graphs` | Every EMotion FX anim graph the engine holds: id, file name, ownership and dirty flags, node and parameter counts, actor instances | No (C++ EMotion FX) |
 | `get_anim_graph` | One anim graph (`anim_graph_id` as number or string, or `file_name`): nodes with ports and connections, transitions with conditions, parameters, node groups | No (C++ EMotion FX) |
+| `create_anim_graph` | A new, unsaved editable anim graph: `{"id", "file_name"}` | No (C++ EMotion Studio) |
+| `remove_anim_graph` | Remove the editable graph `anim_graph_id` | No (C++ EMotion Studio) |
+| `load_anim_graph` | Load `file_name` (absolute, `@alias@`, or project-relative; inside the project or engine root) as an editable graph | No (C++ EMotion Studio) |
+| `save_anim_graph` | Save `anim_graph_id` to `file_name` (default: its own; inside the project root); not undoable | No (C++ EMotion Studio) |
+| `add_anim_graph_node` | Add a `node_type` node (class or palette name) under `parent_id` (default: the root) with optional `name` and `position`; answers the node as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `remove_anim_graph_node` | Remove `node_id` (never the root) | No (C++ EMotion Studio) |
+| `set_anim_graph_entry_state` | Make `node_id` its state machine's entry state | No (C++ EMotion Studio) |
+| `add_anim_graph_parameter` | Add value parameter `name` of `parameter_type` with optional `default`, `min`, `max`, `description`, `group`; answers the parameter as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `remove_anim_graph_parameter` | Remove value parameter `name` | No (C++ EMotion Studio) |
+| `add_anim_graph_transition` | Add a transition into state `target_node_id` from `source_node_id` (absent or null: wildcard) with optional `blend_time`, `priority`, `disabled`, `sync_mode`, `interpolation` and `conditions` (`[{condition_type, attributes}]`); answers the transition as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `remove_anim_graph_transition` | Remove `transition_id` | No (C++ EMotion Studio) |
+| `set_anim_graph_transition` | Set any of `blend_time`, `priority`, `disabled`, `sync_mode`, `interpolation` on `transition_id` | No (C++ EMotion Studio) |
+| `connect_anim_graph_ports` | Connect `source_port` of `source_node_id` to `target_port` of `target_node_id` inside a blend tree (a port is an index or a name); answers the input port as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `disconnect_anim_graph_ports` | Remove the connection into `target_port` of `target_node_id` | No (C++ EMotion Studio) |
+| `set_anim_graph_node` | Set any of `name`, `position`, `enabled`, `attributes` (reflected fields, e.g. a motion node's `motionIds`) on `node_id`; answers the node as `get_anim_graph` does | No (C++ EMotion Studio) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
 `get_capabilities()` to confirm the gem is present, and the C++ request types
@@ -69,14 +84,60 @@ keep working when the AgentServer runs in secure mode, which disables
 `execute_python`. o3de-mcp wrappers for `list_anim_graphs` and
 `get_anim_graph` are to follow; until then a client sends the request types
 directly. Both are read-only: `get_anim_graph` answers
-`anim graph not found: <selector>` for an unknown graph, and both answer
-`EMotion FX is not available` when the EMotionFX gem is not loaded.
+`anim graph not found: <selector>` (code `not_found`) for an unknown graph, and
+both answer `EMotion FX is not available` (code `unavailable`) when the
+EMotionFX gem is not loaded.
+
+The fifteen authoring types run through EMotion Studio's command system, so each
+request is one step in the Animation Editor's own undo history, not the
+editor's main Undo (and a save is not undoable). The gem validates every
+argument before sending a command: names may not contain `"`, `%`, `{` or
+`}`; `node_type` must be a creatable AnimGraphNode class and allowed under the
+parent (only states inside a state machine, entry and exit nodes only in a
+child state machine, a final node only in a blend tree); `parameter_type` must
+be one of Float, FloatSlider, FloatSpinner, Int, IntSlider, IntSpinner, Bool,
+Tag, String, Vector2, Vector3, Vector3Gizmo, Vector4, Color, Rotation or the
+engine class name, with `min` and `max` only for the ranged ones and values
+typed per kind (number, integer, bool, string, or an array of 2, 3 or 4
+numbers); paths are normalized against the project root. The type fields are
+`node_type` and `parameter_type` because `type` is the request envelope's own
+field. A graph owned by an asset or runtime instance (one an Anim Graph
+component plays) is refused for every write with `validation_failed`; load
+the file with `load_anim_graph` to edit a copy, then save it.
+
+The wiring types add their own checks. `add_anim_graph_transition` needs a
+target state inside a state machine and a source that is a state of the same
+state machine and not an exit node (absent or null: a wildcard transition);
+its `conditions` are `{"condition_type", "attributes"}` objects where the type
+is ParameterCondition, TimeCondition, PlayTimeCondition, MotionCondition,
+StateCondition, TagCondition, Vector2Condition or the engine class name, and
+the attributes are the condition's reflected fields (for a parameter
+condition `parameterName`, `function` as 0 to 7 or GREATER, GREATEREQUAL,
+LESS, LESSEQUAL, NOTEQUAL, EQUAL, INRANGE, NOTINRANGE, `testValue`,
+`rangeValue`, `timeRequirement`, `stringFunction`, `testString`; the other
+types are listed in `Code/Source/Animation/AnimGraphCommandText.cpp`); node
+ids named by a condition must exist and parameter names must name a value
+parameter. The field is `condition_type` because `type` is the envelope's
+own field. `connect_anim_graph_ports` resolves a port given as a name
+(exactly, then case-insensitively) before the engine sees it, needs both nodes
+in the same blend tree, compatible port data types, a free input port and no
+cycle, and refuses a state as the target with a pointer to
+`add_anim_graph_transition`. `set_anim_graph_node` checks a new name is
+unique and that each `attributes` key is a reflected field of the node's
+class, taking a number, bool or string, or a list of strings for a string
+list and for a motion node's `motionIds`; an unknown key answers
+`validation_failed` listing the settable fields. Without EMotion
+Studio (the Animation Editor's command system) every authoring type answers
+`unavailable`; a command the engine refuses answers `engine_error` with the
+engine's own text.
 
 ### Response format
 
 ```json
-{"id": "uuid", "status": "ok|error", "output": "...", "error": "...", "duration_ms": 123}
+{"id": "uuid", "status": "ok|error", "output": "...", "error": "...", "code": "...", "duration_ms": 123}
 ```
+
+`code` is present on every `error` reply and absent from `ok` replies.
 
 Three id forms exist, and o3de-mcp documents the same split: native JSON
 carries every 64-bit entity id as a decimal string (`API_VERSION` 0.4.0 and
@@ -84,13 +145,38 @@ up; 0.3.0 and lower sent JSON numbers, which a JavaScript parser corrupts above
 2^53), the editor-Python fallback sentences print bracketed `[id]`, and every
 tool and request field accepts either a number or a string.
 
-One error reply carries an extra `code`. A request `type` the server does not
-serve answers with `"code": "unknown_request_type"` and the message
-`"Unknown request type: <type>"`; a client that sees that code falls back to
-`execute_python` (o3de-mcp does this for its native-first tools). No other
-AgentServer error carries a `code`, so a client never falls back for a different
-reason. This code is the C++ server's own and is separate from the `code` field
-inside the JSON that the Python API functions print to `output`.
+Every error reply carries a `code` beside its `error` message, so a client
+branches on the code and shows the message. The vocabulary:
+
+| Code | When |
+|------|------|
+| `validation_failed` | A malformed or refused argument: invalid JSON, a missing `type` or `script` field, a bad base64 script, a missing or unparsable `entity_id` or `anim_graph_id`, an invalid entity name, a position outside the bound, a scale out of range, a refusal to delete the level root, or an anim graph write refused by the gem's own checks (a bad name, type, placement, value or path, or a graph an asset owns) |
+| `not_found` | The entity, anim graph or bus does not exist |
+| `unavailable` | A subsystem the request needs is not loaded: EMotion FX, EMotion Studio's command system, the gem's editor system component, the prefab system, or the editor's Python runner |
+| `engine_error` | The engine refused or failed the operation; `error` is the engine's own text (a prefab system message such as `no root prefab is assigned`, a failed EMotion FX command) |
+| `secure_mode` | `execute_python` refused because the server runs in secure mode |
+| `execution_failed` | The `execute_python` script raised; `error` holds the traceback and `output` what the script printed first |
+| `unknown_request_type` | The request `type` is not one the server serves; the one code a client falls back to editor Python on |
+| `timeout` | The editor's main thread did not answer within 30 seconds |
+| `shutting_down` | The server was stopping and dropped the request |
+
+A native type never answers `ok` with a failure hidden inside `output`: an
+unknown entity in `get_entity` and an unknown bus in `get_bus_schema` are
+`error` replies with `not_found`, and a validation refusal from the mutation
+or anim graph types is `validation_failed`. o3de-mcp converts any reply whose
+status is not `ok` into its own `{"status": "error", "code", "message"}`
+envelope and keeps the code, so an agent branches the same way on both sides.
+It falls back to `execute_python` on `unknown_request_type` alone.
+
+This vocabulary is the C++ server's own. The `code` field inside the JSON the
+Python API functions print to `output` is the Python package's (see the
+[API reference](api-reference.md#responses-and-error-codes)); the two overlap on
+purpose where they mean the same thing (`validation_failed`, `not_found`,
+`engine_error`) and differ where the layers differ (the server has
+`unavailable`, `secure_mode`, `execution_failed`, `unknown_request_type`,
+`timeout` and `shutting_down`; the package has `limit_exceeded`,
+`not_in_editor`, `editor_running`, `io_error`, `instantiate_failed` and
+`prefab_not_found`).
 
 See [Agent Best Practices](agent-best-practices.md) for token efficiency and performance tips.
 

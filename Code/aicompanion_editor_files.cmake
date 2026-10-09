@@ -17,10 +17,16 @@ set(FILES
     Source/AgentMode/AgentModeState.cpp
     Source/Animation/AnimGraphInspector.h
     Source/Animation/AnimGraphInspector.cpp
+    Source/Animation/AnimGraphAuthoring.h
+    Source/Animation/AnimGraphAuthoring.cpp
+    Source/Animation/AnimGraphCommandText.h
+    Source/Animation/AnimGraphCommandText.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
     Source/Network/RequestParsing.h
     Source/Network/RequestParsing.cpp
+    Source/Network/RequestError.h
+    Source/Network/RequestError.cpp
     Source/Network/ResponseBuilding.h
     Source/Network/ResponseBuilding.cpp
     Source/Snapshot/SceneSnapshotProvider.h

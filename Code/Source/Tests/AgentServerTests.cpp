@@ -7,6 +7,7 @@
 #include <AzCore/std/string/string_view.h>
 #include <AzTest/AzTest.h>
 
+#include "Network/RequestError.h"
 #include "Network/ResponseBuilding.h"
 
 #include <AzCore/JSON/document.h>
@@ -222,11 +223,12 @@ namespace UnitTest
         EXPECT_EQ(doc["duration_ms"].GetInt64(), 0);
     }
 
-    TEST_F(AgentServerProtocolTest, OtherErrorReplies_CarryNoCode)
+    TEST_F(AgentServerProtocolTest, ValidationErrorReply_CarriesTheValidationFailedCode)
     {
-        // Only the unknown-type reply has a code; a client must never see it
-        // on any other error, or it would fall back to Python for the wrong reason.
-        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse("req-8", "Missing 'type' field");
+        // The reply the server sends for a malformed request, e.g. a missing
+        // "type" field: the code is the client's branch, the message the reason.
+        const AZStd::string reply =
+            AiCompanion::ResponseBuilding::BuildErrorResponse("req-8", "Missing 'type' field", AiCompanion::RequestError::ValidationFailed);
 
         rapidjson::Document doc;
         doc.Parse(reply.c_str());
@@ -234,6 +236,44 @@ namespace UnitTest
         ASSERT_FALSE(doc.HasParseError());
         EXPECT_STREQ(doc["status"].GetString(), "error");
         EXPECT_STREQ(doc["error"].GetString(), "Missing 'type' field");
+        ASSERT_TRUE(doc.HasMember("code"));
+        EXPECT_STREQ(doc["code"].GetString(), "validation_failed");
+        // A client falls back to editor Python on unknown_request_type alone.
+        EXPECT_STRNE(doc["code"].GetString(), AiCompanion::ResponseBuilding::UnknownRequestTypeCode);
+    }
+
+    TEST_F(AgentServerProtocolTest, BusFailureReply_DecodesTheEventsCodeAndMessage)
+    {
+        // What AgentServer::FailureResponse does with a failed bus event: the
+        // event's encoded failure becomes the reply's code and error fields.
+        const AZStd::string encoded =
+            AiCompanion::RequestError::EncodeError(AiCompanion::RequestError::NotFound, "entity 987654321 does not exist");
+        AZStd::string code;
+        AZStd::string message;
+        AiCompanion::RequestError::DecodeError(encoded, code, message);
+        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse("req-10", message, code.c_str());
+
+        rapidjson::Document doc;
+        doc.Parse(reply.c_str());
+
+        ASSERT_FALSE(doc.HasParseError());
+        EXPECT_STREQ(doc["status"].GetString(), "error");
+        EXPECT_STREQ(doc["output"].GetString(), "");
+        EXPECT_STREQ(doc["error"].GetString(), "entity 987654321 does not exist");
+        EXPECT_STREQ(doc["code"].GetString(), "not_found");
+    }
+
+    TEST_F(AgentServerProtocolTest, ErrorReplyWithoutACode_OmitsTheKey)
+    {
+        // ResponseBuilding itself only writes "code" when given one; the
+        // server passes one on every error path.
+        const AZStd::string reply = AiCompanion::ResponseBuilding::BuildErrorResponse("req-11", "plain");
+
+        rapidjson::Document doc;
+        doc.Parse(reply.c_str());
+
+        ASSERT_FALSE(doc.HasParseError());
+        EXPECT_STREQ(doc["status"].GetString(), "error");
         EXPECT_FALSE(doc.HasMember("code"));
     }
 
@@ -286,9 +326,33 @@ namespace UnitTest
 
     TEST_F(AgentServerProtocolTest, RequestTypeClassification_SafeTypes)
     {
-        AZStd::vector<AZStd::string> safeTypes = { "ping",           "get_api_version", "get_scene_snapshot", "get_entity_tree",
-                                                   "validate_scene", "get_entity",      "get_bus_schema",     "create_entity",
-                                                   "set_transform",  "delete_entity",   "list_anim_graphs",   "get_anim_graph" };
+        AZStd::vector<AZStd::string> safeTypes = { "ping",
+                                                   "get_api_version",
+                                                   "get_scene_snapshot",
+                                                   "get_entity_tree",
+                                                   "validate_scene",
+                                                   "get_entity",
+                                                   "get_bus_schema",
+                                                   "create_entity",
+                                                   "set_transform",
+                                                   "delete_entity",
+                                                   "list_anim_graphs",
+                                                   "get_anim_graph",
+                                                   "create_anim_graph",
+                                                   "remove_anim_graph",
+                                                   "load_anim_graph",
+                                                   "save_anim_graph",
+                                                   "add_anim_graph_node",
+                                                   "remove_anim_graph_node",
+                                                   "set_anim_graph_entry_state",
+                                                   "add_anim_graph_parameter",
+                                                   "remove_anim_graph_parameter",
+                                                   "add_anim_graph_transition",
+                                                   "remove_anim_graph_transition",
+                                                   "set_anim_graph_transition",
+                                                   "connect_anim_graph_ports",
+                                                   "disconnect_anim_graph_ports",
+                                                   "set_anim_graph_node" };
 
         for (const auto& type : safeTypes)
         {
@@ -303,7 +367,12 @@ namespace UnitTest
         bool isSafe =
             (type == "ping" || type == "get_api_version" || type == "get_scene_snapshot" || type == "get_entity_tree" ||
              type == "validate_scene" || type == "get_entity" || type == "get_bus_schema" || type == "create_entity" ||
-             type == "set_transform" || type == "delete_entity" || type == "list_anim_graphs" || type == "get_anim_graph");
+             type == "set_transform" || type == "delete_entity" || type == "list_anim_graphs" || type == "get_anim_graph" ||
+             type == "create_anim_graph" || type == "remove_anim_graph" || type == "load_anim_graph" || type == "save_anim_graph" ||
+             type == "add_anim_graph_node" || type == "remove_anim_graph_node" || type == "set_anim_graph_entry_state" ||
+             type == "add_anim_graph_parameter" || type == "remove_anim_graph_parameter" || type == "add_anim_graph_transition" ||
+             type == "remove_anim_graph_transition" || type == "set_anim_graph_transition" || type == "connect_anim_graph_ports" ||
+             type == "disconnect_anim_graph_ports" || type == "set_anim_graph_node");
         EXPECT_FALSE(isSafe);
     }
 

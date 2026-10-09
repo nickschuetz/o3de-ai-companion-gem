@@ -63,20 +63,24 @@ namespace UnitTest
         AZ::BehaviorContext* m_behaviorContext = nullptr;
     };
 
-    TEST_F(BusSchemaTestFixture, NullContext_ReturnsError)
+    TEST_F(BusSchemaTestFixture, NullContext_ReturnsAnUnavailableError)
     {
         const AZStd::string result = AiCompanion::BuildBusSchemaJson(nullptr, "SchemaProbeRequestBus");
         rapidjson::Document doc;
         ASSERT_FALSE(doc.Parse(result.c_str()).HasParseError());
         EXPECT_TRUE(doc.HasMember("error"));
+        ASSERT_TRUE(doc.HasMember("code"));
+        EXPECT_STREQ(doc["code"].GetString(), "unavailable");
     }
 
-    TEST_F(BusSchemaTestFixture, UnknownBus_ReturnsError)
+    TEST_F(BusSchemaTestFixture, UnknownBus_ReturnsANotFoundError)
     {
         const AZStd::string result = AiCompanion::BuildBusSchemaJson(m_behaviorContext, "NoSuchBus");
         rapidjson::Document doc;
         ASSERT_FALSE(doc.Parse(result.c_str()).HasParseError());
         EXPECT_TRUE(doc.HasMember("error"));
+        ASSERT_TRUE(doc.HasMember("code"));
+        EXPECT_STREQ(doc["code"].GetString(), "not_found");
     }
 
     TEST_F(BusSchemaTestFixture, EmptyName_ListsBuses)

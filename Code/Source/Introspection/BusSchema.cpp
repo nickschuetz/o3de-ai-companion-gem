@@ -5,6 +5,8 @@
 
 #include "Introspection/BusSchema.h"
 
+#include "Network/RequestError.h"
+
 #include <AzCore/RTTI/BehaviorContext.h>
 #include <AzCore/std/containers/vector.h>
 #include <AzCore/std/sort.h>
@@ -25,12 +27,15 @@ namespace AiCompanion
             writer.String(value.c_str(), static_cast<rapidjson::SizeType>(value.size()));
         }
 
-        //! Emit a single-key {"error": message} object.
-        AZStd::string ErrorObject(rapidjson::StringBuffer& buffer, JsonWriter& writer, const AZStd::string& message)
+        //! Emit an {"error": message, "code": code} object; the code is one
+        //! of the RequestError vocabulary so the AgentServer can relay it.
+        AZStd::string ErrorObject(rapidjson::StringBuffer& buffer, JsonWriter& writer, const AZStd::string& message, const char* code)
         {
             writer.StartObject();
             writer.Key("error");
             WriteString(writer, message);
+            writer.Key("code");
+            writer.String(code);
             writer.EndObject();
             return AZStd::string(buffer.GetString(), buffer.GetSize());
         }
@@ -143,7 +148,7 @@ namespace AiCompanion
 
         if (behaviorContext == nullptr)
         {
-            return ErrorObject(buffer, writer, "BehaviorContext is not available");
+            return ErrorObject(buffer, writer, "BehaviorContext is not available", RequestError::Unavailable);
         }
 
         // Empty bus name: list every reflected bus, sorted.
@@ -172,7 +177,8 @@ namespace AiCompanion
         const auto busIterator = behaviorContext->m_ebuses.find(AZStd::string(busName));
         if (busIterator == behaviorContext->m_ebuses.end() || busIterator->second == nullptr)
         {
-            return ErrorObject(buffer, writer, AZStd::string::format("No reflected bus named '%.*s'", AZ_STRING_ARG(busName)));
+            return ErrorObject(
+                buffer, writer, AZStd::string::format("No reflected bus named '%.*s'", AZ_STRING_ARG(busName)), RequestError::NotFound);
         }
 
         WriteBus(writer, *busIterator->second);

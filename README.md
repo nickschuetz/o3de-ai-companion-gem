@@ -21,9 +21,12 @@ Beneath the Python API, a C++ native layer serves requests with no Python
 at all. The SceneSnapshotProvider traverses entities at engine speed and
 serializes scene state as JSON, while the InputValidator enforces the same
 safety rules in compiled code. The AgentServer answers scene snapshots, entity
-trees, single entities, validation, live EBus schemas and read-only views of
-EMotion FX anim graphs (`list_anim_graphs`, `get_anim_graph`) straight from
-C++, and a validated mutation set (`create_entity`, `set_transform`,
+trees, single entities, validation, live EBus schemas and views of EMotion FX
+anim graphs (`list_anim_graphs`, `get_anim_graph`) straight from C++, authors
+anim graphs through the Animation Editor's command system (create, load and
+save a graph, add and remove nodes and parameters, set the entry state, wire
+transitions with conditions and blend tree ports, adjust nodes), and
+serves a validated mutation set (`create_entity`, `set_transform`,
 `delete_entity`) that runs in its own undo batch, so an agent on a secure-mode
 editor, where arbitrary code execution is disabled, can still build and tidy a
 scene.
@@ -33,8 +36,10 @@ patterns (entity names, positions, asset paths), operations are sandboxed
 with configurable limits, and every change is captured in an undo batch that
 rolls back automatically on failure, deleting anything the editor's Undo
 leaves behind. Errors come back as JSON with a `code` to branch on, never as
-a traceback, and the AgentServer flags a request type it does not serve with a
-code of its own, so a client can fall back without parsing messages. System
+a traceback, and every AgentServer error reply carries a code of its own
+(`validation_failed`, `not_found`, `unavailable`, `engine_error`,
+`secure_mode`, `unknown_request_type` and a few more), so a client can branch
+without parsing messages. System
 entities are protected from modification, and the AgentServer supports TLS
 encryption and a secure mode that disables arbitrary code execution.
 

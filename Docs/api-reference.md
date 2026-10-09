@@ -36,15 +36,18 @@ request types return plain decimal strings (see the
 [architecture document](architecture.md#network-protocol-agentserver)).
 
 These codes belong to the Python package. The C++ AgentServer's own replies
-(`{"id", "status", "output", "error", "duration_ms"}`) carry a `code` in one
-case only: a request `type` the server does not serve answers with
-`"code": "unknown_request_type"` next to
-`"error": "Unknown request type: <type>"`. See the
-[integration guide](integration-with-o3de-mcp.md#response-format). The
-AgentServer's native request types (scene reads, the validated mutations, and
-the `list_anim_graphs` / `get_anim_graph` anim graph reads) are listed in the
-[integration guide](integration-with-o3de-mcp.md#request-types); they are not
-part of this Python package.
+(`{"id", "status", "output", "error", "duration_ms"}`) carry their own `code`
+on every `error` reply: `validation_failed`, `not_found`, `unavailable`,
+`engine_error`, `secure_mode`, `execution_failed`, `unknown_request_type`,
+`timeout` and `shutting_down`, defined in the
+[integration guide](integration-with-o3de-mcp.md#response-format). The two
+vocabularies overlap on purpose where they mean the same thing
+(`validation_failed`, `not_found`, `engine_error`) and differ where the layers
+differ. A Python API error travels inside an `ok` reply's `output`; a server
+`code` is on the reply itself. The AgentServer's native request types (scene
+reads, the validated mutations, and the anim graph reads and writes) are listed
+in the [integration guide](integration-with-o3de-mcp.md#request-types); they
+are not part of this Python package.
 
 ## Meta
 

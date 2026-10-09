@@ -5,6 +5,8 @@
 
 #include "AnimGraphInspector.h"
 
+#include "Network/RequestError.h"
+
 #include <AzCore/Component/EntityId.h>
 #include <AzCore/Module/Environment.h>
 #include <AzCore/std/string/conversions.h>
@@ -13,6 +15,7 @@
 #include <EMotionFX/Source/AnimGraph.h>
 #include <EMotionFX/Source/AnimGraphInstance.h>
 #include <EMotionFX/Source/AnimGraphManager.h>
+#include <EMotionFX/Source/AnimGraphMotionNode.h>
 #include <EMotionFX/Source/AnimGraphNode.h>
 #include <EMotionFX/Source/AnimGraphNodeGroup.h>
 #include <EMotionFX/Source/AnimGraphObject.h>
@@ -42,7 +45,7 @@ namespace AiCompanion::AnimGraphInspector
 {
     namespace
     {
-        using Writer = rapidjson::Writer<rapidjson::StringBuffer>;
+        using Writer = JsonWriter;
 
         constexpr const char* NotAvailable = "EMotion FX is not available";
 
@@ -149,34 +152,54 @@ namespace AiCompanion::AnimGraphInspector
 
         // -- get_anim_graph pieces --------------------------------------------
 
+    } // namespace
+
+    void WriteInputPort(JsonWriter& w, const EMotionFX::AnimGraphNode& node, size_t portIndex)
+    {
+        const auto& inputs = node.GetInputPorts();
+        w.StartObject();
+        w.Key("index");
+        w.Uint64(portIndex);
+        if (portIndex < inputs.size())
+        {
+            const EMotionFX::AnimGraphNode::Port& port = inputs[portIndex];
+            w.Key("name");
+            w.String(port.GetName());
+            w.Key("connection");
+            if (const EMotionFX::BlendTreeConnection* connection = port.m_connection)
+            {
+                w.StartObject();
+                w.Key("source_node_id");
+                WriteIdOrNull(w, connection->GetSourceNodeId());
+                w.Key("source_port");
+                w.Uint(connection->GetSourcePort());
+                w.EndObject();
+            }
+            else
+            {
+                w.Null();
+            }
+        }
+        else
+        {
+            w.Key("name");
+            w.Null();
+            w.Key("connection");
+            w.Null();
+        }
+        w.EndObject();
+    }
+
+    namespace
+    {
         void WritePorts(Writer& w, const EMotionFX::AnimGraphNode& node)
         {
             w.Key("input_ports");
             w.StartArray();
-            const auto& inputs = node.GetInputPorts();
-            for (size_t i = 0; i < inputs.size(); ++i)
+            const size_t inputCount = node.GetInputPorts().size();
+            for (size_t i = 0; i < inputCount; ++i)
             {
-                const EMotionFX::AnimGraphNode::Port& port = inputs[i];
-                w.StartObject();
-                w.Key("index");
-                w.Uint64(i);
-                w.Key("name");
-                w.String(port.GetName());
-                w.Key("connection");
-                if (const EMotionFX::BlendTreeConnection* connection = port.m_connection)
-                {
-                    w.StartObject();
-                    w.Key("source_node_id");
-                    WriteIdOrNull(w, connection->GetSourceNodeId());
-                    w.Key("source_port");
-                    w.Uint(connection->GetSourcePort());
-                    w.EndObject();
-                }
-                else
-                {
-                    w.Null();
-                }
-                w.EndObject();
+                WriteInputPort(w, node, i);
             }
             w.EndArray();
 
@@ -195,43 +218,71 @@ namespace AiCompanion::AnimGraphInspector
             w.EndArray();
         }
 
-        void WriteNode(Writer& w, const EMotionFX::AnimGraphNode& node)
-        {
-            w.StartObject();
-            w.Key("id");
-            w.String(IdString(node.GetId()).c_str());
-            w.Key("name");
-            w.String(node.GetName());
-            w.Key("type");
-            w.String(node.RTTI_GetTypeName());
-            w.Key("palette_name");
-            w.String(node.GetPaletteName());
-            w.Key("category");
-            w.String(EMotionFX::AnimGraphObject::GetCategoryName(node.GetPaletteCategory()));
-            w.Key("parent_id");
-            if (const EMotionFX::AnimGraphNode* parent = node.GetParentNode())
-            {
-                w.String(IdString(parent->GetId()).c_str());
-            }
-            else
-            {
-                w.Null();
-            }
-            w.Key("can_act_as_state");
-            w.Bool(node.GetCanActAsState());
-            w.Key("has_output_pose");
-            w.Bool(node.GetHasOutputPose());
-            w.Key("enabled");
-            w.Bool(node.GetIsEnabled());
-            w.Key("position");
-            w.StartArray();
-            w.Int(node.GetVisualPosX());
-            w.Int(node.GetVisualPosY());
-            w.EndArray();
-            WritePorts(w, node);
-            w.EndObject();
-        }
+    } // namespace
 
+    void WriteNode(JsonWriter& w, const EMotionFX::AnimGraphNode& node)
+    {
+        w.StartObject();
+        w.Key("id");
+        w.String(IdString(node.GetId()).c_str());
+        w.Key("name");
+        w.String(node.GetName());
+        w.Key("type");
+        w.String(node.RTTI_GetTypeName());
+        w.Key("palette_name");
+        w.String(node.GetPaletteName());
+        w.Key("category");
+        w.String(EMotionFX::AnimGraphObject::GetCategoryName(node.GetPaletteCategory()));
+        w.Key("parent_id");
+        if (const EMotionFX::AnimGraphNode* parent = node.GetParentNode())
+        {
+            w.String(IdString(parent->GetId()).c_str());
+        }
+        else
+        {
+            w.Null();
+        }
+        w.Key("can_act_as_state");
+        w.Bool(node.GetCanActAsState());
+        w.Key("has_output_pose");
+        w.Bool(node.GetHasOutputPose());
+        w.Key("enabled");
+        w.Bool(node.GetIsEnabled());
+        w.Key("position");
+        w.StartArray();
+        w.Int(node.GetVisualPosX());
+        w.Int(node.GetVisualPosY());
+        w.EndArray();
+        w.Key("entry_state_id");
+        if (const auto* stateMachine = azrtti_cast<const EMotionFX::AnimGraphStateMachine*>(&node))
+        {
+            WriteIdOrNull(w, stateMachine->GetEntryStateId());
+        }
+        else
+        {
+            w.Null();
+        }
+        w.Key("motion_ids");
+        if (const auto* motionNode = azrtti_cast<const EMotionFX::AnimGraphMotionNode*>(&node))
+        {
+            w.StartArray();
+            const size_t motionCount = motionNode->GetNumMotions();
+            for (size_t i = 0; i < motionCount; ++i)
+            {
+                w.String(motionNode->GetMotionId(i));
+            }
+            w.EndArray();
+        }
+        else
+        {
+            w.Null();
+        }
+        WritePorts(w, node);
+        w.EndObject();
+    }
+
+    namespace
+    {
         void WriteNodesRecursive(Writer& w, const EMotionFX::AnimGraphNode* node)
         {
             if (!node)
@@ -245,49 +296,53 @@ namespace AiCompanion::AnimGraphInspector
             }
         }
 
-        void WriteTransition(
-            Writer& w, const EMotionFX::AnimGraphStateMachine& stateMachine, const EMotionFX::AnimGraphStateTransition& transition)
+    } // namespace
+
+    void WriteTransition(
+        JsonWriter& w, const EMotionFX::AnimGraphStateMachine& stateMachine, const EMotionFX::AnimGraphStateTransition& transition)
+    {
+        w.StartObject();
+        w.Key("id");
+        w.String(IdString(transition.GetId()).c_str());
+        w.Key("state_machine_id");
+        w.String(IdString(stateMachine.GetId()).c_str());
+        w.Key("source_node_id");
+        // A wildcard transition has no fixed source.
+        WriteIdOrNull(w, transition.GetIsWildcardTransition() ? EMotionFX::ObjectId() : transition.GetSourceNodeId());
+        w.Key("target_node_id");
+        WriteIdOrNull(w, transition.GetTargetNodeId());
+        w.Key("wildcard");
+        w.Bool(transition.GetIsWildcardTransition());
+        w.Key("blend_time");
+        w.Double(transition.GetBlendTime(nullptr));
+        w.Key("priority");
+        w.Uint(transition.GetPriority());
+        w.Key("disabled");
+        w.Bool(transition.GetIsDisabled());
+        w.Key("conditions");
+        w.StartArray();
+        for (size_t i = 0; i < transition.GetNumConditions(); ++i)
         {
-            w.StartObject();
-            w.Key("id");
-            w.String(IdString(transition.GetId()).c_str());
-            w.Key("state_machine_id");
-            w.String(IdString(stateMachine.GetId()).c_str());
-            w.Key("source_node_id");
-            // A wildcard transition has no fixed source.
-            WriteIdOrNull(w, transition.GetIsWildcardTransition() ? EMotionFX::ObjectId() : transition.GetSourceNodeId());
-            w.Key("target_node_id");
-            WriteIdOrNull(w, transition.GetTargetNodeId());
-            w.Key("wildcard");
-            w.Bool(transition.GetIsWildcardTransition());
-            w.Key("blend_time");
-            w.Double(transition.GetBlendTime(nullptr));
-            w.Key("priority");
-            w.Uint(transition.GetPriority());
-            w.Key("disabled");
-            w.Bool(transition.GetIsDisabled());
-            w.Key("conditions");
-            w.StartArray();
-            for (size_t i = 0; i < transition.GetNumConditions(); ++i)
+            const EMotionFX::AnimGraphTransitionCondition* condition = transition.GetCondition(i);
+            if (!condition)
             {
-                const EMotionFX::AnimGraphTransitionCondition* condition = transition.GetCondition(i);
-                if (!condition)
-                {
-                    continue;
-                }
-                AZStd::string summary;
-                condition->GetSummary(&summary);
-                w.StartObject();
-                w.Key("type");
-                w.String(condition->RTTI_GetTypeName());
-                w.Key("summary");
-                w.String(summary.c_str());
-                w.EndObject();
+                continue;
             }
-            w.EndArray();
+            AZStd::string summary;
+            condition->GetSummary(&summary);
+            w.StartObject();
+            w.Key("type");
+            w.String(condition->RTTI_GetTypeName());
+            w.Key("summary");
+            w.String(summary.c_str());
             w.EndObject();
         }
+        w.EndArray();
+        w.EndObject();
+    }
 
+    namespace
+    {
         void WriteTransitionsRecursive(Writer& w, EMotionFX::AnimGraphNode* node)
         {
             if (!node)
@@ -361,35 +416,39 @@ namespace AiCompanion::AnimGraphInspector
             return false;
         }
 
-        void WriteValueParameter(Writer& w, const EMotionFX::ValueParameter& parameter, const AZStd::string* groupName)
-        {
-            w.StartObject();
-            w.Key("name");
-            w.String(parameter.GetName().c_str());
-            w.Key("type");
-            w.String(parameter.GetTypeDisplayName());
-            w.Key("description");
-            w.String(parameter.GetDescription().c_str());
-            w.Key("default");
-            AZStd::string defaultText;
-            if (MCore::Attribute* attribute = parameter.ConstructDefaultValueAsAttribute())
-            {
-                attribute->ConvertToString(defaultText);
-                delete attribute;
-            }
-            w.String(defaultText.c_str());
-            AZStd::string minText;
-            AZStd::string maxText;
-            const bool ranged = ParameterRange(parameter, minText, maxText);
-            w.Key("min");
-            WriteStringOrNull(w, ranged ? &minText : nullptr);
-            w.Key("max");
-            WriteStringOrNull(w, ranged ? &maxText : nullptr);
-            w.Key("group");
-            WriteStringOrNull(w, groupName);
-            w.EndObject();
-        }
+    } // namespace
 
+    void WriteValueParameter(JsonWriter& w, const EMotionFX::ValueParameter& parameter, const AZStd::string* groupName)
+    {
+        w.StartObject();
+        w.Key("name");
+        w.String(parameter.GetName().c_str());
+        w.Key("type");
+        w.String(parameter.GetTypeDisplayName());
+        w.Key("description");
+        w.String(parameter.GetDescription().c_str());
+        w.Key("default");
+        AZStd::string defaultText;
+        if (MCore::Attribute* attribute = parameter.ConstructDefaultValueAsAttribute())
+        {
+            attribute->ConvertToString(defaultText);
+            delete attribute;
+        }
+        w.String(defaultText.c_str());
+        AZStd::string minText;
+        AZStd::string maxText;
+        const bool ranged = ParameterRange(parameter, minText, maxText);
+        w.Key("min");
+        WriteStringOrNull(w, ranged ? &minText : nullptr);
+        w.Key("max");
+        WriteStringOrNull(w, ranged ? &maxText : nullptr);
+        w.Key("group");
+        WriteStringOrNull(w, groupName);
+        w.EndObject();
+    }
+
+    namespace
+    {
         //! Depth-first over the parameter tree; `groupName` is null at the
         //! root group (whose name is empty) and the enclosing group's name
         //! below it.
@@ -508,7 +567,7 @@ namespace AiCompanion::AnimGraphInspector
         EMotionFX::AnimGraphManager* manager = emfx ? emfx->GetAnimGraphManager() : nullptr;
         if (!manager)
         {
-            return AZ::Failure(AZStd::string(NotAvailable));
+            return AZ::Failure(RequestError::EncodeError(RequestError::Unavailable, NotAvailable));
         }
 
         rapidjson::StringBuffer sb;
@@ -556,12 +615,13 @@ namespace AiCompanion::AnimGraphInspector
         EMotionFX::AnimGraphManager* manager = emfx ? emfx->GetAnimGraphManager() : nullptr;
         if (!manager)
         {
-            return AZ::Failure(AZStd::string(NotAvailable));
+            return AZ::Failure(RequestError::EncodeError(RequestError::Unavailable, NotAvailable));
         }
         EMotionFX::AnimGraph* graph = ResolveGraph(*manager, selector);
         if (!graph)
         {
-            return AZ::Failure(AZStd::string::format("anim graph not found: %s", selector.c_str()));
+            return AZ::Failure(
+                RequestError::EncodeError(RequestError::NotFound, AZStd::string::format("anim graph not found: %s", selector.c_str())));
         }
 
         EMotionFX::AnimGraphStateMachine* root = graph->GetRootStateMachine();

@@ -115,7 +115,7 @@ consider SSH tunneling, and enable secure mode.
 When secure mode is enabled (`AI_COMPANION_SECURE_MODE=1`), the AgentServer
 disables `execute_python` — the most powerful request type — and only allows
 operations served by the gem's own C++, which are read-only except for the
-validated mutation set:
+validated mutation set and the validated anim graph authoring set:
 
 - `ping` — connection health check
 - `get_api_version` — protocol and gem version info
@@ -125,10 +125,29 @@ validated mutation set:
 - `validate_scene` — scene validation
 - `get_bus_schema` — reflected EBus description from the live BehaviorContext
 - `list_anim_graphs`, `get_anim_graph`: read-only views of the EMotion FX anim
-  graphs the engine holds (no authoring)
+  graphs the engine holds
+- `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
+  `save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,
+  `set_anim_graph_entry_state`, `add_anim_graph_parameter`,
+  `remove_anim_graph_parameter`, `add_anim_graph_transition`,
+  `remove_anim_graph_transition`, `set_anim_graph_transition`,
+  `connect_anim_graph_ports`, `disconnect_anim_graph_ports`,
+  `set_anim_graph_node`: anim graph authoring through EMotion Studio's
+  command system; names, types, placement, values, condition attributes,
+  ports, node fields and paths are validated in C++ before a command is
+  sent, paths must stay inside the project (or, for a load, the engine)
+  root, and a graph an asset or runtime instance owns is refused
 - `create_entity`, `set_transform`, `delete_entity` — the validated mutation set:
   arguments go through the C++ `InputValidator`, missing entities and the level
   root are refused, and each call is its own editor undo batch
+
+An `execute_python` request in secure mode is answered with `status`
+`error`, the code `secure_mode` and a message that lists the request types the
+server does serve; it is never dispatched to the main thread. Every other
+refusal the native types make carries its own code (`validation_failed` for a
+refused argument or the level root, `not_found`, `unavailable`,
+`engine_error`), defined in the
+[integration guide](integration-with-o3de-mcp.md#response-format).
 
 This limits the attack surface when the server is exposed beyond localhost.
 o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree`,

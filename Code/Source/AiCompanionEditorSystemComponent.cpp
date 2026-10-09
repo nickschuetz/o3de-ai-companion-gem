@@ -7,8 +7,10 @@
 
 #include "AgentMode/AgentModeFilter.h"
 #include "AgentMode/AgentModeState.h"
+#include "Animation/AnimGraphAuthoring.h"
 #include "Animation/AnimGraphInspector.h"
 #include "Introspection/BusSchema.h"
+#include "Network/RequestError.h"
 
 #include "Validation/InputValidator.h"
 #include <AzCore/Component/ComponentApplicationBus.h>
@@ -77,7 +79,77 @@ namespace AiCompanion
                 ->Event(
                     "GetAnimGraph",
                     &AiCompanionEditorRequestBus::Events::GetAnimGraph,
-                    { { { "selector", "The anim graph's decimal id, or its file name (exact, or the file name's tail)." } } });
+                    { { { "selector", "The anim graph's decimal id, or its file name (exact, or the file name's tail)." } } })
+                ->Event("CreateAnimGraph", &AiCompanionEditorRequestBus::Events::CreateAnimGraph)
+                ->Event(
+                    "RemoveAnimGraph",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraph,
+                    { { { "animGraphId", "The anim graph's id as reported by ListAnimGraphs." } } })
+                ->Event(
+                    "LoadAnimGraph",
+                    &AiCompanionEditorRequestBus::Events::LoadAnimGraph,
+                    { { { "fileName", "An .animgraph path: absolute, @alias@, or relative to the project root." } } })
+                ->Event(
+                    "SaveAnimGraph",
+                    &AiCompanionEditorRequestBus::Events::SaveAnimGraph,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "fileName", "The target path inside the project root; empty saves to the graph's own file name." } } })
+                ->Event(
+                    "AddAnimGraphNode",
+                    &AiCompanionEditorRequestBus::Events::AddAnimGraphNode,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: node_type, and optional parent_id, name, position [x, y]." } } })
+                ->Event(
+                    "RemoveAnimGraphNode",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraphNode,
+                    { { { "animGraphId", "The anim graph's id." }, { "nodeId", "The node's id as GetAnimGraph reports it." } } })
+                ->Event(
+                    "SetAnimGraphEntryState",
+                    &AiCompanionEditorRequestBus::Events::SetAnimGraphEntryState,
+                    { { { "animGraphId", "The anim graph's id." }, { "nodeId", "The id of a state inside a state machine." } } })
+                ->Event(
+                    "AddAnimGraphParameter",
+                    &AiCompanionEditorRequestBus::Events::AddAnimGraphParameter,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: name, parameter_type, and optional default, min, max, description, group." } } })
+                ->Event(
+                    "RemoveAnimGraphParameter",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraphParameter,
+                    { { { "animGraphId", "The anim graph's id." }, { "name", "The value parameter's name." } } })
+                ->Event(
+                    "AddAnimGraphTransition",
+                    &AiCompanionEditorRequestBus::Events::AddAnimGraphTransition,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson",
+                          "A JSON object: target_node_id, and optional source_node_id (null for a wildcard), blend_time, priority, "
+                          "conditions [{condition_type, attributes}]." } } })
+                ->Event(
+                    "RemoveAnimGraphTransition",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraphTransition,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "transitionId", "The transition's id as GetAnimGraph reports it." } } })
+                ->Event(
+                    "SetAnimGraphTransition",
+                    &AiCompanionEditorRequestBus::Events::SetAnimGraphTransition,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson",
+                          "A JSON object: transition_id, and any of blend_time, priority, disabled, sync_mode, interpolation." } } })
+                ->Event(
+                    "ConnectAnimGraphPorts",
+                    &AiCompanionEditorRequestBus::Events::ConnectAnimGraphPorts,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: source_node_id, source_port, target_node_id, target_port (index or name)." } } })
+                ->Event(
+                    "DisconnectAnimGraphPorts",
+                    &AiCompanionEditorRequestBus::Events::DisconnectAnimGraphPorts,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: target_node_id, target_port (index or name)." } } })
+                ->Event(
+                    "SetAnimGraphNode",
+                    &AiCompanionEditorRequestBus::Events::SetAnimGraphNode,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson",
+                          "A JSON object: node_id, and any of name, position [x, y], enabled, attributes {field: value}." } } });
         }
     }
 
@@ -468,14 +540,16 @@ namespace AiCompanion
     {
         if (!InputValidator::IsValidEntityName(name))
         {
-            return AZ::Failure(AZStd::string::format(
-                "invalid entity name '%s' (letter first, then letters, digits, '_' or '-', at most %zu characters)",
-                name.c_str(),
-                InputValidator::MaxEntityNameLength));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::ValidationFailed,
+                AZStd::string::format(
+                    "invalid entity name '%s' (letter first, then letters, digits, '_' or '-', at most %zu characters)",
+                    name.c_str(),
+                    InputValidator::MaxEntityNameLength)));
         }
         if (!InputValidator::IsValidPosition(position.GetX(), position.GetY(), position.GetZ()))
         {
-            return AZ::Failure(AZStd::string("position out of bounds"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "position out of bounds"));
         }
         // AZ::EntityId(0) is a valid-looking id that no entity has; the invalid id is
         // all ones. An absent parent must be the default-constructed EntityId so the
@@ -483,7 +557,9 @@ namespace AiCompanion
         AZ::EntityId parent = (parentId != 0) ? AZ::EntityId(parentId) : AZ::EntityId();
         if (parentId != 0 && !EntityExists(parent))
         {
-            return AZ::Failure(AZStd::string::format("parent entity %llu does not exist", static_cast<unsigned long long>(parentId)));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::NotFound,
+                AZStd::string::format("parent entity %llu does not exist", static_cast<unsigned long long>(parentId))));
         }
 
         // Call the prefab system directly. ToolsApplication::CreateNewEntityAtPosition
@@ -494,18 +570,19 @@ namespace AiCompanion
         auto* prefabInterface = AZ::Interface<AzToolsFramework::Prefab::PrefabPublicInterface>::Get();
         if (!prefabInterface)
         {
-            return AZ::Failure(AZStd::string("prefab system is not available"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::Unavailable, "prefab system is not available"));
         }
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Create Entity");
         auto createResult = prefabInterface->CreateEntity(parent, position);
         if (!createResult.IsSuccess())
         {
-            return AZ::Failure(createResult.GetError());
+            // The engine's own text, e.g. "no root prefab is assigned".
+            return AZ::Failure(RequestError::EncodeError(RequestError::EngineError, createResult.GetError()));
         }
         const AZ::EntityId created = createResult.GetValue();
         if (!created.IsValid())
         {
-            return AZ::Failure(AZStd::string("the prefab system returned an invalid entity id"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::EngineError, "the prefab system returned an invalid entity id"));
         }
         AzToolsFramework::EditorEntityAPIBus::Event(created, &AzToolsFramework::EditorEntityAPIRequests::SetName, name);
         return AZ::Success(static_cast<AZ::u64>(created));
@@ -523,15 +600,16 @@ namespace AiCompanion
         AZ::EntityId id(entityId);
         if (!EntityExists(id))
         {
-            return AZ::Failure(AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId)));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::NotFound, AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId))));
         }
         if (setPosition && !InputValidator::IsValidPosition(position.GetX(), position.GetY(), position.GetZ()))
         {
-            return AZ::Failure(AZStd::string("position out of bounds"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "position out of bounds"));
         }
         if (setScale && !(uniformScale > 0.0f && uniformScale <= 1000.0f))
         {
-            return AZ::Failure(AZStd::string("scale must be in (0, 1000]"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "scale must be in (0, 1000]"));
         }
 
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Set Transform");
@@ -581,18 +659,19 @@ namespace AiCompanion
         AZ::EntityId id(entityId);
         if (!EntityExists(id))
         {
-            return AZ::Failure(AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId)));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::NotFound, AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId))));
         }
         if (IsLevelRoot(id))
         {
-            return AZ::Failure(AZStd::string("refusing to delete the level's root entity"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "refusing to delete the level's root entity"));
         }
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Delete Entity");
         AzToolsFramework::ToolsApplicationRequestBus::Broadcast(
             &AzToolsFramework::ToolsApplicationRequests::DeleteEntityAndAllDescendants, id);
         if (EntityExists(id))
         {
-            return AZ::Failure(AZStd::string("the editor did not delete the entity"));
+            return AZ::Failure(RequestError::EncodeError(RequestError::EngineError, "the editor did not delete the entity"));
         }
         return AZ::Success();
     }
@@ -605,6 +684,92 @@ namespace AiCompanion
     AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAnimGraph(AZStd::string selector)
     {
         return AnimGraphInspector::DescribeAnimGraph(selector);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::CreateAnimGraph()
+    {
+        return AnimGraphAuthoring::CreateAnimGraph();
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraph(AZ::u32 animGraphId)
+    {
+        return AnimGraphAuthoring::RemoveAnimGraph(animGraphId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::LoadAnimGraph(AZStd::string fileName)
+    {
+        return AnimGraphAuthoring::LoadAnimGraph(fileName);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SaveAnimGraph(AZ::u32 animGraphId, AZStd::string fileName)
+    {
+        return AnimGraphAuthoring::SaveAnimGraph(animGraphId, fileName);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::AddAnimGraphNode(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::AddNode(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraphNode(
+        AZ::u32 animGraphId, AZStd::string nodeId)
+    {
+        return AnimGraphAuthoring::RemoveNode(animGraphId, nodeId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SetAnimGraphEntryState(
+        AZ::u32 animGraphId, AZStd::string nodeId)
+    {
+        return AnimGraphAuthoring::SetEntryState(animGraphId, nodeId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::AddAnimGraphParameter(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::AddParameter(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraphParameter(
+        AZ::u32 animGraphId, AZStd::string name)
+    {
+        return AnimGraphAuthoring::RemoveParameter(animGraphId, name);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::AddAnimGraphTransition(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::AddTransition(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraphTransition(
+        AZ::u32 animGraphId, AZStd::string transitionId)
+    {
+        return AnimGraphAuthoring::RemoveTransition(animGraphId, transitionId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SetAnimGraphTransition(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::SetTransition(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::ConnectAnimGraphPorts(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::ConnectPorts(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::DisconnectAnimGraphPorts(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::DisconnectPorts(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SetAnimGraphNode(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::SetNode(animGraphId, argumentsJson);
     }
 
 } // namespace AiCompanion

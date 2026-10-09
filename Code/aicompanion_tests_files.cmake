@@ -8,4 +8,6 @@ set(FILES
     Source/Tests/SceneSnapshotTests.cpp
     Source/Tests/BusSchemaTests.cpp
     Source/Tests/RequestParsingTests.cpp
+    Source/Tests/RequestErrorTests.cpp
+    Source/Tests/AnimGraphCommandTextTests.cpp
 )

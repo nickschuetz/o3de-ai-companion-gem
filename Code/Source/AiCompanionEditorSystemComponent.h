@@ -60,6 +60,21 @@ namespace AiCompanion
         AZ::Outcome<void, AZStd::string> CommitEntityToPrefab(AZ::EntityId entityId) override;
         AZ::Outcome<AZStd::string, AZStd::string> ListAnimGraphs() override;
         AZ::Outcome<AZStd::string, AZStd::string> GetAnimGraph(AZStd::string selector) override;
+        AZ::Outcome<AZStd::string, AZStd::string> CreateAnimGraph() override;
+        AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraph(AZ::u32 animGraphId) override;
+        AZ::Outcome<AZStd::string, AZStd::string> LoadAnimGraph(AZStd::string fileName) override;
+        AZ::Outcome<AZStd::string, AZStd::string> SaveAnimGraph(AZ::u32 animGraphId, AZStd::string fileName) override;
+        AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphNode(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphNode(AZ::u32 animGraphId, AZStd::string nodeId) override;
+        AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphEntryState(AZ::u32 animGraphId, AZStd::string nodeId) override;
+        AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphParameter(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphParameter(AZ::u32 animGraphId, AZStd::string name) override;
+        AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphTransition(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphTransition(AZ::u32 animGraphId, AZStd::string transitionId) override;
+        AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphTransition(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> ConnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> DisconnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphNode(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
 
     protected:
         // AZ::Component overrides

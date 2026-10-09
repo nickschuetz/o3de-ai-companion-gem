@@ -4,6 +4,7 @@
  */
 
 #include "AgentServer.h"
+#include "RequestError.h"
 #include "RequestParsing.h"
 #include "ResponseBuilding.h"
 
@@ -243,7 +244,7 @@ namespace AiCompanion
             AZStd::lock_guard<AZStd::mutex> lock(m_queueMutex);
             for (auto& req : m_pendingRequests)
             {
-                req->responsePromise.set_value(BuildErrorResponse(req->id, "Server shutting down"));
+                req->responsePromise.set_value(BuildErrorResponse(req->id, "Server shutting down", RequestError::ShuttingDown));
             }
             m_pendingRequests.clear();
         }
@@ -533,7 +534,7 @@ namespace AiCompanion
 
             if (doc.HasParseError() || !doc.IsObject())
             {
-                AZStd::string errorResp = BuildErrorResponse("", "Invalid JSON");
+                AZStd::string errorResp = BuildErrorResponse("", "Invalid JSON", RequestError::ValidationFailed);
                 SendFramedMessage(clientSocket, ssl, errorResp);
                 continue;
             }
@@ -557,7 +558,7 @@ namespace AiCompanion
 
             if (type.empty())
             {
-                AZStd::string errorResp = BuildErrorResponse(id, "Missing 'type' field");
+                AZStd::string errorResp = BuildErrorResponse(id, "Missing 'type' field", RequestError::ValidationFailed);
                 SendFramedMessage(clientSocket, ssl, errorResp);
                 continue;
             }
@@ -578,7 +579,12 @@ namespace AiCompanion
             else if (
                 type == "get_scene_snapshot" || type == "get_entity_tree" || type == "validate_scene" || type == "get_entity" ||
                 type == "get_bus_schema" || type == "create_entity" || type == "set_transform" || type == "delete_entity" ||
-                type == "list_anim_graphs" || type == "get_anim_graph")
+                type == "list_anim_graphs" || type == "get_anim_graph" || type == "create_anim_graph" || type == "remove_anim_graph" ||
+                type == "load_anim_graph" || type == "save_anim_graph" || type == "add_anim_graph_node" ||
+                type == "remove_anim_graph_node" || type == "set_anim_graph_entry_state" || type == "add_anim_graph_parameter" ||
+                type == "remove_anim_graph_parameter" || type == "add_anim_graph_transition" || type == "remove_anim_graph_transition" ||
+                type == "set_anim_graph_transition" || type == "connect_anim_graph_ports" || type == "disconnect_anim_graph_ports" ||
+                type == "set_anim_graph_node")
             {
                 // Safe EBus calls — dispatch to main thread
                 auto pending = std::make_shared<PendingRequest>();
@@ -603,7 +609,8 @@ namespace AiCompanion
                     response = BuildErrorResponse(
                         id,
                         "Request timed out waiting for main thread dispatch. "
-                        "Ensure the editor is running and not blocked.");
+                        "Ensure the editor is running and not blocked.",
+                        RequestError::Timeout);
                     AZ_Warning(
                         "AiCompanion",
                         false,
@@ -621,7 +628,12 @@ namespace AiCompanion
                         "execute_python is disabled in secure mode. "
                         "Only ping, get_api_version, get_scene_snapshot, get_entity_tree, validate_scene, "
                         "get_entity, get_bus_schema, create_entity, set_transform, delete_entity, "
-                        "list_anim_graphs and get_anim_graph are available.");
+                        "list_anim_graphs, get_anim_graph, create_anim_graph, remove_anim_graph, load_anim_graph, "
+                        "save_anim_graph, add_anim_graph_node, remove_anim_graph_node, set_anim_graph_entry_state, "
+                        "add_anim_graph_parameter, remove_anim_graph_parameter, add_anim_graph_transition, "
+                        "remove_anim_graph_transition, set_anim_graph_transition, connect_anim_graph_ports, "
+                        "disconnect_anim_graph_ports and set_anim_graph_node are available.",
+                        RequestError::SecureMode);
                     AZ_Warning("AiCompanion", false, "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
                 }
                 else
@@ -649,7 +661,8 @@ namespace AiCompanion
                         response = BuildErrorResponse(
                             id,
                             "Request timed out waiting for main thread dispatch. "
-                            "Ensure the editor is running and not blocked.");
+                            "Ensure the editor is running and not blocked.",
+                            RequestError::Timeout);
                         AZ_Warning(
                             "AiCompanion",
                             false,
@@ -661,7 +674,7 @@ namespace AiCompanion
             else
             {
                 // Keep the message text: older clients match on it. The code is
-                // the machine-readable signal, and no other error carries it.
+                // the one clients fall back to editor Python on.
                 response = BuildErrorResponse(
                     id, AZStd::string::format("Unknown request type: %s", type.c_str()), ResponseBuilding::UnknownRequestTypeCode);
             }
@@ -811,6 +824,41 @@ namespace AiCompanion
     // Request Handling
     // -------------------------------------------------------------------------
 
+    namespace
+    {
+        //! The failure a bus event answers when nothing handles it: a
+        //! BroadcastResult leaves the default outcome untouched.
+        AZStd::string EditorBusNoHandler()
+        {
+            return RequestError::EncodeError(
+                RequestError::Unavailable, "AiCompanionEditorRequestBus has no handler; is the editor system component active?");
+        }
+
+        //! True when a native producer answered its own {"error": "..."}
+        //! object instead of a result (SceneSnapshotProvider::CaptureEntity,
+        //! BuildBusSchemaJson). The message is the object's "error"; the code
+        //! is its "code" member when the producer wrote one, else not_found.
+        bool IsErrorObject(const AZStd::string& json, AZStd::string& outCode, AZStd::string& outMessage)
+        {
+            rapidjson::Document doc;
+            doc.Parse(json.c_str(), json.size());
+            if (doc.HasParseError() || !doc.IsObject() || !doc.HasMember("error") || !doc["error"].IsString())
+            {
+                return false;
+            }
+            outMessage.assign(doc["error"].GetString(), doc["error"].GetStringLength());
+            if (doc.HasMember("code") && doc["code"].IsString())
+            {
+                outCode.assign(doc["code"].GetString(), doc["code"].GetStringLength());
+            }
+            else
+            {
+                outCode = RequestError::NotFound;
+            }
+            return true;
+        }
+    } // namespace
+
     AZStd::string AgentServer::HandleRequest(const AZStd::string& jsonRequest)
     {
         rapidjson::Document doc;
@@ -818,7 +866,7 @@ namespace AiCompanion
 
         if (doc.HasParseError() || !doc.IsObject())
         {
-            return BuildErrorResponse("", "Invalid JSON request");
+            return BuildErrorResponse("", "Invalid JSON request", RequestError::ValidationFailed);
         }
 
         AZStd::string id = doc.HasMember("id") && doc["id"].IsString() ? doc["id"].GetString() : "";
@@ -864,12 +912,77 @@ namespace AiCompanion
         {
             return HandleGetAnimGraph(id, doc);
         }
+        else if (type == "create_anim_graph")
+        {
+            return HandleCreateAnimGraph(id);
+        }
+        else if (type == "remove_anim_graph")
+        {
+            return HandleRemoveAnimGraph(id, doc);
+        }
+        else if (type == "load_anim_graph")
+        {
+            return HandleLoadAnimGraph(id, doc);
+        }
+        else if (type == "save_anim_graph")
+        {
+            return HandleSaveAnimGraph(id, doc);
+        }
+        else if (type == "add_anim_graph_node")
+        {
+            return HandleAddAnimGraphNode(id, doc, jsonRequest);
+        }
+        else if (type == "remove_anim_graph_node")
+        {
+            return HandleRemoveAnimGraphNode(id, doc);
+        }
+        else if (type == "set_anim_graph_entry_state")
+        {
+            return HandleSetAnimGraphEntryState(id, doc);
+        }
+        else if (type == "add_anim_graph_parameter")
+        {
+            return HandleAddAnimGraphParameter(id, doc, jsonRequest);
+        }
+        else if (type == "remove_anim_graph_parameter")
+        {
+            return HandleRemoveAnimGraphParameter(id, doc);
+        }
+        else if (type == "add_anim_graph_transition")
+        {
+            return HandleAnimGraphJsonRequest(
+                id, doc, jsonRequest, "add_anim_graph_transition", &AiCompanionEditorRequestBus::Events::AddAnimGraphTransition);
+        }
+        else if (type == "remove_anim_graph_transition")
+        {
+            return HandleRemoveAnimGraphTransition(id, doc);
+        }
+        else if (type == "set_anim_graph_transition")
+        {
+            return HandleAnimGraphJsonRequest(
+                id, doc, jsonRequest, "set_anim_graph_transition", &AiCompanionEditorRequestBus::Events::SetAnimGraphTransition);
+        }
+        else if (type == "connect_anim_graph_ports")
+        {
+            return HandleAnimGraphJsonRequest(
+                id, doc, jsonRequest, "connect_anim_graph_ports", &AiCompanionEditorRequestBus::Events::ConnectAnimGraphPorts);
+        }
+        else if (type == "disconnect_anim_graph_ports")
+        {
+            return HandleAnimGraphJsonRequest(
+                id, doc, jsonRequest, "disconnect_anim_graph_ports", &AiCompanionEditorRequestBus::Events::DisconnectAnimGraphPorts);
+        }
+        else if (type == "set_anim_graph_node")
+        {
+            return HandleAnimGraphJsonRequest(
+                id, doc, jsonRequest, "set_anim_graph_node", &AiCompanionEditorRequestBus::Events::SetAnimGraphNode);
+        }
         else if (type == "execute_python")
         {
             // Decode base64 script
             if (!doc.HasMember("script") || !doc["script"].IsString())
             {
-                return BuildErrorResponse(id, "Missing 'script' field for execute_python");
+                return BuildErrorResponse(id, "Missing 'script' field for execute_python", RequestError::ValidationFailed);
             }
 
             AZStd::string b64Script = doc["script"].GetString();
@@ -914,7 +1027,7 @@ namespace AiCompanion
 
             if (decoded.empty())
             {
-                return BuildErrorResponse(id, "Failed to decode base64 script");
+                return BuildErrorResponse(id, "Failed to decode base64 script", RequestError::ValidationFailed);
             }
 
             // Encode the decoded script as a Python bytes literal using hex escaping.
@@ -991,9 +1104,11 @@ namespace AiCompanion
             AzToolsFramework::EditorPythonRunnerRequestBus::Broadcast(
                 &AzToolsFramework::EditorPythonRunnerRequestBus::Events::ExecuteByString, wrappedScript.c_str(), false);
 
-            // Read the result file
+            // Read the result file. A traceback in it means the script raised;
+            // no file at all means the Python runner never ran the wrapper.
             AZStd::string output;
             AZStd::string error;
+            const char* code = RequestError::ExecutionFailed;
 
             AZStd::string resultContent;
             {
@@ -1023,17 +1138,24 @@ namespace AiCompanion
             }
             else
             {
-                error = "Failed to retrieve script execution result";
+                error = "Failed to retrieve script execution result; is the editor's Python runner ready?";
+                code = RequestError::Unavailable;
             }
 
             // Clean up the result file regardless of success/failure.
             remove(resultPath.c_str());
 
-            const char* status = error.empty() ? "ok" : "error";
-            return BuildResponse(id, status, output, error, 0);
+            if (!error.empty())
+            {
+                return ResponseBuilding::BuildResponse(id, "error", output, error, 0, code);
+            }
+            return BuildResponse(id, "ok", output, "", 0);
         }
 
-        return BuildErrorResponse(id, AZStd::string::format("Unhandled type in main thread: %s", type.c_str()));
+        // A type the dispatch list accepts but HandleRequest does not know is a
+        // server bug, not a missing request type: engine_error keeps clients
+        // from treating it as an older gem and falling back to Python.
+        return BuildErrorResponse(id, AZStd::string::format("Unhandled type in main thread: %s", type.c_str()), RequestError::EngineError);
     }
 
     AZStd::string AgentServer::HandlePing(const AZStd::string& id)
@@ -1087,14 +1209,22 @@ namespace AiCompanion
         AZ::u64 entityId = 0;
         if (!doc.HasMember("entity_id") || !RequestParsing::ParseEntityId(doc["entity_id"], entityId))
         {
-            return BuildErrorResponse(id, "get_entity requires 'entity_id' (a decimal id, as a number or string)");
+            return BuildErrorResponse(
+                id, "get_entity requires 'entity_id' (a decimal id, as a number or string)", RequestError::ValidationFailed);
         }
 
         AZStd::string json;
         AiCompanionRequestBus::BroadcastResult(json, &AiCompanionRequestBus::Events::GetEntity, entityId);
         if (json.empty())
         {
-            return BuildErrorResponse(id, "AiCompanionRequestBus has no handler; is the gem's system component active?");
+            return BuildErrorResponse(
+                id, "AiCompanionRequestBus has no handler; is the gem's system component active?", RequestError::Unavailable);
+        }
+        AZStd::string code;
+        AZStd::string message;
+        if (IsErrorObject(json, code, message))
+        {
+            return BuildErrorResponse(id, message, code.c_str());
         }
         return BuildResponse(id, "ok", json, "", 0);
     }
@@ -1111,7 +1241,13 @@ namespace AiCompanion
         AiCompanionEditorRequestBus::BroadcastResult(json, &AiCompanionEditorRequestBus::Events::GetBusSchema, busName);
         if (json.empty())
         {
-            return BuildErrorResponse(id, "AiCompanionEditorRequestBus has no handler; is the editor system component active?");
+            return FailureResponse(id, EditorBusNoHandler());
+        }
+        AZStd::string code;
+        AZStd::string message;
+        if (IsErrorObject(json, code, message))
+        {
+            return BuildErrorResponse(id, message, code.c_str());
         }
         return BuildResponse(id, "ok", json, "", 0);
     }
@@ -1120,25 +1256,26 @@ namespace AiCompanion
     {
         if (!doc.HasMember("name") || !doc["name"].IsString())
         {
-            return BuildErrorResponse(id, "create_entity requires 'name'");
+            return BuildErrorResponse(id, "create_entity requires 'name'", RequestError::ValidationFailed);
         }
         AZ::Vector3 position = AZ::Vector3::CreateZero();
         if (doc.HasMember("position") && !RequestParsing::ParseVector3(doc["position"], position))
         {
-            return BuildErrorResponse(id, "create_entity 'position' must be [x, y, z] within the position bound");
+            return BuildErrorResponse(
+                id, "create_entity 'position' must be [x, y, z] within the position bound", RequestError::ValidationFailed);
         }
         AZ::u64 parentId = 0;
         if (doc.HasMember("parent_id") && !doc["parent_id"].IsNull() && !RequestParsing::ParseEntityId(doc["parent_id"], parentId))
         {
-            return BuildErrorResponse(id, "create_entity 'parent_id' must be a decimal entity id");
+            return BuildErrorResponse(id, "create_entity 'parent_id' must be a decimal entity id", RequestError::ValidationFailed);
         }
 
-        AZ::Outcome<AZ::u64, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AZ::Outcome<AZ::u64, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
         AiCompanionEditorRequestBus::BroadcastResult(
             outcome, &AiCompanionEditorRequestBus::Events::CreateEntity, AZStd::string(doc["name"].GetString()), position, parentId);
         if (!outcome.IsSuccess())
         {
-            return BuildErrorResponse(id, outcome.GetError());
+            return FailureResponse(id, outcome.GetError());
         }
 
         rapidjson::StringBuffer sb;
@@ -1164,7 +1301,7 @@ namespace AiCompanion
         AZ::u64 entityId = 0;
         if (!doc.HasMember("entity_id") || !RequestParsing::ParseEntityId(doc["entity_id"], entityId))
         {
-            return BuildErrorResponse(id, "set_transform requires 'entity_id'");
+            return BuildErrorResponse(id, "set_transform requires 'entity_id'", RequestError::ValidationFailed);
         }
         AZ::Vector3 position = AZ::Vector3::CreateZero();
         AZ::Vector3 rotation = AZ::Vector3::CreateZero();
@@ -1174,26 +1311,30 @@ namespace AiCompanion
         const bool setScale = doc.HasMember("scale");
         if (!setPosition && !setRotation && !setScale)
         {
-            return BuildErrorResponse(id, "set_transform needs at least one of 'position', 'rotation' (Euler degrees) or 'scale'");
+            return BuildErrorResponse(
+                id,
+                "set_transform needs at least one of 'position', 'rotation' (Euler degrees) or 'scale'",
+                RequestError::ValidationFailed);
         }
         if (setPosition && !RequestParsing::ParseVector3(doc["position"], position))
         {
-            return BuildErrorResponse(id, "set_transform 'position' must be [x, y, z] within the position bound");
+            return BuildErrorResponse(
+                id, "set_transform 'position' must be [x, y, z] within the position bound", RequestError::ValidationFailed);
         }
         if (setRotation && !RequestParsing::ParseVector3(doc["rotation"], rotation))
         {
-            return BuildErrorResponse(id, "set_transform 'rotation' must be [x, y, z] Euler degrees");
+            return BuildErrorResponse(id, "set_transform 'rotation' must be [x, y, z] Euler degrees", RequestError::ValidationFailed);
         }
         if (setScale)
         {
             if (!doc["scale"].IsNumber())
             {
-                return BuildErrorResponse(id, "set_transform 'scale' must be a number");
+                return BuildErrorResponse(id, "set_transform 'scale' must be a number", RequestError::ValidationFailed);
             }
             scale = static_cast<float>(doc["scale"].GetDouble());
         }
 
-        AZ::Outcome<void, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AZ::Outcome<void, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
         AiCompanionEditorRequestBus::BroadcastResult(
             outcome,
             &AiCompanionEditorRequestBus::Events::SetTransform,
@@ -1206,7 +1347,7 @@ namespace AiCompanion
             scale);
         if (!outcome.IsSuccess())
         {
-            return BuildErrorResponse(id, outcome.GetError());
+            return FailureResponse(id, outcome.GetError());
         }
         AZStd::string entityJson;
         AiCompanionRequestBus::BroadcastResult(entityJson, &AiCompanionRequestBus::Events::GetEntity, entityId);
@@ -1218,13 +1359,13 @@ namespace AiCompanion
         AZ::u64 entityId = 0;
         if (!doc.HasMember("entity_id") || !RequestParsing::ParseEntityId(doc["entity_id"], entityId))
         {
-            return BuildErrorResponse(id, "delete_entity requires 'entity_id'");
+            return BuildErrorResponse(id, "delete_entity requires 'entity_id'", RequestError::ValidationFailed);
         }
-        AZ::Outcome<void, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AZ::Outcome<void, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
         AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::DeleteEntity, entityId);
         if (!outcome.IsSuccess())
         {
-            return BuildErrorResponse(id, outcome.GetError());
+            return FailureResponse(id, outcome.GetError());
         }
         rapidjson::StringBuffer sb;
         rapidjson::Writer<rapidjson::StringBuffer> w(sb);
@@ -1237,11 +1378,11 @@ namespace AiCompanion
 
     AZStd::string AgentServer::HandleListAnimGraphs(const AZStd::string& id)
     {
-        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
         AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::ListAnimGraphs);
         if (!outcome.IsSuccess())
         {
-            return BuildErrorResponse(id, outcome.GetError());
+            return FailureResponse(id, outcome.GetError());
         }
         return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
     }
@@ -1256,7 +1397,8 @@ namespace AiCompanion
             AZ::u32 animGraphId = 0;
             if (!RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
             {
-                return BuildErrorResponse(id, "get_anim_graph 'anim_graph_id' must be a decimal id, as a number or string");
+                return BuildErrorResponse(
+                    id, "get_anim_graph 'anim_graph_id' must be a decimal id, as a number or string", RequestError::ValidationFailed);
             }
             selector = AZStd::string::format("%u", animGraphId);
         }
@@ -1266,14 +1408,14 @@ namespace AiCompanion
         }
         else
         {
-            return BuildErrorResponse(id, "get_anim_graph needs anim_graph_id or file_name");
+            return BuildErrorResponse(id, "get_anim_graph needs anim_graph_id or file_name", RequestError::ValidationFailed);
         }
 
-        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
         AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::GetAnimGraph, selector);
         if (!outcome.IsSuccess())
         {
-            return BuildErrorResponse(id, outcome.GetError());
+            return FailureResponse(id, outcome.GetError());
         }
         return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
     }
@@ -1292,6 +1434,14 @@ namespace AiCompanion
     {
         AZ_Error("AiCompanion", false, "[AgentServer] req=%s error: %s", id.c_str(), error.c_str());
         return ResponseBuilding::BuildErrorResponse(id, error, code);
+    }
+
+    AZStd::string AgentServer::FailureResponse(const AZStd::string& id, const AZStd::string& encodedError)
+    {
+        AZStd::string code;
+        AZStd::string message;
+        RequestError::DecodeError(encodedError, code, message);
+        return BuildErrorResponse(id, message, code.c_str());
     }
 
     // -------------------------------------------------------------------------
@@ -1423,4 +1573,288 @@ namespace AiCompanion
         m_tlsEnabled = false;
     }
 
+    AZStd::string AgentServer::HandleCreateAnimGraph(const AZStd::string& id)
+    {
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::CreateAnimGraph);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleRemoveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id, "remove_anim_graph requires 'anim_graph_id' (a decimal id, as a number or string)", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::RemoveAnimGraph, animGraphId);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Anim graph authoring. The server checks the request's shape (the id
+    // fields and required strings) and forwards; every engine-facing rule
+    // (names, types, placement, ownership, paths) is in Animation/AnimGraphAuthoring.
+    // -------------------------------------------------------------------------
+
+    namespace
+    {
+        //! A node id field: a decimal string, or a number, as text.
+        bool ReadIdText(const rapidjson::Document& doc, const char* key, AZStd::string& out)
+        {
+            if (!doc.HasMember(key))
+            {
+                return false;
+            }
+            const rapidjson::Value& value = doc[key];
+            if (value.IsString() && value.GetStringLength() > 0)
+            {
+                out.assign(value.GetString(), value.GetStringLength());
+                return true;
+            }
+            if (value.IsUint64())
+            {
+                out = AZStd::string::format("%llu", static_cast<unsigned long long>(value.GetUint64()));
+                return true;
+            }
+            return false;
+        }
+
+        //! An optional string field; absent or null reads as empty.
+        bool ReadOptionalText(const rapidjson::Document& doc, const char* key, AZStd::string& out)
+        {
+            out.clear();
+            if (!doc.HasMember(key) || doc[key].IsNull())
+            {
+                return true;
+            }
+            if (!doc[key].IsString())
+            {
+                return false;
+            }
+            out.assign(doc[key].GetString(), doc[key].GetStringLength());
+            return true;
+        }
+    } // namespace
+
+    AZStd::string AgentServer::HandleLoadAnimGraph(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZStd::string fileName;
+        if (!ReadOptionalText(doc, "file_name", fileName) || fileName.empty())
+        {
+            return BuildErrorResponse(
+                id,
+                "load_anim_graph requires 'file_name': an .animgraph path, absolute, @alias@, or relative to the project root",
+                RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::LoadAnimGraph, fileName);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleSaveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id, "save_anim_graph requires 'anim_graph_id' (a decimal id, as a number or string)", RequestError::ValidationFailed);
+        }
+        AZStd::string fileName;
+        if (!ReadOptionalText(doc, "file_name", fileName))
+        {
+            return BuildErrorResponse(id, "save_anim_graph 'file_name' must be a string", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::SaveAnimGraph, animGraphId, fileName);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleAddAnimGraphNode(
+        const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id, "add_anim_graph_node requires 'anim_graph_id' (a decimal id, as a number or string)", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::AddAnimGraphNode, animGraphId, jsonRequest);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleRemoveAnimGraphNode(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id,
+                "remove_anim_graph_node requires 'anim_graph_id' (a decimal id, as a number or string)",
+                RequestError::ValidationFailed);
+        }
+        AZStd::string nodeId;
+        if (!ReadIdText(doc, "node_id", nodeId))
+        {
+            return BuildErrorResponse(
+                id, "remove_anim_graph_node requires 'node_id' (the node's decimal id string)", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::RemoveAnimGraphNode, animGraphId, nodeId);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleSetAnimGraphEntryState(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id,
+                "set_anim_graph_entry_state requires 'anim_graph_id' (a decimal id, as a number or string)",
+                RequestError::ValidationFailed);
+        }
+        AZStd::string nodeId;
+        if (!ReadIdText(doc, "node_id", nodeId))
+        {
+            return BuildErrorResponse(
+                id, "set_anim_graph_entry_state requires 'node_id' (the node's decimal id string)", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::SetAnimGraphEntryState, animGraphId, nodeId);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleAddAnimGraphParameter(
+        const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id,
+                "add_anim_graph_parameter requires 'anim_graph_id' (a decimal id, as a number or string)",
+                RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::AddAnimGraphParameter, animGraphId, jsonRequest);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleRemoveAnimGraphParameter(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id,
+                "remove_anim_graph_parameter requires 'anim_graph_id' (a decimal id, as a number or string)",
+                RequestError::ValidationFailed);
+        }
+        AZStd::string name;
+        if (!ReadOptionalText(doc, "name", name) || name.empty())
+        {
+            return BuildErrorResponse(
+                id, "remove_anim_graph_parameter requires 'name' (the value parameter's name)", RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::RemoveAnimGraphParameter, animGraphId, name);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleRemoveAnimGraphTransition(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id,
+                "remove_anim_graph_transition requires 'anim_graph_id' (a decimal id, as a number or string)",
+                RequestError::ValidationFailed);
+        }
+        AZStd::string transitionId;
+        if (!ReadIdText(doc, "transition_id", transitionId))
+        {
+            return BuildErrorResponse(
+                id,
+                "remove_anim_graph_transition requires 'transition_id' (the transition's decimal id string)",
+                RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(
+            outcome, &AiCompanionEditorRequestBus::Events::RemoveAnimGraphTransition, animGraphId, transitionId);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleAnimGraphJsonRequest(
+        const AZStd::string& id,
+        const rapidjson::Document& doc,
+        const AZStd::string& jsonRequest,
+        const char* requestType,
+        AZ::Outcome<AZStd::string, AZStd::string> (AiCompanionEditorRequests::*event)(AZ::u32, AZStd::string))
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(
+                id,
+                AZStd::string::format("%s requires 'anim_graph_id' (a decimal id, as a number or string)", requestType),
+                RequestError::ValidationFailed);
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(EditorBusNoHandler());
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, event, animGraphId, jsonRequest);
+        if (!outcome.IsSuccess())
+        {
+            return FailureResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
 } // namespace AiCompanion
