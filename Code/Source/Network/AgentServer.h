@@ -120,6 +120,8 @@ namespace AiCompanion
         AZStd::string HandleDeleteEntity(const AZStd::string& id, const rapidjson::Document& doc);
         AZStd::string HandleListAnimGraphs(const AZStd::string& id);
         AZStd::string HandleGetAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleCreateAnimGraph(const AZStd::string& id);
+        AZStd::string HandleRemoveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
 
         // Response builders
         AZStd::string BuildResponse(

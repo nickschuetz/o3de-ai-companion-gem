@@ -578,7 +578,7 @@ namespace AiCompanion
             else if (
                 type == "get_scene_snapshot" || type == "get_entity_tree" || type == "validate_scene" || type == "get_entity" ||
                 type == "get_bus_schema" || type == "create_entity" || type == "set_transform" || type == "delete_entity" ||
-                type == "list_anim_graphs" || type == "get_anim_graph")
+                type == "list_anim_graphs" || type == "get_anim_graph" || type == "create_anim_graph" || type == "remove_anim_graph")
             {
                 // Safe EBus calls — dispatch to main thread
                 auto pending = std::make_shared<PendingRequest>();
@@ -621,7 +621,7 @@ namespace AiCompanion
                         "execute_python is disabled in secure mode. "
                         "Only ping, get_api_version, get_scene_snapshot, get_entity_tree, validate_scene, "
                         "get_entity, get_bus_schema, create_entity, set_transform, delete_entity, "
-                        "list_anim_graphs and get_anim_graph are available.");
+                        "list_anim_graphs, get_anim_graph, create_anim_graph and remove_anim_graph are available.");
                     AZ_Warning("AiCompanion", false, "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
                 }
                 else
@@ -863,6 +863,14 @@ namespace AiCompanion
         else if (type == "get_anim_graph")
         {
             return HandleGetAnimGraph(id, doc);
+        }
+        else if (type == "create_anim_graph")
+        {
+            return HandleCreateAnimGraph(id);
+        }
+        else if (type == "remove_anim_graph")
+        {
+            return HandleRemoveAnimGraph(id, doc);
         }
         else if (type == "execute_python")
         {
@@ -1423,4 +1431,30 @@ namespace AiCompanion
         m_tlsEnabled = false;
     }
 
+    AZStd::string AgentServer::HandleCreateAnimGraph(const AZStd::string& id)
+    {
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::CreateAnimGraph);
+        if (!outcome.IsSuccess())
+        {
+            return BuildErrorResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleRemoveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZ::u32 animGraphId = 0;
+        if (!doc.HasMember("anim_graph_id") || !RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+        {
+            return BuildErrorResponse(id, "remove_anim_graph requires 'anim_graph_id' (a decimal id, as a number or string)");
+        }
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::RemoveAnimGraph, animGraphId);
+        if (!outcome.IsSuccess())
+        {
+            return BuildErrorResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
 } // namespace AiCompanion

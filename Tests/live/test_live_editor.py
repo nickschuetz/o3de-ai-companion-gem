@@ -596,6 +596,34 @@ class TestAnimGraphs(LiveEditorTest):
         self.assertEqual(by_id["id"], self.graph_id)
         self.assertEqual(by_name["id"], self.graph_id)
 
+    def test_create_and_remove_anim_graph(self):
+        # The write path: EMotion Studio's command system reached from the
+        # gem's module (CommandSystem::GetCommandManager() is module-local and
+        # null there; EMStudio::GetManager() is the cross-module accessor).
+        created = self.native("create_anim_graph")
+        if created.get("status") == "error" and "EMotion Studio is not available" in created.get("error", ""):
+            self.skipTest("EMotion Studio (the Animation Editor's command system) is not loaded in this editor")
+        self.assertEqual(created["status"], "ok", created)
+        new_graph = json.loads(created["output"])
+        self.assertIsInstance(new_graph["id"], int)
+        self.assertEqual(new_graph["file_name"], "")
+        try:
+            listing = json.loads(self.native("list_anim_graphs")["output"])
+            entry = next(g for g in listing["anim_graphs"] if g["id"] == new_graph["id"])
+            self.assertFalse(entry["owned_by_asset"], entry)
+            described = json.loads(self.native("get_anim_graph", anim_graph_id=new_graph["id"])["output"])
+            self.assertEqual(len(described["nodes"]), 1, described["nodes"])  # the root state machine
+            self.assertEqual(described["nodes"][0]["type"], "AnimGraphStateMachine")
+        finally:
+            removed = self.native("remove_anim_graph", anim_graph_id=new_graph["id"])
+        self.assertEqual(removed["status"], "ok", removed)
+        self.assertEqual(json.loads(removed["output"])["removed"], new_graph["id"])
+        listing = json.loads(self.native("list_anim_graphs")["output"])
+        self.assertNotIn(new_graph["id"], [g["id"] for g in listing["anim_graphs"]])
+        gone = self.native("remove_anim_graph", anim_graph_id=new_graph["id"])
+        self.assertEqual(gone["status"], "error", gone)
+        self.assertIn("not found", gone["error"])
+
     def test_get_anim_graph_errors(self):
         unknown = self.native("get_anim_graph", anim_graph_id=4000000000)
         self.assertEqual(unknown["status"], "error", unknown)

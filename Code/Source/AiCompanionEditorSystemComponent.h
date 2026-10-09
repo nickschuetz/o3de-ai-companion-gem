@@ -60,6 +60,8 @@ namespace AiCompanion
         AZ::Outcome<void, AZStd::string> CommitEntityToPrefab(AZ::EntityId entityId) override;
         AZ::Outcome<AZStd::string, AZStd::string> ListAnimGraphs() override;
         AZ::Outcome<AZStd::string, AZStd::string> GetAnimGraph(AZStd::string selector) override;
+        AZ::Outcome<AZStd::string, AZStd::string> CreateAnimGraph() override;
+        AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraph(AZ::u32 animGraphId) override;
 
     protected:
         // AZ::Component overrides

@@ -105,6 +105,16 @@ namespace AiCompanion
         //! be called on the main thread. Fails with "anim graph not found: ..."
         //! or "EMotion FX is not available".
         virtual AZ::Outcome<AZStd::string, AZStd::string> GetAnimGraph(AZStd::string selector) = 0;
+
+        //! Creates a new, unsaved EMotion FX anim graph through EMotion Studio's
+        //! command system (undoable in the Animation Editor). Success JSON:
+        //! {"id": <u32>, "file_name": ""}. Main thread only. Fails when EMotion
+        //! Studio is not loaded in this editor.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> CreateAnimGraph() = 0;
+
+        //! Removes an anim graph by id through the command system. Success
+        //! JSON: {"removed": <u32>}. Fails with "anim graph not found: <id>".
+        virtual AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraph(AZ::u32 animGraphId) = 0;
     };
 
     using AiCompanionEditorRequestBus = AZ::EBus<AiCompanionEditorRequests>;

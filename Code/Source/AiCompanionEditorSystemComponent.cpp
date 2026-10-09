@@ -7,6 +7,7 @@
 
 #include "AgentMode/AgentModeFilter.h"
 #include "AgentMode/AgentModeState.h"
+#include "Animation/AnimGraphAuthoring.h"
 #include "Animation/AnimGraphInspector.h"
 #include "Introspection/BusSchema.h"
 
@@ -77,7 +78,12 @@ namespace AiCompanion
                 ->Event(
                     "GetAnimGraph",
                     &AiCompanionEditorRequestBus::Events::GetAnimGraph,
-                    { { { "selector", "The anim graph's decimal id, or its file name (exact, or the file name's tail)." } } });
+                    { { { "selector", "The anim graph's decimal id, or its file name (exact, or the file name's tail)." } } })
+                ->Event("CreateAnimGraph", &AiCompanionEditorRequestBus::Events::CreateAnimGraph)
+                ->Event(
+                    "RemoveAnimGraph",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraph,
+                    { { { "animGraphId", "The anim graph's id as reported by ListAnimGraphs." } } });
         }
     }
 
@@ -605,6 +611,16 @@ namespace AiCompanion
     AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetAnimGraph(AZStd::string selector)
     {
         return AnimGraphInspector::DescribeAnimGraph(selector);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::CreateAnimGraph()
+    {
+        return AnimGraphAuthoring::CreateAnimGraph();
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraph(AZ::u32 animGraphId)
+    {
+        return AnimGraphAuthoring::RemoveAnimGraph(animGraphId);
     }
 
 } // namespace AiCompanion

@@ -17,6 +17,8 @@ set(FILES
     Source/AgentMode/AgentModeState.cpp
     Source/Animation/AnimGraphInspector.h
     Source/Animation/AnimGraphInspector.cpp
+    Source/Animation/AnimGraphAuthoring.h
+    Source/Animation/AnimGraphAuthoring.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
     Source/Network/RequestParsing.h
