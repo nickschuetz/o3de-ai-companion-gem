@@ -78,6 +78,12 @@ directly. Both are read-only: `get_anim_graph` answers
 {"id": "uuid", "status": "ok|error", "output": "...", "error": "...", "duration_ms": 123}
 ```
 
+Three id forms exist, and o3de-mcp documents the same split: native JSON
+carries every 64-bit entity id as a decimal string (`API_VERSION` 0.4.0 and
+up; 0.3.0 and lower sent JSON numbers, which a JavaScript parser corrupts above
+2^53), the editor-Python fallback sentences print bracketed `[id]`, and every
+tool and request field accepts either a number or a string.
+
 One error reply carries an extra `code`. A request `type` the server does not
 serve answers with `"code": "unknown_request_type"` and the message
 `"Unknown request type: <type>"`; a client that sees that code falls back to

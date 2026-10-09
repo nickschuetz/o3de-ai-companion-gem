@@ -43,7 +43,8 @@ namespace UnitTest
         // No application context is running, so no entity can be found.
         AZStd::string result = AiCompanion::SceneSnapshotProvider::CaptureEntity(AZ::EntityId(123456));
         EXPECT_NE(result.find("\"error\""), AZStd::string::npos);
-        EXPECT_NE(result.find("123456"), AZStd::string::npos);
+        // Entity ids travel as decimal strings, never as JSON numbers.
+        EXPECT_NE(result.find("\"entity_id\":\"123456\""), AZStd::string::npos) << result.c_str();
     }
 
     TEST_F(SceneSnapshotTestFixture, ValidateScene_ReturnsValidJson)

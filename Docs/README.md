@@ -124,7 +124,7 @@ Every API function returns a JSON string for reliable parsing:
 {
     "status": "ok",
     "data": {
-        "entity_id": 12345,
+        "entity_id": "[6524019704300593900]",
         "name": "Player",
         "component_ids": {"Mesh": 1, "PhysX Primitive Collider": 2}
     }

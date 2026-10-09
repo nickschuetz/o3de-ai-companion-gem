@@ -30,6 +30,11 @@ the error is returned with `rolled_back: true` plus `details.exception` and
 `details.operation`. For callers written against 0.4.0, `details.code` mirrors
 `code`.
 
+Entity ids in this package's JSON are bracketed strings such as
+`"[6524019704300593900]"`, the form `azlmbr` prints; the AgentServer's native
+request types return plain decimal strings (see the
+[architecture document](architecture.md#network-protocol-agentserver)).
+
 These codes belong to the Python package. The C++ AgentServer's own replies
 (`{"id", "status", "output", "error", "duration_ms"}`) carry a `code` in one
 case only: a request `type` the server does not serve answers with

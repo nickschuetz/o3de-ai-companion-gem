@@ -89,12 +89,21 @@ namespace AiCompanion
             return infos;
         }
 
+        //! Entity ids are random 64-bit values, mostly above 2^53, which a
+        //! double-based JSON parser would corrupt as numbers, so every id in
+        //! the native output is a decimal string (API_VERSION 0.4.0 and up).
+        static void WriteEntityIdString(rapidjson::Writer<rapidjson::StringBuffer>& writer, AZ::EntityId entityId)
+        {
+            const AZStd::string text = AZStd::string::format("%llu", static_cast<unsigned long long>(static_cast<AZ::u64>(entityId)));
+            writer.String(text.c_str(), static_cast<rapidjson::SizeType>(text.size()));
+        }
+
         static void WriteEntityJson(rapidjson::Writer<rapidjson::StringBuffer>& writer, const EntityInfo& info)
         {
             writer.StartObject();
 
             writer.Key("id");
-            writer.Uint64(static_cast<AZ::u64>(info.id));
+            WriteEntityIdString(writer, info.id);
 
             writer.Key("name");
             writer.String(info.name.c_str(), static_cast<rapidjson::SizeType>(info.name.size()));
@@ -102,7 +111,7 @@ namespace AiCompanion
             writer.Key("parent_id");
             if (info.parentId.IsValid())
             {
-                writer.Uint64(static_cast<AZ::u64>(info.parentId));
+                WriteEntityIdString(writer, info.parentId);
             }
             else
             {
@@ -186,7 +195,7 @@ namespace AiCompanion
                 AZStd::string::format("No entity with id %llu", static_cast<unsigned long long>(static_cast<AZ::u64>(entityId)));
             writer.String(message.c_str(), static_cast<rapidjson::SizeType>(message.size()));
             writer.Key("entity_id");
-            writer.Uint64(static_cast<AZ::u64>(entityId));
+            Internal::WriteEntityIdString(writer, entityId);
             writer.EndObject();
             return AZStd::string(buffer.GetString(), buffer.GetSize());
         }
@@ -225,7 +234,7 @@ namespace AiCompanion
             writer.StartObject();
 
             writer.Key("id");
-            writer.Uint64(static_cast<AZ::u64>(info.id));
+            Internal::WriteEntityIdString(writer, info.id);
 
             writer.Key("name");
             writer.String(info.name.c_str(), static_cast<rapidjson::SizeType>(info.name.size()));
@@ -285,7 +294,7 @@ namespace AiCompanion
                 writer.Key("type");
                 writer.String("unnamed_entity");
                 writer.Key("entity_id");
-                writer.Uint64(static_cast<AZ::u64>(info.id));
+                Internal::WriteEntityIdString(writer, info.id);
                 writer.Key("message");
                 writer.String("Entity has no name");
                 writer.EndObject();
@@ -298,7 +307,7 @@ namespace AiCompanion
                 writer.Key("type");
                 writer.String("minimal_entity");
                 writer.Key("entity_id");
-                writer.Uint64(static_cast<AZ::u64>(info.id));
+                Internal::WriteEntityIdString(writer, info.id);
                 writer.Key("entity_name");
                 writer.String(info.name.c_str(), static_cast<rapidjson::SizeType>(info.name.size()));
                 writer.Key("message");
@@ -314,7 +323,7 @@ namespace AiCompanion
                 writer.Key("type");
                 writer.String("at_origin");
                 writer.Key("entity_id");
-                writer.Uint64(static_cast<AZ::u64>(info.id));
+                Internal::WriteEntityIdString(writer, info.id);
                 writer.Key("entity_name");
                 writer.String(info.name.c_str(), static_cast<rapidjson::SizeType>(info.name.size()));
                 writer.Key("message");
