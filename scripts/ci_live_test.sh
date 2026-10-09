@@ -129,12 +129,23 @@ sleep 2
 # 3. Editor with the AgentServer on LIVE_PORT. The gem reads O3DE_EDITOR_PORT,
 #    and AI_COMPANION_SECURE_MODE=1 when the secure variant is requested.
 editor_env=("DISPLAY=$LIVE_DISPLAY" "O3DE_EDITOR_PORT=$LIVE_PORT")
+editor_args=()
 if [ "$LIVE_SECURE" = "1" ]; then
     editor_env+=("AI_COMPANION_SECURE_MODE=1")
+    # Secure mode refuses the AgentServer's execute_python, so the level is
+    # opened by the editor's own startup script option instead (--runpython
+    # runs in the editor's Python, which secure mode does not touch). Without
+    # this the run depended on the editor's "load last level" preference,
+    # which points at whatever level any editor on this machine opened last.
+    cat >"$STATE/open_level.py" <<PY
+import azlmbr.legacy.general as general
+general.open_level_no_prompt(${LIVE_LEVEL@Q})
+PY
+    editor_args+=(--runpython "$STATE/open_level.py")
 fi
 env "${editor_env[@]}" "$BIN/Editor" --project-path="$AICOMPANION_PROJECT" \
     --skipWelcomeScreenDialog --rhi=vulkan --rhi-device-validation=disable \
-    --regset="/Amazon/AzCore/Bootstrap/remote_port=$LIVE_AP_PORT" >"$STATE/editor.log" 2>&1 &
+    --regset="/Amazon/AzCore/Bootstrap/remote_port=$LIVE_AP_PORT" "${editor_args[@]}" >"$STATE/editor.log" 2>&1 &
 PIDS+=("$!")
 
 export O3DE_EDITOR_PORT="$LIVE_PORT"
@@ -157,8 +168,9 @@ if [ "$LIVE_SECURE" = "1" ]; then
     # the network thread as soon as ping is, so it confirms at once that the
     # environment variable reached the editor; the native read types are
     # dispatched to the main thread, so one of them answering means the
-    # editor's main loop is up. No level is opened: the native types work on
-    # whatever is loaded, and the secure-mode tests do not need entities.
+    # editor's main loop is up. The level was opened by the --runpython
+    # startup script above; the native mutation test needs one, so the loop
+    # also waits for the entity tree to show at least one root.
     secure=0
     for _ in $(seq 1 60); do
         rc=0
@@ -175,7 +187,9 @@ try:
     tree = AgentClient(timeout=35).request("get_entity_tree")
 except Exception:
     sys.exit(1)
-sys.exit(0 if tree.get("status") == "ok" else 1)
+if tree.get("status") != "ok":
+    sys.exit(1)
+sys.exit(0 if json.loads(tree["output"]).get("roots") else 3)
 PY
         case "$rc" in
             0) secure=1; break ;;
@@ -183,8 +197,8 @@ PY
         esac
         sleep 2
     done
-    [ "$secure" = "1" ] || fail "native request types never answered in secure mode on port $LIVE_PORT (see $STATE/editor.log)"
-    echo "== secure mode confirmed, native request types answering =="
+    [ "$secure" = "1" ] || fail "native request types never answered with an open level in secure mode on port $LIVE_PORT (see $STATE/editor.log)"
+    echo "== secure mode confirmed, native request types answering, level open =="
 else
     # The AgentServer answers ping as soon as the gem's system component activates,
     # which is before the renderer and editor Python exist; an execute_python sent
