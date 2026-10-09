@@ -600,11 +600,13 @@ def spawn_prefab(
     """Instantiate an AiCompanion prefab at the given position.
 
     The prefab file is located on disk before the prefab system is asked to
-    instantiate it. ``PrefabPublicRequestBus.InstantiatePrefab`` crashes the
-    editor when the template cannot be loaded (a null DOM is dereferenced in
-    ``PrefabDomUtils::GetTemplateSourcePaths``, observed on O3DE 26.10.0), and
-    a C++ segfault cannot be caught from Python, so an unknown name must never
-    reach the bus.
+    instantiate it. On engines built before o3de/o3de#20099 (merged into
+    ``development`` on 2026-09-08, after the 26.10.0 builds),
+    ``PrefabPublicRequestBus.InstantiatePrefab`` crashes the editor when the
+    template cannot be loaded (a null DOM is dereferenced in
+    ``PrefabDomUtils::GetTemplateSourcePaths``). A C++ segfault cannot be
+    caught from Python, so an unknown name must never reach the bus. Newer
+    engines return a failure on their own; the guard stays for the older ones.
 
     Args:
         prefab_name: Name of the prefab (e.g., "Player_TwinStick").

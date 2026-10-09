@@ -10,7 +10,7 @@ AI Companion sits between AI agents and the O3DE Editor, turning high-level
 intent into engine operations. Agents connect through
 [o3de-mcp](https://github.com/nickschuetz/o3de-mcp) (MCP tool calls) or
 directly via the built-in AgentServer (TCP with length-prefixed JSON). Both
-paths feed into a Python API layer that exposes 28+ functions for entity
+paths feed into a Python API layer that exposes 29 functions for entity
 creation, scene setup, lighting, physics, cameras, and scene inspection —
 reducing what would otherwise take 70+ raw tool calls to under 10.
 

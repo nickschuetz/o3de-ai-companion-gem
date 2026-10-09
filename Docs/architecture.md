@@ -23,7 +23,7 @@ flowchart TB
         direction TB
 
         subgraph PythonAPI["Python API Layer  (Editor/Scripts/ai_companion/)"]
-            API["api.py<br/>29+ public functions"]
+            API["api.py<br/>29 public functions"]
 
             subgraph Builders["Builders"]
                 EB["EntityBuilder"]
@@ -108,7 +108,7 @@ agents. All functions return JSON strings for reliable parsing.
 
 | Component | Purpose |
 |-----------|---------|
-| **api.py** | Main entry point exposing 28+ public functions for scene setup, entity creation, inspection, and undo |
+| **api.py** | Main entry point exposing 29 public functions for scene setup, entity creation, inspection, and undo |
 | **Builders** | Fluent builder classes for constructing entities, scenes, lighting rigs, physics bodies, and terrain |
 | **Templates** | Pre-configured factory functions for common entity types (player, enemy, camera, pickup, projectile, environment) |
 | **Feedback** | Scene introspection: snapshots, entity inspection, and validation reports |

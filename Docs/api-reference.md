@@ -145,10 +145,12 @@ Available prefabs: `Player_TwinStick`, `Enemy_Chaser`, `Enemy_Turret`,
 `Lighting_ThreePoint`, `Camera_TopDown`.
 
 The prefab file is located on disk before the prefab system is asked for it.
+On engines built before [o3de/o3de#20099](https://github.com/o3de/o3de/pull/20099)
+(merged into `development` on 2026-09-08, so not in the 26.10.0 builds),
 `PrefabPublicRequestBus.InstantiatePrefab` crashes the editor when the template
-cannot be loaded (observed on O3DE 26.10.0), and a C++ segfault cannot be caught
-from Python, so an unknown name never reaches the bus. Error responses carry a
-`details.code`:
+cannot be loaded, and a C++ segfault cannot be caught from Python, so an unknown
+name never reaches the bus. Newer engines return a failure on their own; the
+guard is kept for the older ones. Error responses carry a `details.code`:
 
 | Code | Meaning |
 |------|---------|

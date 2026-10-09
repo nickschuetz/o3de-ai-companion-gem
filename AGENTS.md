@@ -17,7 +17,7 @@ Code/Include/AiCompanion/   Public C++ headers (EBus interfaces)
 Code/Source/                 C++ implementation (system components, AgentServer, snapshot, validation)
 Code/Source/Tests/           C++ unit tests (AZ::AzTest / Google Test)
 Editor/Scripts/ai_companion/ Python API package
-  api.py                    Main entry point (28+ public functions)
+  api.py                    Main entry point (29 public functions)
   builders/                 Fluent builder classes (entity, scene, lighting, physics, terrain)
   templates/                Pre-configured entity factories (player, enemy, camera, etc.)
   feedback/                 Scene introspection (snapshot, inspector, validation report)
