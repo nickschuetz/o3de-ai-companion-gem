@@ -60,6 +60,15 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `delete_entity` | Delete `entity_id` and descendants; refuses the level root, undoable | No (C++) |
 | `list_anim_graphs` | Every EMotion FX anim graph the engine holds: id, file name, ownership and dirty flags, node and parameter counts, actor instances | No (C++ EMotion FX) |
 | `get_anim_graph` | One anim graph (`anim_graph_id` as number or string, or `file_name`): nodes with ports and connections, transitions with conditions, parameters, node groups | No (C++ EMotion FX) |
+| `create_anim_graph` | A new, unsaved editable anim graph: `{"id", "file_name"}` | No (C++ EMotion Studio) |
+| `remove_anim_graph` | Remove the editable graph `anim_graph_id` | No (C++ EMotion Studio) |
+| `load_anim_graph` | Load `file_name` (absolute, `@alias@`, or project-relative; inside the project or engine root) as an editable graph | No (C++ EMotion Studio) |
+| `save_anim_graph` | Save `anim_graph_id` to `file_name` (default: its own; inside the project root); not undoable | No (C++ EMotion Studio) |
+| `add_anim_graph_node` | Add a `node_type` node (class or palette name) under `parent_id` (default: the root) with optional `name` and `position`; answers the node as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `remove_anim_graph_node` | Remove `node_id` (never the root) | No (C++ EMotion Studio) |
+| `set_anim_graph_entry_state` | Make `node_id` its state machine's entry state | No (C++ EMotion Studio) |
+| `add_anim_graph_parameter` | Add value parameter `name` of `parameter_type` with optional `default`, `min`, `max`, `description`, `group`; answers the parameter as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `remove_anim_graph_parameter` | Remove value parameter `name` | No (C++ EMotion Studio) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
 `get_capabilities()` to confirm the gem is present, and the C++ request types
@@ -72,6 +81,26 @@ directly. Both are read-only: `get_anim_graph` answers
 `anim graph not found: <selector>` (code `not_found`) for an unknown graph, and
 both answer `EMotion FX is not available` (code `unavailable`) when the
 EMotionFX gem is not loaded.
+
+The nine authoring types run through EMotion Studio's command system, so each
+request is one step in the Animation Editor's own undo history, not the
+editor's main Undo (and a save is not undoable). The gem validates every
+argument before sending a command: names may not contain `"`, `%`, `{` or
+`}`; `node_type` must be a creatable AnimGraphNode class and allowed under the
+parent (only states inside a state machine, entry and exit nodes only in a
+child state machine, a final node only in a blend tree); `parameter_type` must
+be one of Float, FloatSlider, FloatSpinner, Int, IntSlider, IntSpinner, Bool,
+Tag, String, Vector2, Vector3, Vector3Gizmo, Vector4, Color, Rotation or the
+engine class name, with `min` and `max` only for the ranged ones and values
+typed per kind (number, integer, bool, string, or an array of 2, 3 or 4
+numbers); paths are normalized against the project root. The type fields are
+`node_type` and `parameter_type` because `type` is the request envelope's own
+field. A graph owned by an asset or runtime instance (one an Anim Graph
+component plays) is refused for every write with `validation_failed`; load
+the file with `load_anim_graph` to edit a copy, then save it. Without EMotion
+Studio (the Animation Editor's command system) every authoring type answers
+`unavailable`; a command the engine refuses answers `engine_error` with the
+engine's own text.
 
 ### Response format
 
@@ -92,7 +121,7 @@ branches on the code and shows the message. The vocabulary:
 
 | Code | When |
 |------|------|
-| `validation_failed` | A malformed or refused argument: invalid JSON, a missing `type` or `script` field, a bad base64 script, a missing or unparsable `entity_id` or `anim_graph_id`, an invalid entity name, a position outside the bound, a scale out of range, or a refusal to delete the level root |
+| `validation_failed` | A malformed or refused argument: invalid JSON, a missing `type` or `script` field, a bad base64 script, a missing or unparsable `entity_id` or `anim_graph_id`, an invalid entity name, a position outside the bound, a scale out of range, a refusal to delete the level root, or an anim graph write refused by the gem's own checks (a bad name, type, placement, value or path, or a graph an asset owns) |
 | `not_found` | The entity, anim graph or bus does not exist |
 | `unavailable` | A subsystem the request needs is not loaded: EMotion FX, EMotion Studio's command system, the gem's editor system component, the prefab system, or the editor's Python runner |
 | `engine_error` | The engine refused or failed the operation; `error` is the engine's own text (a prefab system message such as `no root prefab is assigned`, a failed EMotion FX command) |

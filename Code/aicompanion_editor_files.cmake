@@ -19,6 +19,8 @@ set(FILES
     Source/Animation/AnimGraphInspector.cpp
     Source/Animation/AnimGraphAuthoring.h
     Source/Animation/AnimGraphAuthoring.cpp
+    Source/Animation/AnimGraphCommandText.h
+    Source/Animation/AnimGraphCommandText.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
     Source/Network/RequestParsing.h

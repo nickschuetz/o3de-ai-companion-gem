@@ -122,6 +122,16 @@ namespace AiCompanion
         AZStd::string HandleGetAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
         AZStd::string HandleCreateAnimGraph(const AZStd::string& id);
         AZStd::string HandleRemoveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleLoadAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleSaveAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
+        //! The add types hand the whole request object to the editor event,
+        //! which reads node_type / parameter_type and the optional fields.
+        AZStd::string HandleAddAnimGraphNode(const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest);
+        AZStd::string HandleRemoveAnimGraphNode(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleSetAnimGraphEntryState(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleAddAnimGraphParameter(
+            const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest);
+        AZStd::string HandleRemoveAnimGraphParameter(const AZStd::string& id, const rapidjson::Document& doc);
 
         // Response builders
         AZStd::string BuildResponse(

@@ -9,4 +9,5 @@ set(FILES
     Source/Tests/BusSchemaTests.cpp
     Source/Tests/RequestParsingTests.cpp
     Source/Tests/RequestErrorTests.cpp
+    Source/Tests/AnimGraphCommandTextTests.cpp
 )

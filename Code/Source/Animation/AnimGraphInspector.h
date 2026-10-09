@@ -4,8 +4,16 @@
  */
 #pragma once
 
+#include <AzCore/JSON/stringbuffer.h>
+#include <AzCore/JSON/writer.h>
 #include <AzCore/Outcome/Outcome.h>
 #include <AzCore/std/string/string.h>
+
+namespace EMotionFX
+{
+    class AnimGraphNode;
+    class ValueParameter;
+} // namespace EMotionFX
 
 namespace AiCompanion::AnimGraphInspector
 {
@@ -31,4 +39,18 @@ namespace AiCompanion::AnimGraphInspector
     //! an exact match of the graph's file name first, then a case-insensitive
     //! match of its tail. Fails with "anim graph not found: <selector>".
     AZ::Outcome<AZStd::string, AZStd::string> DescribeAnimGraph(const AZStd::string& selector);
+
+    //! The per-object writers, shared with Animation/AnimGraphAuthoring so a
+    //! write reply carries the same object a later get_anim_graph does.
+    using JsonWriter = rapidjson::Writer<rapidjson::StringBuffer>;
+
+    //! One node object: id, name, type, palette_name, category, parent_id,
+    //! can_act_as_state, has_output_pose, enabled, position, entry_state_id
+    //! (a state machine's entry state, null for other nodes), input_ports
+    //! with their incoming connection, output_ports.
+    void WriteNode(JsonWriter& w, const EMotionFX::AnimGraphNode& node);
+
+    //! One value parameter object: name, type, description, default, min,
+    //! max (null for unranged types), group (`groupName` null at the root).
+    void WriteValueParameter(JsonWriter& w, const EMotionFX::ValueParameter& parameter, const AZStd::string* groupName);
 } // namespace AiCompanion::AnimGraphInspector

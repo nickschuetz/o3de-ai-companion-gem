@@ -115,7 +115,7 @@ consider SSH tunneling, and enable secure mode.
 When secure mode is enabled (`AI_COMPANION_SECURE_MODE=1`), the AgentServer
 disables `execute_python` — the most powerful request type — and only allows
 operations served by the gem's own C++, which are read-only except for the
-validated mutation set:
+validated mutation set and the validated anim graph authoring set:
 
 - `ping` — connection health check
 - `get_api_version` — protocol and gem version info
@@ -125,7 +125,15 @@ validated mutation set:
 - `validate_scene` — scene validation
 - `get_bus_schema` — reflected EBus description from the live BehaviorContext
 - `list_anim_graphs`, `get_anim_graph`: read-only views of the EMotion FX anim
-  graphs the engine holds (no authoring)
+  graphs the engine holds
+- `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
+  `save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,
+  `set_anim_graph_entry_state`, `add_anim_graph_parameter`,
+  `remove_anim_graph_parameter`: anim graph authoring through EMotion Studio's
+  command system; names, types, placement, values and paths are validated in
+  C++ before a command is sent, paths must stay inside the project (or, for a
+  load, the engine) root, and a graph an asset or runtime instance owns is
+  refused
 - `create_entity`, `set_transform`, `delete_entity` — the validated mutation set:
   arguments go through the C++ `InputValidator`, missing entities and the level
   root are refused, and each call is its own editor undo batch

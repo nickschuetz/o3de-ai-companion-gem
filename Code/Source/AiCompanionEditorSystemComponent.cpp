@@ -84,7 +84,38 @@ namespace AiCompanion
                 ->Event(
                     "RemoveAnimGraph",
                     &AiCompanionEditorRequestBus::Events::RemoveAnimGraph,
-                    { { { "animGraphId", "The anim graph's id as reported by ListAnimGraphs." } } });
+                    { { { "animGraphId", "The anim graph's id as reported by ListAnimGraphs." } } })
+                ->Event(
+                    "LoadAnimGraph",
+                    &AiCompanionEditorRequestBus::Events::LoadAnimGraph,
+                    { { { "fileName", "An .animgraph path: absolute, @alias@, or relative to the project root." } } })
+                ->Event(
+                    "SaveAnimGraph",
+                    &AiCompanionEditorRequestBus::Events::SaveAnimGraph,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "fileName", "The target path inside the project root; empty saves to the graph's own file name." } } })
+                ->Event(
+                    "AddAnimGraphNode",
+                    &AiCompanionEditorRequestBus::Events::AddAnimGraphNode,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: node_type, and optional parent_id, name, position [x, y]." } } })
+                ->Event(
+                    "RemoveAnimGraphNode",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraphNode,
+                    { { { "animGraphId", "The anim graph's id." }, { "nodeId", "The node's id as GetAnimGraph reports it." } } })
+                ->Event(
+                    "SetAnimGraphEntryState",
+                    &AiCompanionEditorRequestBus::Events::SetAnimGraphEntryState,
+                    { { { "animGraphId", "The anim graph's id." }, { "nodeId", "The id of a state inside a state machine." } } })
+                ->Event(
+                    "AddAnimGraphParameter",
+                    &AiCompanionEditorRequestBus::Events::AddAnimGraphParameter,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: name, parameter_type, and optional default, min, max, description, group." } } })
+                ->Event(
+                    "RemoveAnimGraphParameter",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraphParameter,
+                    { { { "animGraphId", "The anim graph's id." }, { "name", "The value parameter's name." } } });
         }
     }
 
@@ -629,6 +660,46 @@ namespace AiCompanion
     AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraph(AZ::u32 animGraphId)
     {
         return AnimGraphAuthoring::RemoveAnimGraph(animGraphId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::LoadAnimGraph(AZStd::string fileName)
+    {
+        return AnimGraphAuthoring::LoadAnimGraph(fileName);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SaveAnimGraph(AZ::u32 animGraphId, AZStd::string fileName)
+    {
+        return AnimGraphAuthoring::SaveAnimGraph(animGraphId, fileName);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::AddAnimGraphNode(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::AddNode(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraphNode(
+        AZ::u32 animGraphId, AZStd::string nodeId)
+    {
+        return AnimGraphAuthoring::RemoveNode(animGraphId, nodeId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SetAnimGraphEntryState(
+        AZ::u32 animGraphId, AZStd::string nodeId)
+    {
+        return AnimGraphAuthoring::SetEntryState(animGraphId, nodeId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::AddAnimGraphParameter(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::AddParameter(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraphParameter(
+        AZ::u32 animGraphId, AZStd::string name)
+    {
+        return AnimGraphAuthoring::RemoveParameter(animGraphId, name);
     }
 
 } // namespace AiCompanion

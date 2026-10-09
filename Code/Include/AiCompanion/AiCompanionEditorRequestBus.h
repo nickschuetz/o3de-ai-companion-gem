@@ -19,7 +19,9 @@ namespace AiCompanion
     //!
     //! Failure convention: the events the AgentServer serves (CreateEntity,
     //! SetTransform, DeleteEntity, ListAnimGraphs, GetAnimGraph,
-    //! CreateAnimGraph, RemoveAnimGraph) return their AZ::Outcome failure as
+    //! CreateAnimGraph, RemoveAnimGraph, LoadAnimGraph, SaveAnimGraph,
+    //! AddAnimGraphNode, RemoveAnimGraphNode, SetAnimGraphEntryState,
+    //! AddAnimGraphParameter, RemoveAnimGraphParameter) return their failure as
     //! the JSON text {"code": "<code>", "message": "<text>"} written by
     //! RequestError::EncodeError, with the code from the RequestError
     //! vocabulary (validation_failed, not_found, unavailable, engine_error).
@@ -133,8 +135,62 @@ namespace AiCompanion
 
         //! Removes an anim graph by id through the command system. Success
         //! JSON: {"removed": <u32>}. Fails not_found, "anim graph not found:
-        //! <id>", unavailable without EMotion Studio, or engine_error.
+        //! <id>", validation_failed for a graph an asset or runtime instance
+        //! owns, unavailable without EMotion Studio, or engine_error.
         virtual AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraph(AZ::u32 animGraphId) = 0;
+
+        //! The anim graph authoring events below share one contract (see
+        //! Animation/AnimGraphAuthoring.h): main thread only; each is one
+        //! command or one rolled-back command group, so one step in the
+        //! Animation Editor's own undo history (not the editor's main Undo);
+        //! a graph owned by an asset or runtime instance is refused with
+        //! validation_failed; failures are the encoded {"code", "message"}
+        //! text. Ids of nodes are decimal strings; the graph id is a u32.
+
+        //! Loads an .animgraph file as an editable graph. `fileName` is
+        //! absolute, an @alias@ path, or relative to the project root; it must
+        //! exist (not_found) and lie inside the project or engine root
+        //! (validation_failed). Success JSON: {"id": <u32>, "file_name": ".."}.
+        //! A graph the command system already loaded from that file is
+        //! answered instead of loaded again.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> LoadAnimGraph(AZStd::string fileName) = 0;
+
+        //! Saves a graph to `fileName` (empty: the graph's own file name,
+        //! refused when it has none), which must lie inside the project root;
+        //! the parent directory is created. Not undoable. Success JSON:
+        //! {"id": <u32>, "file_name": "<as stored on the graph>"}.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> SaveAnimGraph(AZ::u32 animGraphId, AZStd::string fileName) = 0;
+
+        //! Adds a node. `argumentsJson` is a JSON object: "node_type" (an
+        //! AnimGraphNode class name or palette name, case-insensitive),
+        //! optional "parent_id" (default: the root state machine), "name"
+        //! (default: engine-generated) and "position" [x, y]. The type is
+        //! checked against the creatable node classes and the Animation
+        //! Editor's placement rules. Success JSON: the node object exactly as
+        //! GetAnimGraph emits it.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphNode(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
+
+        //! Removes a node by id; the root state machine is refused. Success
+        //! JSON: {"removed": "<node id>"}.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphNode(AZ::u32 animGraphId, AZStd::string nodeId) = 0;
+
+        //! Makes a node its state machine's entry state. Success JSON:
+        //! {"entry_state_id": "<node id>"}.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphEntryState(AZ::u32 animGraphId, AZStd::string nodeId) = 0;
+
+        //! Adds a value parameter. `argumentsJson` is a JSON object: "name",
+        //! "parameter_type" (Float, FloatSlider, FloatSpinner, Int,
+        //! IntSlider, IntSpinner, Bool, Tag, String, Vector2, Vector3,
+        //! Vector3Gizmo, Vector4, Color, Rotation, or the class name),
+        //! optional "default", "min", "max" (typed per kind; min and max for
+        //! ranged types only), "description" and "group" (created when
+        //! missing, in the same undo step). Success JSON: the parameter object
+        //! as GetAnimGraph emits it.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphParameter(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
+
+        //! Removes a value parameter by name; a group is refused. Success
+        //! JSON: {"removed": "<name>"}.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphParameter(AZ::u32 animGraphId, AZStd::string name) = 0;
     };
 
     using AiCompanionEditorRequestBus = AZ::EBus<AiCompanionEditorRequests>;

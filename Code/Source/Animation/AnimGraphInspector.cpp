@@ -44,7 +44,7 @@ namespace AiCompanion::AnimGraphInspector
 {
     namespace
     {
-        using Writer = rapidjson::Writer<rapidjson::StringBuffer>;
+        using Writer = JsonWriter;
 
         constexpr const char* NotAvailable = "EMotion FX is not available";
 
@@ -197,43 +197,56 @@ namespace AiCompanion::AnimGraphInspector
             w.EndArray();
         }
 
-        void WriteNode(Writer& w, const EMotionFX::AnimGraphNode& node)
-        {
-            w.StartObject();
-            w.Key("id");
-            w.String(IdString(node.GetId()).c_str());
-            w.Key("name");
-            w.String(node.GetName());
-            w.Key("type");
-            w.String(node.RTTI_GetTypeName());
-            w.Key("palette_name");
-            w.String(node.GetPaletteName());
-            w.Key("category");
-            w.String(EMotionFX::AnimGraphObject::GetCategoryName(node.GetPaletteCategory()));
-            w.Key("parent_id");
-            if (const EMotionFX::AnimGraphNode* parent = node.GetParentNode())
-            {
-                w.String(IdString(parent->GetId()).c_str());
-            }
-            else
-            {
-                w.Null();
-            }
-            w.Key("can_act_as_state");
-            w.Bool(node.GetCanActAsState());
-            w.Key("has_output_pose");
-            w.Bool(node.GetHasOutputPose());
-            w.Key("enabled");
-            w.Bool(node.GetIsEnabled());
-            w.Key("position");
-            w.StartArray();
-            w.Int(node.GetVisualPosX());
-            w.Int(node.GetVisualPosY());
-            w.EndArray();
-            WritePorts(w, node);
-            w.EndObject();
-        }
+    } // namespace
 
+    void WriteNode(JsonWriter& w, const EMotionFX::AnimGraphNode& node)
+    {
+        w.StartObject();
+        w.Key("id");
+        w.String(IdString(node.GetId()).c_str());
+        w.Key("name");
+        w.String(node.GetName());
+        w.Key("type");
+        w.String(node.RTTI_GetTypeName());
+        w.Key("palette_name");
+        w.String(node.GetPaletteName());
+        w.Key("category");
+        w.String(EMotionFX::AnimGraphObject::GetCategoryName(node.GetPaletteCategory()));
+        w.Key("parent_id");
+        if (const EMotionFX::AnimGraphNode* parent = node.GetParentNode())
+        {
+            w.String(IdString(parent->GetId()).c_str());
+        }
+        else
+        {
+            w.Null();
+        }
+        w.Key("can_act_as_state");
+        w.Bool(node.GetCanActAsState());
+        w.Key("has_output_pose");
+        w.Bool(node.GetHasOutputPose());
+        w.Key("enabled");
+        w.Bool(node.GetIsEnabled());
+        w.Key("position");
+        w.StartArray();
+        w.Int(node.GetVisualPosX());
+        w.Int(node.GetVisualPosY());
+        w.EndArray();
+        w.Key("entry_state_id");
+        if (const auto* stateMachine = azrtti_cast<const EMotionFX::AnimGraphStateMachine*>(&node))
+        {
+            WriteIdOrNull(w, stateMachine->GetEntryStateId());
+        }
+        else
+        {
+            w.Null();
+        }
+        WritePorts(w, node);
+        w.EndObject();
+    }
+
+    namespace
+    {
         void WriteNodesRecursive(Writer& w, const EMotionFX::AnimGraphNode* node)
         {
             if (!node)
@@ -363,35 +376,39 @@ namespace AiCompanion::AnimGraphInspector
             return false;
         }
 
-        void WriteValueParameter(Writer& w, const EMotionFX::ValueParameter& parameter, const AZStd::string* groupName)
-        {
-            w.StartObject();
-            w.Key("name");
-            w.String(parameter.GetName().c_str());
-            w.Key("type");
-            w.String(parameter.GetTypeDisplayName());
-            w.Key("description");
-            w.String(parameter.GetDescription().c_str());
-            w.Key("default");
-            AZStd::string defaultText;
-            if (MCore::Attribute* attribute = parameter.ConstructDefaultValueAsAttribute())
-            {
-                attribute->ConvertToString(defaultText);
-                delete attribute;
-            }
-            w.String(defaultText.c_str());
-            AZStd::string minText;
-            AZStd::string maxText;
-            const bool ranged = ParameterRange(parameter, minText, maxText);
-            w.Key("min");
-            WriteStringOrNull(w, ranged ? &minText : nullptr);
-            w.Key("max");
-            WriteStringOrNull(w, ranged ? &maxText : nullptr);
-            w.Key("group");
-            WriteStringOrNull(w, groupName);
-            w.EndObject();
-        }
+    } // namespace
 
+    void WriteValueParameter(JsonWriter& w, const EMotionFX::ValueParameter& parameter, const AZStd::string* groupName)
+    {
+        w.StartObject();
+        w.Key("name");
+        w.String(parameter.GetName().c_str());
+        w.Key("type");
+        w.String(parameter.GetTypeDisplayName());
+        w.Key("description");
+        w.String(parameter.GetDescription().c_str());
+        w.Key("default");
+        AZStd::string defaultText;
+        if (MCore::Attribute* attribute = parameter.ConstructDefaultValueAsAttribute())
+        {
+            attribute->ConvertToString(defaultText);
+            delete attribute;
+        }
+        w.String(defaultText.c_str());
+        AZStd::string minText;
+        AZStd::string maxText;
+        const bool ranged = ParameterRange(parameter, minText, maxText);
+        w.Key("min");
+        WriteStringOrNull(w, ranged ? &minText : nullptr);
+        w.Key("max");
+        WriteStringOrNull(w, ranged ? &maxText : nullptr);
+        w.Key("group");
+        WriteStringOrNull(w, groupName);
+        w.EndObject();
+    }
+
+    namespace
+    {
         //! Depth-first over the parameter tree; `groupName` is null at the
         //! root group (whose name is empty) and the enclosing group's name
         //! below it.

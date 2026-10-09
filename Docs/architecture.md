@@ -72,7 +72,7 @@ flowchart TB
     Agent -->|"MCP tool calls"| MCP
     Agent -->|"TCP JSON"| AgentSrv
     MCP -->|"run_editor_python() / sessions"| API
-    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph"| AgentSrv
+    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph,<br/>create/remove/load/save_anim_graph,<br/>add/remove_anim_graph_node, set_anim_graph_entry_state,<br/>add/remove_anim_graph_parameter"| AgentSrv
     AgentSrv --> AS
     AS --> RP
     AS -->|"every reply"| RSP
@@ -170,7 +170,10 @@ The AgentServer uses a length-prefixed JSON protocol over TCP:
 Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
 `get_entity_tree`, `get_entity`, `validate_scene`, `get_bus_schema`,
 `create_entity`, `set_transform`, `delete_entity`, `list_anim_graphs`,
-`get_anim_graph`, `execute_python`.
+`get_anim_graph`, `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
+`save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,
+`set_anim_graph_entry_state`, `add_anim_graph_parameter`,
+`remove_anim_graph_parameter`, `execute_python`.
 
 `get_entity` takes `entity_id` (decimal, as a number or string) and returns one
 entity's transform, parent and component list; `get_bus_schema` takes an
@@ -193,6 +196,36 @@ default, min, max, group) and `node_groups`. Node and transition ids are
 decimal strings. Both are read-only, run on the main thread and are allowed in
 secure mode; an unknown graph answers `anim graph not found: <selector>` with
 the code `not_found`.
+
+Nine more types author anim graphs through EMotion Studio's command system,
+the Animation Editor's own command layer: `create_anim_graph` and
+`remove_anim_graph`; `load_anim_graph` (`file_name`: absolute, an `@alias@`
+path, or relative to the project root; it must exist and lie inside the
+project or engine root); `save_anim_graph` (`anim_graph_id`, optional
+`file_name` defaulting to the graph's own; inside the project root; not
+undoable); `add_anim_graph_node` (`anim_graph_id`, `node_type` as an
+AnimGraphNode class name or palette name, optional `parent_id`, `name` and
+`position`); `remove_anim_graph_node` (`node_id`); `set_anim_graph_entry_state`
+(`node_id`); `add_anim_graph_parameter` (`name`, `parameter_type`, optional
+`default`, `min`, `max`, `description`, `group`); and
+`remove_anim_graph_parameter` (`name`). The type fields are `node_type` and
+`parameter_type` because `type` is the request envelope's own field. The two
+add types answer the node or parameter object exactly as `get_anim_graph`
+emits it, and `get_anim_graph` node objects carry `entry_state_id` for state
+machines. Every command goes to `EMStudio::GetManager()->GetCommandManager()`
+as a string with error handling off, so no error-report window opens, and the
+gem validates before sending anything: names (no `"`, `%`, `{`, `}`), node
+types (the object factory's creatable AnimGraphNode classes and the Animation
+Editor's placement rules), parameter types and value shapes, and file paths.
+A graph owned by an asset or a runtime instance is refused for every write
+(`validation_failed`), since command edits never reach the asset an Anim Graph
+component plays; `load_anim_graph` makes an editable copy. Each request is one
+command, or one command group that is undone on failure, so it is one step in
+the Animation Editor's own undo history. That history is separate from the
+editor's main Undo and from the gem's rollback functions, and a save is not
+undoable. Implemented in `Code/Source/Animation/AnimGraphAuthoring`, with the
+text rules and command builders in `AnimGraphCommandText`, which the C++ unit
+tests cover.
 
 o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
 inside its `get_capabilities` tool to confirm the gem is present and report its
@@ -228,7 +261,7 @@ vocabulary in `Network/RequestError`:
 
 | Code | When |
 |------|------|
-| `validation_failed` | A malformed or refused argument: invalid JSON, a missing `type` or `script` field, a bad base64 script, a missing or unparsable `entity_id` or `anim_graph_id`, an invalid entity name, a position outside the bound, a scale out of range, or a refusal to delete the level root |
+| `validation_failed` | A malformed or refused argument: invalid JSON, a missing `type` or `script` field, a bad base64 script, a missing or unparsable `entity_id` or `anim_graph_id`, an invalid entity name, a position outside the bound, a scale out of range, a refusal to delete the level root, or an anim graph write refused by the gem's own checks (a bad name, type, placement, value or path, or a graph an asset owns) |
 | `not_found` | The entity, anim graph or bus does not exist |
 | `unavailable` | A subsystem the request needs is not loaded: EMotion FX, EMotion Studio's command system, the gem's editor system component, the prefab system, or the editor's Python runner |
 | `engine_error` | The engine refused or failed the operation; `error` is the engine's own text (a prefab system message such as `no root prefab is assigned`, a failed EMotion FX command) |

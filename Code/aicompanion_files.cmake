@@ -13,6 +13,8 @@ set(FILES
     Source/Introspection/BusSchema.cpp
     Source/Validation/InputValidator.h
     Source/Validation/InputValidator.cpp
+    Source/Animation/AnimGraphCommandText.h
+    Source/Animation/AnimGraphCommandText.cpp
     Source/Network/RequestParsing.h
     Source/Network/RequestParsing.cpp
     Source/Network/RequestError.h
