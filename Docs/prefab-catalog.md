@@ -34,10 +34,15 @@ Enemy that chases the player and attacks in melee range.
 - **Tag**: `Enemy`
 
 ### Enemy_Turret
-Stationary turret that fires projectiles at the player.
+Stationary turret body. It does not aim at or track the player: its script
+fires only while the `fire` input event is held, straight along the entity's
+forward axis, and the `ProjectilePrefab` spawnable it needs is left unset in
+the prefab (assign the projectile prefab's `.spawnable` in the Inspector or
+with o3de-mcp's `assign_asset`; until then `Fire()` logs once and does
+nothing). Add your own targeting or input wiring to make it a working enemy.
 - **Mesh**: Cylinder (1.5x scale)
-- **Physics**: Static rigid body
-- **Script**: `projectile_launcher.lua` (1 shot/sec, speed 15, damage 15)
+- **Physics**: Static rigid body, cylinder collider
+- **Script**: `projectile_launcher.lua` (1 shot/sec, speed 15, damage 15, `ProjectilePrefab` unset)
 - **Tag**: `Enemy`, `Turret`
 
 ## Projectiles
@@ -59,10 +64,13 @@ Health pickup that heals on contact and respawns.
 - **Tag**: `Pickup`, `Health`
 
 ### Pickup_Ammo
-Ammo pickup that restores ammunition.
+Ammo pickup placeholder. There is no ammo system in the gem's scripts: it runs
+`health_pickup.lua` with `HealAmount` 0, so it is collected by distance,
+hides, rotates and respawns like the health pickup but restores nothing.
+Swap the script or raise `HealAmount` to give it an effect.
 - **Mesh**: Cube (0.5 scale)
-- **Physics**: Sphere collider (optional; pickup detection is by distance in `health_pickup.lua`)
-- **Script**: `health_pickup.lua` (configured for ammo)
+- **Physics**: Box collider, trigger (optional; pickup detection is by distance in `health_pickup.lua`)
+- **Script**: `health_pickup.lua` (`HealAmount` 0, 15s respawn, 60 deg/s rotation)
 - **Tag**: `Pickup`, `Ammo`
 
 ## Environment
@@ -85,6 +93,6 @@ Three-point lighting rig with parent entity and 3 child lights.
 ### Camera_TopDown
 Top-down camera looking straight down.
 - **Position**: (0, 0, 20)
-- **Rotation**: (-90, 0, 0) — looking straight down
+- **Rotation**: (-90, 0, 0): looking straight down
 - **FOV**: 60 degrees
 - **Active on activation**: Yes

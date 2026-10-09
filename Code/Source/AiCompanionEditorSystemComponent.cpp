@@ -23,6 +23,7 @@
 #include <AzCore/Serialization/SerializeContext.h>
 #include <AzCore/Settings/SettingsRegistryMergeUtils.h>
 #include <AzCore/Utils/Utils.h>
+#include <AzCore/std/optional.h>
 #include <AzFramework/API/ApplicationAPI.h>
 #include <AzFramework/Asset/AssetSystemBus.h>
 
@@ -416,7 +417,7 @@ namespace AiCompanion
             AZ_Warning(
                 "AiCompanion",
                 false,
-                "AgentServer binding to %s — this exposes the server to the network. "
+                "AgentServer binding to %s: this exposes the server to the network. "
                 "Best practices: enable TLS (set TlsEnabled=true with cert/key paths), "
                 "use a firewall, restrict to trusted networks, consider SSH tunneling, "
                 "or enable secure mode to disable execute_python.",
@@ -558,6 +559,29 @@ namespace AiCompanion
             AzToolsFramework::ToolsApplicationRequestBus::BroadcastResult(
                 levelRoot, &AzToolsFramework::ToolsApplicationRequests::GetCurrentLevelEntityId);
             return levelRoot.IsValid() && levelRoot == id;
+        }
+
+        //! The entity's name as the component application knows it, empty when
+        //! the entity is unknown there.
+        AZStd::string EntityName(AZ::EntityId id)
+        {
+            AZStd::string name;
+            AZ::ComponentApplicationBus::BroadcastResult(name, &AZ::ComponentApplicationRequests::GetEntityName, id);
+            return name;
+        }
+
+        //! A validation_failed failure for a protected system entity, or an empty
+        //! optional when the entity may be modified. The message is the same
+        //! "entity is protected" the Python package answers.
+        AZStd::optional<AZStd::string> RefuseProtectedEntity(AZ::EntityId id)
+        {
+            const AZStd::string name = EntityName(id);
+            if (!InputValidator::IsProtectedEntityName(name))
+            {
+                return AZStd::nullopt;
+            }
+            return RequestError::EncodeError(
+                RequestError::ValidationFailed, AZStd::string::format("entity is protected: '%s'", name.c_str()));
         }
 
         AZStd::string FormatVector3(const AZ::Vector3& v)
@@ -713,6 +737,10 @@ namespace AiCompanion
             return AZ::Failure(RequestError::EncodeError(
                 RequestError::NotFound, AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(entityId))));
         }
+        if (auto refused = RefuseProtectedEntity(id))
+        {
+            return AZ::Failure(*refused);
+        }
         if (setPosition && !InputValidator::IsValidPosition(position.GetX(), position.GetY(), position.GetZ()))
         {
             return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "position out of bounds"));
@@ -804,6 +832,10 @@ namespace AiCompanion
         if (IsLevelRoot(id))
         {
             return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "refusing to delete the level's root entity"));
+        }
+        if (auto refused = RefuseProtectedEntity(id))
+        {
+            return AZ::Failure(*refused);
         }
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Delete Entity");
         AzToolsFramework::ToolsApplicationRequestBus::Broadcast(

@@ -1,4 +1,4 @@
-# AI Agent Best Practices — Token Efficiency & Performance
+# AI Agent Best Practices: Token Efficiency and Performance
 
 This guide helps AI agents and developers use the AiCompanion API efficiently.
 Structured for both human readability and machine consumption.
@@ -25,9 +25,9 @@ Structured for both human readability and machine consumption.
 **Do:**
 ```python
 create_entity_batch([
-    {"name": "Enemy1", "position": [10, 0, 1], "ai_type": "chaser"},
-    {"name": "Enemy2", "position": [-10, 0, 1], "ai_type": "chaser"},
-    {"name": "Enemy3", "position": [0, 10, 1], "ai_type": "turret"},
+    {"name": "Enemy1", "type": "enemy", "position": [10, 0, 1], "ai_type": "chaser"},
+    {"name": "Enemy2", "type": "enemy", "position": [-10, 0, 1], "ai_type": "chaser"},
+    {"name": "Enemy3", "type": "enemy", "position": [0, 10, 1], "ai_type": "turret"},
 ])
 ```
 
@@ -51,7 +51,7 @@ create_player("Player", position=[0, 0, 1], movement="twin_stick")
 ```python
 build_entity("Player") \
     .at_position(0, 0, 1) \
-    .with_mesh("capsule") \
+    .with_mesh("primitive_capsule") \
     .with_physics(body_type="dynamic") \
     .with_collider(shape="capsule") \
     .with_lua_script("Scripts/Lua/twin_stick_movement.lua") \
@@ -69,7 +69,7 @@ bootstrap_scene(ground_size=50, lighting="three_point", camera="top_down")
 
 **Don't:**
 ```python
-create_physics_ground("Ground", size=50)
+create_physics_ground(size=50)
 setup_lighting("three_point")
 create_camera("MainCam", camera_type="top_down")
 ```
@@ -90,8 +90,8 @@ create_camera("MainCam", camera_type="top_down")
 ### Cache discovery calls
 
 Call these once at session start, not per operation:
-- `get_component_catalog()` — returns all available component types
-- `get_available_functions()` — returns all API functions with signatures
+- `get_component_catalog()`: returns all available component types
+- `get_available_functions()`: returns all API functions with signatures
 
 ---
 
@@ -138,13 +138,27 @@ This creates one undo entry. Without explicit batching, each API call creates it
 
 ### Prefer C++ EBus paths
 
-These functions use fast C++ entity traversal (no Python overhead):
-- `get_scene_snapshot()` → `SceneSnapshotProvider::CaptureSnapshot()`
-- `get_entity_tree()` → `SceneSnapshotProvider::CaptureEntityTree()`
-- `validate_scene()` → `SceneSnapshotProvider::ValidateScene()`
-- `inspect_entity(id)` has a C++ counterpart in the `get_entity` request type → `SceneSnapshotProvider::CaptureEntity()`
+These functions use fast C++ entity traversal (no Python overhead) and return
+the C++ JSON verbatim, with decimal-string ids and no `status`/`data` envelope:
+- `get_scene_snapshot()` calls `SceneSnapshotProvider::CaptureSnapshot()`
+- `get_entity_tree()` calls `SceneSnapshotProvider::CaptureEntityTree()`
+- `validate_scene()` calls `SceneSnapshotProvider::ValidateScene()`
+- `inspect_entity(id)` has a C++ counterpart in the `get_entity` request type, `SceneSnapshotProvider::CaptureEntity()`
 
-They are also available as direct AgentServer request types (`get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene`, plus `get_bus_schema` for live EBus discovery and `get_asset_status`, `get_asset_jobs`, `get_asset_processor_status` for Asset Processor readiness), bypassing Python entirely.
+The AgentServer serves them as direct request types, bypassing Python entirely,
+alongside the rest of its native set: `get_entity`, `get_bus_schema` (live EBus
+discovery), the validated mutations `create_entity`, `set_transform` and
+`delete_entity` (each its own undo batch; missing entities, the level root and
+the protected system entities refused), the asset readiness queries
+`get_asset_status`, `get_asset_jobs` and `get_asset_processor_status`, the anim graph reads `list_anim_graphs`
+and `get_anim_graph`, and the anim graph writes `create_anim_graph`,
+`remove_anim_graph`, `load_anim_graph`, `save_anim_graph`,
+`add_anim_graph_node`, `remove_anim_graph_node`, `set_anim_graph_entry_state`,
+`add_anim_graph_parameter`, `remove_anim_graph_parameter`,
+`add_anim_graph_transition`, `remove_anim_graph_transition`,
+`set_anim_graph_transition`, `connect_anim_graph_ports`,
+`disconnect_anim_graph_ports` and `set_anim_graph_node`. Every one of them
+works in secure mode.
 
 ### TLS performance implications
 
@@ -160,7 +174,7 @@ When TLS is enabled on the AgentServer:
 
 ### Connection health
 
-Use the `ping` request type for connection checks — it's handled directly on the server's network thread without touching Python or the main thread:
+Use the `ping` request type for connection checks: it is handled directly on the server's network thread without touching Python or the main thread:
 
 ```json
 {"id": "check-1", "type": "ping"}
@@ -173,7 +187,7 @@ Use `get_api_version` to discover server capabilities in one call:
 
 ```json
 {"id": "init-1", "type": "get_api_version"}
-→ {"id": "init-1", "status": "ok", "output": "{\"protocol_version\": 1, \"gem_version\": \"0.5.0\", ...}", ...}
+→ {"id": "init-1", "status": "ok", "output": "{\"protocol_version\": 1, \"gem_version\": \"0.6.0\", ...}", ...}
 ```
 
 The response includes `secure_mode` and `tls_enabled` flags so agents can adapt.
@@ -203,8 +217,10 @@ For read-only checks that need no Python at all, o3de-mcp's `get_scene_snapshot`
 `get_entity_tree`, `get_entity` and `validate_scene` tools call the gem's C++
 request types directly. They are the cheapest way to look at the scene, and the
 only way when the AgentServer runs in secure mode, where the native
-`create_entity`, `set_transform` and `delete_entity` request types are also the
-only way to change it.
+`create_entity`, `set_transform` and `delete_entity` request types (o3de-mcp's
+tools of the same names try them first) are the only way to change it, and the
+anim graph types behind o3de-mcp's animation tools the only way to read and
+author an anim graph.
 
 ### Wait for an asset you just wrote
 

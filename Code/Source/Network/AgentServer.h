@@ -64,7 +64,7 @@ namespace AiCompanion
         std::promise<AZStd::string> responsePromise;
     };
 
-    //! AgentServer — Purpose-built TCP listener for AI agent communication.
+    //! AgentServer: Purpose-built TCP listener for AI agent communication.
     //! Replaces RemoteConsole with a length-prefixed JSON protocol.
     class AgentServer : public AgentServerRequestBus::Handler
     {

@@ -5,7 +5,9 @@
 
 import sys
 import os
+import types
 import unittest
+from unittest import mock
 
 # Add the Editor/Scripts directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Editor', 'Scripts'))
@@ -16,6 +18,7 @@ from ai_companion.safety.validators import (
     validate_position,
     validate_asset_path,
     validate_float,
+    validate_target_entity,
     is_protected_entity,
 )
 
@@ -181,6 +184,109 @@ class TestProtectedEntities(unittest.TestCase):
     def test_not_protected(self):
         self.assertFalse(is_protected_entity("Player"))
         self.assertFalse(is_protected_entity("Enemy1"))
+
+
+class _StubEntityId:
+    """What the engine's EntityId proxy looks like to the package: ToString()
+    gives the bracketed id and IsValid() the validity."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def ToString(self):
+        return f"[{self.value}]"
+
+    def IsValid(self):
+        return self.value != 4294967295
+
+
+def _stub_editor_names(names, calls=None, constructor_works=True):
+    """Stub azlmbr modules whose EditorEntityInfoRequestBus answers GetName
+    from ``names`` (entity number -> name). ``calls`` collects the EntityId
+    values the bus was asked about. With ``constructor_works`` False the
+    EntityId constructor yields the invalid id whatever it is given, which is
+    what O3DE 26.10.0 does, so the package must find the entity by search."""
+
+    def info_bus(call_type, event, eid):
+        if calls is not None:
+            calls.append(eid.value)
+        if event == "GetName":
+            return names.get(eid.value)
+        raise AssertionError(f"unexpected EditorEntityInfoRequestBus event {event!r}")
+
+    def search_bus(call_type, event, search_filter):
+        assert event == "SearchEntities"
+        return [_StubEntityId(number) for number in names]
+
+    bus = types.ModuleType("azlmbr.bus")
+    bus.Broadcast = object()
+    bus.Event = object()
+    editor = types.ModuleType("azlmbr.editor")
+    editor.EditorEntityInfoRequestBus = info_bus
+    entity = types.ModuleType("azlmbr.entity")
+    entity.EntityId = (lambda value: _StubEntityId(value)) if constructor_works else (lambda value: _StubEntityId(4294967295))
+    entity.SearchBus = search_bus
+    entity.SearchFilter = lambda: object()
+    root = types.ModuleType("azlmbr")
+    root.__path__ = []
+    return {"azlmbr": root, "azlmbr.bus": bus, "azlmbr.editor": editor, "azlmbr.entity": entity}
+
+
+class TestTargetEntityValidation(unittest.TestCase):
+    """validate_target_entity resolves the entity's name in the editor and
+    refuses the protected system entities; it is what the Python package runs
+    before a mutation that names an existing entity."""
+
+    NAMES = {1: "EditorGlobal", 2: "SystemEntity", 3: "AZ::Probe", 4: "Player"}
+
+    def test_protected_names_are_refused(self):
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES)):
+            for number in (1, 2, 3):
+                with self.subTest(entity=number):
+                    ok, err = validate_target_entity(number)
+                    self.assertFalse(ok)
+                    self.assertIn("entity is protected", err)
+                    self.assertIn(self.NAMES[number], err)
+
+    def test_ordinary_entity_is_accepted(self):
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES)):
+            self.assertEqual(validate_target_entity(4), (True, ""))
+
+    def test_accepts_every_id_form(self):
+        calls = []
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES, calls)):
+            self.assertFalse(validate_target_entity("[3]")[0])
+            self.assertFalse(validate_target_entity("3")[0])
+            self.assertFalse(validate_target_entity(_StubEntityId(3))[0])
+        self.assertEqual(calls, [3, 3, 3])
+
+    def test_finds_the_entity_by_search_when_the_constructor_is_broken(self):
+        # O3DE 26.10.0: EntityId(int) yields the invalid id for every value.
+        calls = []
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES, calls, constructor_works=False)):
+            ok, err = validate_target_entity(3)
+            self.assertFalse(ok)
+            self.assertIn("AZ::Probe", err)
+            self.assertEqual(validate_target_entity(4), (True, ""))
+        self.assertEqual(calls, [3, 4])
+
+    def test_unparsable_id_is_refused(self):
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES)):
+            ok, err = validate_target_entity("not-an-id")
+            self.assertFalse(ok)
+            self.assertIn("Invalid or unknown entity id", err)
+
+    def test_unknown_entity_is_refused(self):
+        # An id no entity carries cannot be resolved, so the mutation is
+        # refused before the engine is asked to act on a wrong id.
+        with mock.patch.dict(sys.modules, _stub_editor_names(self.NAMES, constructor_works=False)):
+            ok, err = validate_target_entity(99)
+            self.assertFalse(ok)
+            self.assertIn("unknown entity id", err)
+
+    def test_outside_the_editor_every_id_passes(self):
+        self.assertNotIn("azlmbr", sys.modules)
+        self.assertEqual(validate_target_entity(1), (True, ""))
 
 
 if __name__ == "__main__":

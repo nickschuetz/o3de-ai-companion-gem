@@ -149,8 +149,8 @@ shared registry so enemies can report defeats without knowing its entity id.
 | `UICanvasEntity` | EntityId() | UI entity for score display |
 
 **Events listened:**
-- `EnemyDefeated` — Adds ScorePerKill
-- `AddScore` — Adds custom value
+- `EnemyDefeated`, Adds ScorePerKill
+- `AddScore`, Adds custom value
 
 ## game_over_trigger.lua
 
@@ -163,8 +163,8 @@ Monitors player health and triggers game over.
 | `MaxHealth` | 100.0 | Maximum player health |
 
 **Events listened:**
-- `TakeDamage` — Reduces health
-- `Heal` — Restores health
+- `TakeDamage`, Reduces health
+- `Heal`, Restores health
 
 **Events broadcast:**
-- `GameOver` — When health reaches 0
+- `GameOver`, When health reaches 0

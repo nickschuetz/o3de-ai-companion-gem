@@ -24,6 +24,7 @@ flowchart TB
 
         subgraph PythonAPI["Python API Layer  (Editor/Scripts/ai_companion/)"]
             API["api.py<br/>32 public functions"]
+            AMP["agent_mode.py<br/>sidecar + editor preferences"]
 
             subgraph Builders["Builders"]
                 EB["EntityBuilder"]
@@ -44,21 +45,28 @@ flowchart TB
             end
 
             subgraph Safety["Safety"]
-                VAL["Validators"]
+                VAL["Validators<br/>incl. protected entities"]
                 SBX["Sandbox"]
                 RB["Rollback / Undo"]
+            end
+
+            subgraph Utils["utils/"]
+                UT["component registry, id helpers,<br/>asset paths, transforms, JSON output"]
             end
         end
 
         subgraph CppLayer["C++ Native Layer  (Code/Source/)"]
-            SysComp["AiCompanionSystemComponent<br/>EBus Handler"]
-            EdComp["AiCompanionEditorSystemComponent<br/>native mutations, CommitEntityToPrefab,<br/>GetBusSchema, anim graph reads, Agent Mode"]
-            AGI["AnimGraphInspector<br/>EMotion FX anim graphs"]
-            SSP["SceneSnapshotProvider"]
-            IV["InputValidator"]
-            RP["RequestParsing"]
-            RSP["ResponseBuilding"]
             AS["AgentServer<br/>TCP Listener"]
+            RP["RequestParsing"]
+            RSP["ResponseBuilding<br/>RequestError codes"]
+            SysComp["AiCompanionSystemComponent<br/>AiCompanionRequestBus: scene reads"]
+            EdComp["AiCompanionEditorSystemComponent<br/>AiCompanionEditorRequestBus: native mutations,<br/>CommitEntityToPrefab, GetBusSchema,<br/>anim graph reads and writes; drains the queue"]
+            SSP["SceneSnapshotProvider"]
+            IV["InputValidator<br/>incl. protected entity names"]
+            BS["BusSchema<br/>live BehaviorContext reflection"]
+            AGI["AnimGraphInspector<br/>EMotion FX anim graph reads"]
+            AGA["AnimGraphAuthoring<br/>AnimGraphCommandText<br/>EMotion Studio commands"]
+            AM["Agent Mode<br/>Filter (Qt dialogs) + State (sidecar)"]
         end
 
         subgraph GameplayLayer["Gameplay Layer  (Assets/)"]
@@ -71,26 +79,36 @@ flowchart TB
 
     Agent -->|"MCP tool calls"| MCP
     Agent -->|"TCP JSON"| AgentSrv
-    MCP -->|"run_editor_python() / sessions"| API
+    MCP -->|"execute_python:<br/>run_editor_python, begin_session / exec_in_session"| AgentSrv
     MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph,<br/>create/remove/load/save_anim_graph,<br/>add/remove_anim_graph_node, set_anim_graph_entry_state,<br/>add/remove_anim_graph_parameter,<br/>add/remove/set_anim_graph_transition,<br/>connect/disconnect_anim_graph_ports, set_anim_graph_node,<br/>get_asset_status, get_asset_jobs, get_asset_processor_status"| AgentSrv
     AgentSrv --> AS
     AS --> RP
     AS -->|"every reply"| RSP
-    AS -->|"request queue"| SysComp
-    AS -->|"mutations, bus schema, anim graphs, asset readiness"| EdComp
+    AS -->|"mutex-guarded request queue,<br/>drained on the main thread by EdComp<br/>(SystemTickBus plus a Qt timer)"| EdComp
+    AS -->|"execute_python:<br/>EditorPythonRunnerRequestBus"| API
+    AS -->|"scene reads over<br/>AiCompanionRequestBus"| SysComp
+    EdComp -->|"validates names, positions,<br/>protected entities"| IV
     EdComp -->|"validated, own undo batch"| Engine
+    EdComp --> BS
     EdComp --> AGI
+    EdComp --> AGA
+    EdComp -->|"polls the sidecar,<br/>installs the filter"| AM
     AGI -->|"read-only, main thread"| Engine
+    AGA -->|"command strings, validated first"| Engine
     Builders -->|"CommitEntityToPrefab"| EdComp
+    AMP -->|"agent_mode.json"| AM
 
     API --> Builders
     API --> Templates
     API --> Feedback
     API --> Safety
+    API --> AMP
+    Builders --> Utils
+    Feedback --> Utils
 
     Builders -->|"azlmbr, EditorComponentAPI<br/>(mass, collider shape)"| Engine
     Templates --> Builders
-    Feedback --> SSP
+    Feedback -->|"AiCompanionRequestBus,<br/>C++ JSON returned verbatim"| SysComp
     Safety -->|"validates"| Builders
     Safety -->|"undo batches"| Engine
 
@@ -119,11 +137,13 @@ agents. All functions return JSON strings for reliable parsing.
 
 | Component | Purpose |
 |-----------|---------|
-| **api.py** | Main entry point exposing 32 public functions for scene setup, entity creation, inspection, and undo |
+| **api.py** | Main entry point exposing 32 public functions for scene setup, entity creation, inspection, undo and Agent Mode |
 | **Builders** | Fluent builder classes for constructing entities, scenes, lighting rigs, physics bodies, and terrain |
 | **Templates** | Pre-configured factory functions for common entity types (player, enemy, camera, pickup, projectile, environment) |
-| **Feedback** | Scene introspection: snapshots, entity inspection, and validation reports |
-| **Safety** | Input validation, operation sandboxing, and automatic undo/rollback |
+| **Feedback** | Scene introspection: the snapshot, tree and validation reads hand back the C++ `SceneSnapshotProvider` JSON verbatim; `inspect_entity` is Python |
+| **Safety** | Input validation (names, positions, component types, asset paths, protected entities through `validate_target_entity`), operation sandboxing (entities per call, timeout), and automatic undo/rollback |
+| **utils/** | The component registry with aliases and suggestions, JSON output helpers, transform helpers, id helpers (`id_to_jsonable`) and asset path resolution |
+| **agent_mode.py** | Agent Mode's Python side: writes the JSON sidecar the C++ side polls, reads the observed-state file it writes back, and edits the editor's preferences file |
 
 ### C++ Native Layer
 
@@ -133,14 +153,16 @@ network server.
 | Component | Purpose |
 |-----------|---------|
 | **AiCompanionSystemComponent** | EBus handler connecting Python API to C++ scene operations (`AiCompanionRequestBus`, exported to editor Python as `azlmbr.ai_companion`) |
-| **AiCompanionEditorSystemComponent** | Editor-side handler (`AiCompanionEditorRequestBus`): the validated native mutations (`CreateEntity`, `SetTransform`, `DeleteEntity`, each in its own undo batch), `CommitEntityToPrefab` (records an entity in the level template immediately, so multi-entity calls persist), `GetBusSchema`, `ListAnimGraphs` and `GetAnimGraph` (delegated to AnimGraphInspector), the `SetComponentPropertyUnwrapped` workaround, and Agent Mode's dialog filter |
+| **AiCompanionEditorSystemComponent** | Editor-side handler (`AiCompanionEditorRequestBus`): the validated native mutations (`CreateEntity`, `SetTransform`, `DeleteEntity`, each in its own undo batch, refusing missing entities, the level root and the protected system entities), `CommitEntityToPrefab` (records an entity in the level template immediately, so multi-entity calls persist), `GetBusSchema`, the anim graph reads and writes (delegated to AnimGraphInspector and AnimGraphAuthoring), the `SetComponentPropertyUnwrapped` workaround, the AgentServer's lifetime and main-thread queue pump (`SystemTickBus` plus a Qt timer), and Agent Mode's sidecar poll and dialog filter |
 | **SceneSnapshotProvider** | Fast entity traversal and JSON serialization of scene state, whole scene or one entity |
-| **InputValidator** | C++ counterpart to Python validators for entity names, positions and component types |
-| **RequestParsing** | Parses request arguments (entity ids as numbers or strings, Vector3 arrays within the position bound) for the native request types |
-| **ResponseBuilding** | Writes every AgentServer reply (`id`, `status`, `output`, `error`, `duration_ms`, and `code` on the unknown-request-type error only) |
-| **BusSchema** | Builds a JSON description of any reflected EBus from the live BehaviorContext, with argument names and tooltips |
+| **InputValidator** | C++ counterpart to the Python validators: entity names, positions, component types, asset paths and the protected entity names (`IsProtectedEntityName`) |
+| **RequestParsing** | Parses request arguments (entity ids as numbers or strings, Vector3 arrays within the position bound, anim graph ids) for the native request types |
+| **ResponseBuilding / RequestError** | Writes every AgentServer reply (`id`, `status`, `output`, `error`, `duration_ms`) and gives every error reply its `code` from the `RequestError` vocabulary, decoding the `{"code", "message"}` failures the editor bus events return |
+| **BusSchema** | Builds a JSON description of any reflected EBus from the live BehaviorContext, with argument names and tooltips; behind `get_bus_schema` |
 | **AnimGraphInspector** | Read-only JSON views of the EMotion FX anim graphs the engine holds (`Code/Source/Animation/`): the listing with ownership flags and actor instances, and one graph's nodes, ports and connections, state transitions with conditions, value parameters and node groups. Resolves the graph from the AnimGraphManager on every call, on the main thread, and never keeps a pointer. Links `Gem::EMotionFX.Editor.Static`; answers `EMotion FX is not available` when that gem is absent |
-| **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, secure mode, and audit logging |
+| **AnimGraphAuthoring / AnimGraphCommandText** | The fifteen anim graph writes, each one command or command group sent to EMotion Studio's command manager; `AnimGraphCommandText` holds the name rules, type tables, placement rules, condition and port resolution, path checks and command-line builders, unit tested on every string sent |
+| **Agent Mode** (`Code/Source/AgentMode/`) | `State` reads the JSON sidecar `agent_mode.py` writes and writes the observed-state file back; `Filter` is the `QApplication` event filter that closes the welcome dialog, logs the unsaved-files, error-log and startup-error dialogs, and rejects any other `QMessageBox` so an unattended editor never blocks in a modal |
+| **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, secure mode, and audit logging; 31 request types |
 
 ### Gameplay Layer
 
@@ -153,7 +175,7 @@ network server.
 
 1. **AI Agent** sends a request (via MCP tool call or TCP JSON message)
 2. **Python API** receives the call and delegates to the appropriate builder or template
-3. **Safety layer** validates all inputs (names, positions, asset paths) and begins an undo batch
+3. **Safety layer** opens an undo batch and resets the sandbox, then validates all inputs (names, positions, asset paths, component types, the parent entity's name) before anything is created
 4. **Builders** invoke `azlmbr` (O3DE Python bindings) to create entities and attach components, then commit each entity to the level's prefab template so the next creation cannot wipe it
 5. On success the undo batch is committed; on failure it is rolled back automatically (an editor Undo plus deletion of any entity the undo leaves behind) and the error is returned as JSON with a `code`
 6. A **JSON response** with entity IDs, component IDs, and status is returned to the agent
@@ -293,20 +315,23 @@ versions, the four C++ read types behind its `get_scene_snapshot`,
 `get_entity_tree`, `get_entity` and `validate_scene` tools, `get_bus_schema`
 first in `get_bus_schema_live`, the three mutation types first in its
 `create_entity`, `set_transform` and `delete_entity` tools (falling back to
-editor Python when the reply carries `unknown_request_type`), and
-`execute_python` for everything else (`run_editor_python` and the
-`begin_session` / `exec_in_session` tools). o3de-mcp wrappers for
-`list_anim_graphs` and `get_anim_graph` are to follow, as are its
-`get_asset_status`, `get_asset_jobs` and `wait_for_asset` wrappers over the
-asset readiness types.
+editor Python when the reply carries `unknown_request_type`), the seventeen
+anim graph types one to one in its `list_anim_graphs`, `get_anim_graph` and
+authoring and wiring tools of the same names, the three asset readiness
+types in its `get_asset_status`, `get_asset_jobs` and
+`get_asset_processor_connection` tools plus a polling `wait_for_asset` (o3de-mcp main, shipping in o3de-mcp
+0.6.0 alongside gem 0.6.0), and `execute_python` for everything else
+(`run_editor_python` and the `begin_session` / `exec_in_session` tools).
 
 `create_entity` (`name`, optional `position` and `parent_id`), `set_transform`
 (`entity_id` plus any of `position`, `rotation` as Euler degrees or
 `rotation_quaternion` as `[x, y, z, w]`, and `scale` as a number or
 `[x, y, z]`) and `delete_entity` (`entity_id`) are the validated mutation set:
-each runs the C++ `InputValidator` on its arguments, refuses missing entities
-and the level root, and executes inside its own editor undo batch, so an agent
-on a secure-mode editor can still build and tidy a scene without Python.
+each runs the C++ `InputValidator` on its arguments, refuses missing entities,
+the level root and the protected system entities (`EditorGlobal`,
+`SystemEntity`, any `AZ::` name, answered as `validation_failed` with
+`entity is protected`), and executes inside its own editor undo batch, so an
+agent on a secure-mode editor can still build and tidy a scene without Python.
 
 A `scale` array with equal elements is the number: the Transform component's
 uniform scale. Unequal elements set the uniform scale to 1 and add the
@@ -339,9 +364,9 @@ Every 64-bit entity id in native output (`id` and `parent_id` in
 `get_entity`, `get_scene_snapshot` and `get_entity_tree`, `entity_id` in
 `validate_scene` reports and in the `create_entity` reply, `deleted` in the
 `delete_entity` reply, and the anim graph `instances`) is a decimal string
-from `API_VERSION` 0.4.0 on, for the same reason the anim graph ids are: the
-values are random 64-bit numbers above 2^53 that a double-based JSON parser
-corrupts. Request fields still accept a number or a string. `get_api_version`
+from `API_VERSION` 0.4.0 on, for the same reason the anim graph node and
+transition ids are: the values are random 64-bit numbers above 2^53 that a
+double-based JSON parser corrupts. Request fields still accept a number or a string. `get_api_version`
 reports the convention: `api_version` 0.5.0 and up accept array `scale` and
 `rotation_quaternion` and report `non_uniform_scale` and `effective_scale`;
 0.4.0 introduced string ids; 0.3.0 and lower meant numbers. The Python API's
@@ -363,9 +388,9 @@ vocabulary in `Network/RequestError`:
 | `timeout` | The editor's main thread did not answer within 30 seconds |
 | `shutting_down` | The server was stopping and dropped the request |
 
-The bus events the server calls (`AiCompanionEditorRequestBus::CreateEntity`,
-`SetTransform`, `DeleteEntity`, `ListAnimGraphs`, `GetAnimGraph`,
-`CreateAnimGraph`, `RemoveAnimGraph`) return their `AZ::Outcome` failure as the
+Every `AiCompanionEditorRequestBus` event the server calls (`CreateEntity`,
+`SetTransform`, `DeleteEntity`, and the seventeen anim graph events from
+`ListAnimGraphs` to `SetAnimGraphNode`) returns its `AZ::Outcome` failure as the
 JSON text `{"code", "message"}` from `RequestError::EncodeError`; the server's
 `FailureResponse` decodes it into the reply's `code` and `error`, and a plain
 text that was never encoded decodes as `engine_error` with the text as the
@@ -378,10 +403,12 @@ package's own vocabulary; the two overlap on `validation_failed`, `not_found`
 and `engine_error` by design and differ where the layers differ.
 
 Requests that require main-thread access (every type except `ping` and
-`get_api_version`) are dispatched via a lock-free queue from the
-client thread to the `AZ::SystemTickBus` handler, which processes them every few
-milliseconds regardless of editor focus state. A 30-second timeout prevents
-deadlocks if the main thread is blocked.
+`get_api_version`) are pushed onto a mutex-guarded queue by the client thread
+and drained on the main thread by the editor system component, from its
+`AZ::SystemTickBus` handler and from a Qt timer on the application's event
+loop, so they keep flowing while the editor window is unfocused and its tick
+loop throttled. A 30-second timeout prevents deadlocks if the main thread is
+blocked.
 
 Security features:
 - Optional TLS/SSL encryption (TLS 1.2+, strong cipher suites: `HIGH:!aNULL:!MD5:!RC4`)
@@ -409,16 +436,49 @@ Reliability features:
 
 ## Safety Architecture
 
+Python API call (one outermost undo batch)
+
 ```
-Input arrives
-  --> Validators (name format, position bounds, path traversal checks)
-    --> Sandbox (operation rate/count limits)
-      --> Undo batch opened
-        --> O3DE Engine mutation
-      --> Undo batch committed (or rolled back on error)
+Call arrives
+  -> with_undo_batch opens the undo batch and resets the sandbox
+    -> Validators (name format, position bounds, path traversal, component
+       type characters and registry, protected parent entity)
+      -> Sandbox (entities per call, operation timeout); every created
+         entity is recorded
+        -> O3DE Engine mutation, each entity committed to the prefab template
+      -> success: batch ends, kept on the undo stack
+      -> exception: batch ends; if the editor kept it, one Undo; any recorded
+         entity the Undo left behind is deleted; JSON error with a code and
+         rolled_back: true
 ```
 
-Protected entities (`EditorGlobal`, `SystemEntity`, `AZ::SystemEntity`) cannot be
-modified. Entity names must match `^[A-Za-z][A-Za-z0-9_-]*$`, positions must be
-finite and within +/-10,000 units, and asset paths cannot contain traversal
-sequences (`..`) or null bytes.
+Native request type (C++, no Python; what secure mode serves)
+
+```
+Request arrives on the network thread
+  -> RequestParsing (JSON shape, ids, vectors)
+    -> queued to the main thread
+      -> InputValidator (entity name, position, scale, protected entity
+         name) and the level-root check; anim graph writes validated in
+         AnimGraphAuthoring
+        -> ScopedUndoBatch around the engine call (anim graph writes: one
+           EMotion Studio command group instead)
+      -> reply with status and, on error, a code
+```
+
+Agent Mode (an unattended editor)
+
+```
+agent_mode.py writes agent_mode.json
+  -> the editor system component polls it once a second
+    -> QApplication event filter: closes "Welcome to O3DE", logs the
+       unsaved-files, error-log and startup-error dialogs, rejects any other
+       QMessageBox so no modal blocks the main thread
+  -> agent_mode_observed.json reports what is installed
+```
+
+Protected entities (`EditorGlobal`, `SystemEntity`, any `AZ::` name) are refused
+by the native `set_transform` and `delete_entity` and by the Python package
+before it parents a new entity under one. Entity names must match
+`^[A-Za-z][A-Za-z0-9_-]*$`, positions must be finite and within +/-10,000
+units, and asset paths cannot contain traversal sequences (`..`) or null bytes.

@@ -1,14 +1,18 @@
 # Copyright (c) Contributors to the Open 3D Engine Project.
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 
-"""Operation sandboxing to prevent runaway AI operations."""
+"""Operation sandboxing to prevent runaway AI operations.
+
+Two limits apply to one API call (one outermost undo batch): the number of
+entities it may create (``MAX_ENTITIES_PER_CALL``) and how long it may run
+(``MAX_OPERATION_TIMEOUT_SECONDS``). The sandbox also records every entity
+the call creates so rollback can delete what the editor's Undo leaves behind."""
 
 import time
 from typing import Optional
 
 # Configurable limits
 MAX_ENTITIES_PER_CALL = 100
-MAX_RECURSION_DEPTH = 10
 MAX_OPERATION_TIMEOUT_SECONDS = 30.0
 
 
@@ -23,21 +27,17 @@ class OperationSandbox:
     def __init__(
         self,
         max_entities: int = MAX_ENTITIES_PER_CALL,
-        max_depth: int = MAX_RECURSION_DEPTH,
         timeout: float = MAX_OPERATION_TIMEOUT_SECONDS,
     ):
         self._max_entities = max_entities
-        self._max_depth = max_depth
         self._timeout = timeout
         self._entities_created = 0
-        self._current_depth = 0
         self._start_time: Optional[float] = None
         self._created_ids: list = []
 
     def begin(self):
         """Start tracking an operation."""
         self._entities_created = 0
-        self._current_depth = 0
         self._start_time = time.monotonic()
         self._created_ids = []
 
@@ -59,19 +59,6 @@ class OperationSandbox:
                 f"(limit: {self._max_entities})"
             )
         self._entities_created += count
-
-    def check_depth(self):
-        """Check recursion depth before entering a nested operation."""
-        self._current_depth += 1
-        if self._current_depth > self._max_depth:
-            raise SandboxLimitError(
-                f"Recursion depth limit exceeded: depth {self._current_depth} "
-                f"(limit: {self._max_depth})"
-            )
-
-    def exit_depth(self):
-        """Exit a nested operation level."""
-        self._current_depth = max(0, self._current_depth - 1)
 
     def check_timeout(self):
         """Check if the operation has exceeded the timeout."""

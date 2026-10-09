@@ -72,6 +72,27 @@ def _stub_azlmbr(calls, on_set=None):
     def quiet_bus(call_type, event, *args):
         return None
 
+    # Entity names the editor would report, for with_parent's protected check.
+    entity_names = {1: "EditorGlobal", 2: "AZ::Probe", 3: "Player"}
+
+    class _StubEntityId:
+        def __init__(self, value):
+            self.value = value
+
+        def ToString(self):
+            return f"[{self.value}]"
+
+        def IsValid(self):
+            return True
+
+    def info_bus(call_type, event, eid):
+        if event == "GetName":
+            return entity_names.get(getattr(eid, "value", None))
+        raise AssertionError(f"unexpected EditorEntityInfoRequestBus event {event!r}")
+
+    def search_bus(call_type, event, search_filter):
+        return [_StubEntityId(number) for number in entity_names]
+
     class _EntityType:
         Game = "Game"
 
@@ -82,9 +103,12 @@ def _stub_azlmbr(calls, on_set=None):
     editor.EditorComponentAPIBus = component_bus
     editor.ToolsApplicationRequestBus = tools_bus
     editor.EditorEntityAPIBus = quiet_bus
+    editor.EditorEntityInfoRequestBus = info_bus
     # No AiCompanionEditorRequestBus: commit_entity_to_prefab tolerates its absence.
     entity = types.ModuleType("azlmbr.entity")
-    entity.EntityId = lambda *a: ("EntityId", a)
+    entity.EntityId = lambda *a: _StubEntityId(a[0] if a else 4294967295)
+    entity.SearchBus = search_bus
+    entity.SearchFilter = lambda: object()
     entity.EntityType = _EntityType
     components = types.ModuleType("azlmbr.components")
     components.TransformBus = quiet_bus
@@ -210,6 +234,37 @@ class TestEntityBuilder(unittest.TestCase):
     def test_invalid_component_type(self):
         with self.assertRaises(ValueError):
             EntityBuilder("Test").with_component("NonexistentComponent12345")
+
+    def test_component_type_characters_are_validated_before_the_registry(self):
+        # A name with shell or Python syntax in it must fail the character
+        # pattern, not come back as a fuzzy "did you mean Mesh?" suggestion.
+        for bad in ("Mesh; rm -rf /", "Mesh\nimport os", "", "9Mesh"):
+            with self.subTest(component_type=bad):
+                with self.assertRaises(ValueError) as ctx:
+                    EntityBuilder("Test").with_component(bad)
+                self.assertNotIn("Did you mean", str(ctx.exception))
+
+    def test_component_type_is_resolved_against_the_registry(self):
+        builder = EntityBuilder("Test").with_component("physx rigid body")
+        self.assertEqual(builder._components[0]["type"], "PhysX Dynamic Rigid Body")
+        with self.assertRaises(ValueError) as ctx:
+            EntityBuilder("Test").with_component("Mesh Thing")
+        self.assertIn("Did you mean", str(ctx.exception))
+
+    def test_with_parent_refuses_a_protected_entity(self):
+        calls = []
+        with mock.patch.dict(sys.modules, _stub_azlmbr(calls)):
+            for protected in (1, 2, "[2]"):
+                with self.subTest(parent=protected):
+                    with self.assertRaises(ValueError) as ctx:
+                        EntityBuilder("Child").with_parent(protected)
+                    self.assertIn("entity is protected", str(ctx.exception))
+
+    def test_with_parent_accepts_an_ordinary_entity(self):
+        calls = []
+        with mock.patch.dict(sys.modules, _stub_azlmbr(calls)):
+            result = json.loads(EntityBuilder("Child").with_parent(3).build())
+        self.assertEqual(result["status"], "ok", result)
 
     def test_uniform_scale(self):
         """Uniform scale should be accepted."""

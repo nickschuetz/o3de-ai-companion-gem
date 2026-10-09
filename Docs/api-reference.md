@@ -1,11 +1,17 @@
 # API Reference
 
 All functions are available from `ai_companion.api`. Every function returns
-a JSON string.
+a JSON string, with four exceptions: `build_entity` returns an `EntityBuilder`
+(its `build()` returns the JSON), `find_prefab_file` returns a plain dict, and
+the three feedback reads `get_scene_snapshot`, `get_entity_tree` and
+`validate_scene` return the C++ `SceneSnapshotProvider`'s JSON verbatim when the
+`AiCompanionRequestBus` answers (no `status`/`data` envelope, decimal-string
+ids), falling back to an enveloped Python result only when the bus is absent.
 
 ## Responses and error codes
 
-Success: `{"status": "ok", "data": ...}`. Failure:
+Success: `{"status": "ok", "data": ...}` (except for the four functions above).
+Failure:
 
 ```json
 {"status": "error", "code": "validation_failed", "message": "...", "details": {...}, "rolled_back": true}
@@ -16,7 +22,7 @@ Success: `{"status": "ok", "data": ...}`. Failure:
 | Code | Meaning |
 |------|---------|
 | `validation_failed` | An argument failed the safety validators (name, position, component, prefab name, unknown template type) |
-| `limit_exceeded` | A sandbox limit was hit (entity count per call, recursion depth, timeout) |
+| `limit_exceeded` | A sandbox limit was hit (entity count per call, or the operation timeout) |
 | `not_in_editor` | The call needs the editor's `azlmbr` and it is not available |
 | `not_found` | A named prefab, file or entity does not exist (`prefab_not_found` for `spawn_prefab`) |
 | `editor_running` | The operation needs the editor closed first |
@@ -30,9 +36,10 @@ the error is returned with `rolled_back: true` plus `details.exception` and
 `details.operation`. For callers written against 0.4.0, `details.code` mirrors
 `code`.
 
-Entity ids in this package's JSON are bracketed strings such as
-`"[6524019704300593900]"`, the form `azlmbr` prints; the AgentServer's native
-request types return plain decimal strings (see the
+Entity ids in this package's own JSON are bracketed strings such as
+`"[6524019704300593900]"`, the form `azlmbr` prints. The AgentServer's native
+request types, and the three feedback reads that return the C++ JSON verbatim,
+use plain decimal strings (see the
 [architecture document](architecture.md#network-protocol-agentserver)).
 
 These codes belong to the Python package. The C++ AgentServer's own replies
@@ -72,10 +79,10 @@ entity's name, transform and components, and a saved level contains them.
 Sets up a complete scene with ground plane, lighting rig, and camera.
 
 **Parameters:**
-- `preset` — Scene preset (currently `"default"`)
-- `ground_size` — Width/depth of ground plane
-- `lighting` — Lighting preset: `"three_point"`, `"outdoor"`, `"indoor"`
-- `camera` — Camera type: `"top_down"`, `"isometric"`, `"perspective"`, `"side_view"`
+- `preset`: Scene preset (currently `"default"`)
+- `ground_size`: Width/depth of ground plane
+- `lighting`: Lighting preset: `"three_point"`, `"outdoor"`, `"indoor"`
+- `camera`: Camera type: `"top_down"`, `"isometric"`, `"perspective"`, `"side_view"`
 
 ### `bootstrap_twin_stick_arena(size=30, wall_height=3) -> str`
 Creates an enclosed arena with ground, four walls, and three-point lighting.
@@ -86,13 +93,13 @@ Creates an enclosed arena with ground, four walls, and three-point lighting.
 Creates a player entity.
 
 **Parameters:**
-- `movement` — `"twin_stick"` or `None`
+- `movement`: `"twin_stick"` or `None`
 
 ### `create_enemy(name, position=None, ai_type="chaser", mesh="primitive_cube", health=50, speed=3.0) -> str`
 Creates an enemy entity with AI behavior.
 
 **Parameters:**
-- `ai_type` — `"chaser"` (follows player) or `"turret"` (stationary, fires projectiles)
+- `ai_type`: `"chaser"` (follows the player with `enemy_chase_ai.lua`) or `"turret"` (attaches `projectile_launcher.lua`, which fires along the entity's forward axis while the `fire` input is held and needs its `ProjectilePrefab` assigned; it does not track the player). Both get a dynamic body with a box collider.
 
 ### `create_projectile_spawner(name, parent_entity_id=None, direction="forward", speed=20, damage=10) -> str`
 Creates a projectile spawner, typically attached to a player or turret.
@@ -101,7 +108,7 @@ Creates a projectile spawner, typically attached to a player or turret.
 Creates a collectible pickup.
 
 **Parameters:**
-- `pickup_type` — `"health"` or `"ammo"`
+- `pickup_type`: `"health"` or `"ammo"`; both attach `health_pickup.lua` (there is no ammo system), and `value` is accepted but not applied, because the builder does not set Lua script properties, so the script's own `HealAmount` default of 25 applies
 
 ### `create_trigger_zone(name, position=None, size=None, script_path=None) -> str`
 Creates an invisible trigger zone with optional script.
@@ -139,17 +146,17 @@ build_entity("MyEntity") \
 
 **EntityBuilder methods:**
 - `.at_position(x, y, z)`
-- `.with_rotation(rx, ry, rz)` — Euler degrees
+- `.with_rotation(rx, ry, rz)`: Euler degrees
 - `.with_scale(sx, sy?, sz?)`: uniform or non-uniform. A non-uniform scale is applied through the gem's C++ `SetScale` event, which adds the editor's Non-uniform Scale component the way the Transform component's own button does (editor Python cannot add it); on a gem build without the event the largest axis is applied as a uniform scale
-- `.with_parent(parent_id)`
+- `.with_parent(parent_id)`: refused with `ValueError` when the parent is a protected system entity (`EditorGlobal`, `SystemEntity`, any `AZ::` name); the name is looked up in the editor at the call
 - `.with_mesh(mesh_asset)`
 - `.with_material(material_path)`
 - `.with_physics(body_type, mass)`: `"dynamic"` or `"static"`; `mass` (kilograms) applies to dynamic bodies only
 - `.with_collider(shape)`: `"box"`, `"sphere"`, `"capsule"` or `"cylinder"`
 - `.with_lua_script(script_path)`
 - `.with_script_canvas(graph_path)`
-- `.with_component(component_type, **properties)`
-- `.build()` — Execute and return JSON
+- `.with_component(component_type, **properties)`: the name's characters are validated (letters, digits, spaces, hyphens, underscores, parentheses), then it is resolved against the component registry, case-insensitively and through aliases, with the closest known names suggested on a miss
+- `.build()`: Execute and return JSON
 
 **Physics properties applied on build.** For a dynamic body, `build()` sets
 `Configuration|Compute Mass` to false and `Configuration|Mass` to the requested
@@ -182,15 +189,25 @@ Creates a ground plane with static physics collision.
 
 ## Scene Feedback
 
+These three reads call the C++ `SceneSnapshotProvider` over
+`AiCompanionRequestBus` and return its JSON as is: `{"entity_count", "entities":
+[{"id", "name", "parent_id", "position", "rotation", "scale", "components"}]}`,
+`{"roots": [{"id", "name", "children"}]}` and `{"entity_count", "warnings":
+[{"type", "entity_id", "entity_name", "message"}]}`, with every id a decimal
+string and no `status`/`data` envelope. The same JSON is what the AgentServer's
+`get_scene_snapshot`, `get_entity_tree` and `validate_scene` request types
+answer. Only when the bus is not reflected (an older build) do they fall back to
+a Python traversal wrapped in the usual envelope.
+
 ### `get_scene_snapshot() -> str`
 Returns a JSON snapshot of all entities, their transforms, and component lists.
-Uses the C++ EBus for performance, with a Python fallback.
 
 ### `get_entity_tree() -> str`
 Returns the entity hierarchy as a nested JSON tree.
 
 ### `inspect_entity(entity_id) -> str`
 Deep inspection of a single entity: all components, properties, and children.
+Returns the usual envelope.
 
 ### `validate_scene() -> str`
 Checks for common issues: unnamed entities, entities at origin, missing components.
@@ -233,8 +250,8 @@ that will call the prefab bus itself.
 
 ## Agent Mode
 
-See [Agent Mode](agent-mode.md) for the full contract (settings-registry keys,
-the JSON sidecar, and the observed-state file).
+See [Agent Mode](agent-mode.md) for the full contract (the JSON sidecar, the
+observed-state file the C++ side writes, and the editor preferences file).
 
 ### `set_agent_mode(enabled=True, suppress_dialogs=True) -> str`
 Enable or disable runtime dialog suppression for unattended sessions. Writes
@@ -275,4 +292,4 @@ call raises.
 
 ## Further Reading
 
-- [Agent Best Practices](agent-best-practices.md) — Token efficiency, performance, and protocol tips
+- [Agent Best Practices](agent-best-practices.md): Token efficiency, performance, and protocol tips

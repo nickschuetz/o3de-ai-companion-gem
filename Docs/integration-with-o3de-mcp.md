@@ -12,28 +12,39 @@ Claude / AI Agent
        |
        |  Length-prefixed JSON over TCP (port 4600)
        v
-  O3DE Editor (AiCompanion AgentServer + EditorPythonBindings)
+  O3DE Editor: AiCompanion AgentServer (C++)
        |
-       |  import ai_companion
-       v
-  AI Companion Python API
+       +-- native request types (no Python; all served in secure mode)
+       |     reads: get_scene_snapshot, get_entity_tree, get_entity,
+       |            validate_scene, get_bus_schema
+       |     mutations: create_entity, set_transform, delete_entity
+       |            (InputValidator, own undo batch)
+       |     anim graphs: list_anim_graphs, get_anim_graph and the
+       |            fifteen authoring and wiring types (EMotion Studio commands)
+       |          |
+       |          v  AiCompanionRequestBus / AiCompanionEditorRequestBus
+       |     SceneSnapshotProvider, InputValidator, BusSchema, AnimGraph*
        |
-       +-- Python layer (builders, templates, feedback, safety)
-       |
-       +-- C++ EBus (SceneSnapshotProvider, InputValidator)
-       |
-       v
+       +-- execute_python (run_editor_python, sessions; EditorPythonBindings)
+                 |
+                 |  import ai_companion
+                 v
+            AI Companion Python API
+                 |
+                 +-- builders, templates, feedback, safety, agent mode
+                 |
+                 v  azlmbr
   O3DE Engine (Entity/Component System)
 ```
 
 ## How It Works
 
-1. The AI agent sends a `run_editor_python()` call through o3de-mcp
-2. o3de-mcp builds a length-prefixed JSON request with the base64-encoded script and sends it via TCP to the AgentServer (port 4600)
-3. The AgentServer dispatches the script to the main thread for execution via `EditorPythonRunnerRequestBus`
-4. The script imports `ai_companion.api` and calls high-level functions
-5. AI Companion translates these into `azlmbr` API calls (entity creation, etc.)
-6. Results are returned as a framed JSON response back through the same connection
+Two paths share the connection:
+
+1. The AI agent calls an o3de-mcp tool
+2. For a native tool (`get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene`, `get_bus_schema_live`, the native-first `create_entity`, `set_transform` and `delete_entity`, and the seventeen anim graph tools) o3de-mcp sends the matching request type as a length-prefixed JSON message to the AgentServer (port 4600); the server queues it to the editor's main thread, where the gem's C++ answers over `AiCompanionRequestBus` or `AiCompanionEditorRequestBus` with no Python involved
+3. For `run_editor_python` and the session tools o3de-mcp sends an `execute_python` request with the base64-encoded script; the AgentServer dispatches it to the main thread through `EditorPythonRunnerRequestBus`, the script imports `ai_companion.api` and calls its functions, and AI Companion translates them into `azlmbr` calls
+4. Either way the result comes back as a framed JSON reply through the same connection, with a `code` on every error
 
 ## AgentServer Protocol
 
@@ -80,16 +91,27 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `get_asset_processor_status` | Whether the editor is connected to the Asset Processor (`connected`) and the ping (`ping_ms`); never fails | No (C++ Asset Processor connection) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
-`get_capabilities()` to confirm the gem is present, and the C++ request types
-behind its `get_scene_snapshot`, `get_entity_tree`, `get_entity`,
-`validate_scene` and `get_bus_schema_live` tools. Everything else goes through `execute_python`. The C++ request types
-keep working when the AgentServer runs in secure mode, which disables
-`execute_python`. o3de-mcp wrappers for `list_anim_graphs` and
-`get_anim_graph` are to follow; until then a client sends the request types
-directly. Both are read-only: `get_anim_graph` answers
-`anim graph not found: <selector>` (code `not_found`) for an unknown graph, and
-both answer `EMotion FX is not available` (code `unavailable`) when the
-EMotionFX gem is not loaded.
+`get_capabilities()` to confirm the gem is present, the C++ read types behind
+its `get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene` and
+`get_bus_schema_live` tools, the three mutation types first in its
+`create_entity`, `set_transform` and `delete_entity` tools (falling back to
+editor Python only on `unknown_request_type`), and the seventeen anim graph
+types one to one in tools of the same names (`list_anim_graphs`,
+`get_anim_graph`, `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
+`save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,
+`set_anim_graph_entry_state`, `add_anim_graph_parameter`,
+`remove_anim_graph_parameter`, `add_anim_graph_transition`,
+`remove_anim_graph_transition`, `set_anim_graph_transition`,
+`connect_anim_graph_ports`, `disconnect_anim_graph_ports`,
+`set_anim_graph_node`; on o3de-mcp main, shipping in o3de-mcp 0.6.0 alongside
+gem 0.6.0). Everything else (`run_editor_python`, the session tools, and the
+editor tools that have no native type, such as `add_component` and
+`set_component_property`) goes through `execute_python`. The native types keep
+working when the AgentServer runs in secure mode, which disables
+`execute_python`. The two anim graph reads are read-only: `get_anim_graph`
+answers `anim graph not found: <selector>` (code `not_found`) for an unknown
+graph, and both answer `EMotion FX is not available` (code `unavailable`) when
+the EMotionFX gem is not loaded.
 
 The three asset readiness types are read-only round trips over the editor's
 own Asset Processor connection. `get_asset_status` and `get_asset_jobs`
@@ -211,7 +233,7 @@ See [Agent Best Practices](agent-best-practices.md) for token efficiency and per
 
 ### Without AI Companion (raw o3de-mcp)
 
-Creating a player entity requires ~8 separate tool calls:
+Creating a player entity takes nine separate tool calls:
 
 ```
 1. create_entity("Player")
@@ -238,7 +260,7 @@ print(create_player("Player", position=[0,0,1], movement="twin_stick"))
 
 | Operation | Raw o3de-mcp | With AI Companion |
 |-----------|-------------|-------------------|
-| Create player | ~8 calls | 1 call |
+| Create player | 9 calls | 1 call |
 | Create arena | ~20 calls | 1 call |
 | Create enemy | ~6 calls | 1 call |
 | Create pickup | ~5 calls | 1 call |
@@ -246,7 +268,7 @@ print(create_player("Player", position=[0,0,1], movement="twin_stick"))
 ## Token Efficiency
 
 AI Companion reduces token usage by:
-- Fewer round trips (1 call vs 8+)
+- Fewer round trips (1 call vs 9)
 - Shorter prompts (function names vs multi-step scripts)
 - Structured JSON responses (vs raw text parsing)
 
@@ -288,10 +310,12 @@ The Gem automatically registers its Python path when the editor starts.
 
 ## o3de-mcp Tool Surface
 
-o3de-mcp (main, after 0.4.0) exposes 67 tools in five groups: capabilities
-(1), editor (41), introspection (3), project (17) and assets (5). AI Companion
-sits behind the editor group. Tools that matter most when working with this
-gem:
+o3de-mcp main exposes 92 tools in seven groups: capabilities (1), editor
+(41), introspection (3), project (17), assets (5), track view (8) and animation
+(17); o3de-mcp 0.5.0 on PyPI has 67 of them (the first five groups), and the
+track view and animation groups ship in o3de-mcp 0.6.0, released alongside gem
+0.6.0. AI Companion sits behind the editor and animation groups. Tools that
+matter most when working with this gem:
 
 - `run_editor_python` runs a script that can `import ai_companion`.
 - `begin_session` / `exec_in_session` / `end_session` keep a Python namespace
@@ -306,15 +330,22 @@ gem:
   `create_level` creates and opens a level through the engine's six-argument
   `create_level_no_prompt` binding (nickschuetz/o3de-mcp#20; earlier versions
   never created one).
+- The seventeen animation tools wrap the gem's anim graph request types one to
+  one, with the same argument names, so an agent reads, builds, wires and
+  saves an EMotion FX anim graph without writing editor Python.
 - `instantiate_prefab` accepts gem-shipped prefabs such as
   `Prefabs/Player_TwinStick.prefab`; it checks the asset catalog, not only the
   project root, before calling the prefab system.
 - `set_transform`, `set_parent`, `assign_asset`, `capture_viewport` and the
   console and CVAR tools cover the low-level operations the builders wrap.
 
-o3de-mcp 0.4.0 or later is what this page describes (native snapshot tools,
-gem detection). Install it from PyPI with `pip install o3de-mcp`, or work
-against a checkout with `pip install -e .` (or its `src/` on `PYTHONPATH`).
+Which o3de-mcp release you need depends on the tools: the native snapshot
+tools and gem detection arrived in 0.4.0, the native-first `create_entity`,
+`set_transform` and `delete_entity` tools and decimal-string ids in 0.5.0, and
+the animation tools and the server-side error codes in o3de-mcp 0.6.0, released
+alongside gem 0.6.0 (the gem's `API_VERSION` 0.4.0 contract). Install it from
+PyPI with `pip install o3de-mcp`, or work against a checkout with
+`pip install -e .` (or its `src/` on `PYTHONPATH`).
 Either way it requires the `mcp` 2.x Python SDK. A stale 1.x install in the same
 interpreter makes the server fail at import time, which the MCP client reports
 as a closed connection.
@@ -329,7 +360,7 @@ bare socket from the gem:
 "editor": {
   "status": "connected",
   "ai_companion_gem": true,
-  "agent_server": {"protocol_version": 1, "gem_version": "0.5.0", "api_version": "0.5.0"}
+  "agent_server": {"protocol_version": 1, "gem_version": "0.6.0", "api_version": "0.5.0"}
 }
 ```
 
@@ -347,20 +378,20 @@ print(get_api_version())
 
 ## Best Practices
 
-1. **Use batch operations** — `create_entity_batch()` is more efficient than
+1. **Use batch operations**: `create_entity_batch()` is more efficient than
    individual `create_enemy()` calls for multiple entities
 
-2. **Check before creating** — Use `get_scene_snapshot()` to verify the current
+2. **Check before creating**: Use `get_scene_snapshot()` to verify the current
    state before adding entities
 
-3. **Validate after creation** — Use `validate_scene()` to catch common issues
+3. **Validate after creation**: Use `validate_scene()` to catch common issues
 
-4. **Use undo batches** — Group related operations so they can be rolled back
+4. **Use undo batches**: Group related operations so they can be rolled back
    together if needed
 
-5. **Prefer templates** — Use `create_player()`, `create_enemy()`, etc. over
+5. **Prefer templates**: Use `create_player()`, `create_enemy()`, etc. over
    the low-level `build_entity()` for common patterns
 
-6. **Use `ping` for health checks** — Cheaper than executing Python
+6. **Use `ping` for health checks**: Cheaper than executing Python
 
 For comprehensive guidance, see [Agent Best Practices](agent-best-practices.md).

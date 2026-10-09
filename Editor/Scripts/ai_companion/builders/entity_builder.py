@@ -12,6 +12,7 @@ from ..safety.validators import (
     validate_component_type,
     validate_asset_path,
     validate_float,
+    validate_target_entity,
 )
 from ..safety.sandbox import get_sandbox
 from ..utils.json_output import success, error, entity_result
@@ -122,7 +123,15 @@ class EntityBuilder:
         return self
 
     def with_parent(self, parent_id: int) -> "EntityBuilder":
-        """Set the entity's parent by entity ID."""
+        """Set the entity's parent by entity ID.
+
+        Parenting under a protected system entity (``EditorGlobal``,
+        ``SystemEntity``, any ``AZ::`` name) is refused with ``ValueError``;
+        the parent's name is looked up in the editor at this call.
+        """
+        valid, err = validate_target_entity(parent_id)
+        if not valid:
+            raise ValueError(err)
         self._parent_id = parent_id
         return self
 
@@ -225,7 +234,15 @@ class EntityBuilder:
         return self
 
     def with_component(self, component_type: str, **properties) -> "EntityBuilder":
-        """Add an arbitrary component by type name."""
+        """Add an arbitrary component by type name.
+
+        The name's characters are validated first (letters, digits, spaces,
+        hyphens, underscores, parentheses), then it is resolved against the
+        component registry, which suggests the closest known names on a miss.
+        """
+        valid, err = validate_component_type(component_type)
+        if not valid:
+            raise ValueError(err)
         canonical, err = resolve_component(component_type)
         if canonical is None:
             raise ValueError(err)

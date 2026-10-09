@@ -6,7 +6,7 @@ any azlmbr calls to prevent injection and invalid state."""
 
 import math
 import re
-from typing import Tuple
+from typing import Any, Optional, Tuple
 
 # Entity names: start with letter, then alphanumeric/underscore/hyphen
 _ENTITY_NAME_PATTERN = re.compile(r'^[A-Za-z][A-Za-z0-9_-]*$')
@@ -118,3 +118,38 @@ def is_protected_entity(name: str) -> bool:
     if name.startswith("AZ::"):
         return True
     return False
+
+
+def validate_target_entity(entity_id: Any) -> Tuple[bool, str]:
+    """Refuse a mutation aimed at a protected system entity. Returns (valid, error_message).
+
+    Resolves the id with ``entity_id_from_value`` (an int is looked up by entity
+    search, since the Python ``EntityId(int)`` constructor is broken on 26.10.0),
+    then the entity's name through the editor (``EditorEntityInfoRequestBus``
+    ``GetName``) and refuses it when ``is_protected_entity`` matches: ``EditorGlobal``,
+    ``SystemEntity`` and any ``AZ::``-prefixed name. The message starts with
+    ``entity is protected``, the text the native request types answer too.
+    Outside the editor, where ``azlmbr`` is not importable, every id passes.
+    """
+    try:
+        import azlmbr.bus as bus
+        import azlmbr.editor as editor
+        import azlmbr.entity as entity_api
+    except ImportError:
+        return True, ""
+
+    from ..utils.id_helpers import entity_id_from_value
+
+    eid = entity_id_from_value(entity_id)
+    if eid is None:
+        return False, f"Invalid or unknown entity id: {entity_id!r}"
+    try:
+        name = editor.EditorEntityInfoRequestBus(bus.Event, "GetName", eid)
+    except (AttributeError, TypeError, RuntimeError):
+        # The bus is not reflected on this build; the native request types
+        # keep the same rule in C++ (InputValidator::IsProtectedEntityName).
+        name = None
+    name = str(name) if name is not None else ""
+    if is_protected_entity(name):
+        return False, f"entity is protected: '{name}'"
+    return True, ""

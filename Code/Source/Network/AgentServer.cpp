@@ -308,7 +308,7 @@ namespace AiCompanion
     }
 
     // -------------------------------------------------------------------------
-    // TickBus — Process pending requests on main thread
+    // TickBus: Process pending requests on main thread
     // -------------------------------------------------------------------------
 
     void AgentServer::ProcessMainThreadQueue()
@@ -373,7 +373,7 @@ namespace AiCompanion
 
             if (pollResult <= 0)
             {
-                continue; // timeout or error — check m_running
+                continue; // timeout or error: check m_running
             }
 
             sockaddr_in clientAddr{};
@@ -433,7 +433,7 @@ namespace AiCompanion
                         }
                         else if (probePfd.revents & POLLIN)
                         {
-                            // Data or FIN available — peek to distinguish
+                            // Data or FIN available: peek to distinguish
                             char probeBuf;
                             int probeResult;
 #if defined(AZ_PLATFORM_WINDOWS)
@@ -443,21 +443,19 @@ namespace AiCompanion
 #endif
                             if (probeResult == 0)
                             {
-                                isStale = true; // FIN received — peer closed
+                                isStale = true; // FIN received: peer closed
                             }
                         }
                     }
                     if (!isStale)
                     {
                         LogMinimal(
-                            "[AgentServer] Rejected connection from %s:%u — another client is connected",
-                            clientAddrStr.c_str(),
-                            clientPort);
+                            "[AgentServer] Rejected connection from %s:%u: another client is connected", clientAddrStr.c_str(), clientPort);
                         CloseSocket(clientSock);
                         continue;
                     }
 
-                    // Stale connection detected — force cleanup
+                    // Stale connection detected: force cleanup
                     LogMinimal("[AgentServer] Detected stale connection, cleaning up for new client");
                     SocketType staleSock = existingSocket;
                     CloseSocket(staleSock);
@@ -587,7 +585,7 @@ namespace AiCompanion
                 type == "set_anim_graph_node" || type == "get_asset_status" || type == "get_asset_jobs" ||
                 type == "get_asset_processor_status")
             {
-                // Safe EBus calls — dispatch to main thread
+                // Safe EBus calls: dispatch to main thread
                 auto pending = std::make_shared<PendingRequest>();
                 pending->id = id;
                 pending->type = type;
@@ -685,7 +683,7 @@ namespace AiCompanion
 
             if (!SendFramedMessage(clientSocket, ssl, response))
             {
-                break; // send failed — connection likely broken
+                break; // send failed: connection likely broken
             }
         }
 
@@ -704,7 +702,7 @@ namespace AiCompanion
     }
 
     // -------------------------------------------------------------------------
-    // Protocol — Framed message I/O
+    // Protocol: Framed message I/O
     // -------------------------------------------------------------------------
 
     bool AgentServer::ReadFramedMessage(SocketType sock, SSL* ssl, AZStd::string& outJson)
@@ -1185,7 +1183,7 @@ namespace AiCompanion
         w.Key("protocol_version");
         w.Int(1);
         w.Key("gem_version");
-        w.String("0.5.0");
+        w.String("0.6.0");
         w.Key("api_version");
         w.String("0.5.0");
         w.Key("secure_mode");

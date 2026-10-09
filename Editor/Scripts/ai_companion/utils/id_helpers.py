@@ -29,3 +29,53 @@ def id_to_jsonable(value: Any) -> Any:
     except (TypeError, ValueError):
         pass
     return _PROXY_REPR_RE.sub(r"<\1>", str(value))
+
+
+def entity_id_from_value(value: Any) -> Any:
+    """An ``azlmbr.entity.EntityId`` proxy for ``value``, or ``None``.
+
+    ``value`` may be an EntityId proxy (returned as is), an int, a decimal
+    string or the bracketed ``"[id]"`` form. Observed on O3DE 26.10.0: the
+    Python ``EntityId(int)`` constructor ignores its argument and yields the
+    invalid id for every value, and a raw int handed to a bus call such as
+    ``TransformBus.SetParent`` is marshalled into a wrong id without an error.
+    So the constructor result is trusted only when it round-trips to the same
+    id text; otherwise the entity is found by scanning ``SearchBus``
+    (``SearchEntities`` with an empty filter) for the matching id text.
+    Returns ``None`` when ``azlmbr`` is not importable, the value does not
+    parse, or no entity with that id exists.
+    """
+    try:
+        import azlmbr.bus as bus
+        import azlmbr.entity as entity_api
+    except ImportError:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        wanted = value
+    elif isinstance(value, str):
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if not digits:
+            return None
+        wanted = int(digits)
+    else:
+        return value  # already a proxy (or something the caller vouches for)
+    wanted_text = str(wanted)
+    try:
+        candidate = entity_api.EntityId(wanted)
+        if candidate is not None and str(candidate.ToString()).strip("[]") == wanted_text:
+            return candidate
+    except (AttributeError, TypeError, RuntimeError):
+        pass
+    try:
+        found = entity_api.SearchBus(bus.Broadcast, "SearchEntities", entity_api.SearchFilter())
+    except (AttributeError, TypeError, RuntimeError):
+        return None
+    for candidate in found or []:
+        try:
+            if str(candidate.ToString()).strip("[]") == wanted_text:
+                return candidate
+        except (AttributeError, TypeError, RuntimeError):
+            continue
+    return None

@@ -6,7 +6,7 @@ and processes for both human and AI-assisted contributions.
 ## Code of Conduct
 
 Be respectful, constructive, and inclusive. We are building tools that make game
-development more accessible — contributions should reflect that spirit.
+development more accessible, and contributions should reflect that spirit.
 
 ## Getting Started
 
@@ -94,9 +94,13 @@ These are non-negotiable:
 - All user-supplied inputs must be validated through `safety/validators.py`
   (Python) or `InputValidator` (C++) before reaching O3DE APIs
 - All mutating operations must be wrapped in undo batches
-- Protected entities (EditorGlobal, SystemEntity, AZ::*) must never be modified
+- Protected entities (`EditorGlobal`, `SystemEntity`, any `AZ::` name) must never be
+  modified: the native `set_transform` and `delete_entity` refuse them through
+  `InputValidator::IsProtectedEntityName`, and a Python mutation that takes an
+  existing entity's id runs `validate_target_entity` first (today that is
+  `EntityBuilder.with_parent`)
 - Asset paths must be validated against traversal attacks
-- No third-party Python dependencies — use only the standard library and `azlmbr`
+- No third-party Python dependencies: use only the standard library and `azlmbr`
 
 ### Tests
 
@@ -132,19 +136,19 @@ If your change adds or removes a dependency, update `sbom.cdx.json`.
 ### Version Bumps
 
 Do not bump the version in your PR unless asked. Version changes are coordinated
-at release time and require updates to four files (see
-[AGENTS.md](AGENTS.md#versioning)).
+at release time and touch six files plus the three doc examples that show the
+version (see [AGENTS.md](AGENTS.md#versioning)).
 
 ## Pull Request Process
 
-1. **One concern per PR** — Keep PRs focused. A bug fix and a new feature should
+1. **One concern per PR**: Keep PRs focused. A bug fix and a new feature should
    be separate PRs.
-2. **Descriptive title** — Use a clear, concise title (under 70 characters).
-3. **Description** — Explain what the change does and why. Include any relevant
+2. **Descriptive title**: Use a clear, concise title (under 70 characters).
+3. **Description**: Explain what the change does and why. Include any relevant
    issue numbers.
-4. **Tests pass** — Verify all existing and new tests pass locally.
-5. **CHANGELOG updated** — Add an entry under `[Unreleased]` describing the change.
-6. **Clean history** — Squash fixup commits. Each commit should be a coherent,
+4. **Tests pass**: Verify all existing and new tests pass locally.
+5. **CHANGELOG updated**: Add an entry under `[Unreleased]` describing the change.
+6. **Clean history**: Squash fixup commits. Each commit should be a coherent,
    buildable unit.
 
 ### PR Template

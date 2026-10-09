@@ -169,4 +169,13 @@ namespace AiCompanion
 
         return result;
     }
+
+    bool InputValidator::IsProtectedEntityName(const AZStd::string& name)
+    {
+        if (name == "EditorGlobal" || name == "SystemEntity")
+        {
+            return true;
+        }
+        return name.starts_with("AZ::");
+    }
 } // namespace AiCompanion

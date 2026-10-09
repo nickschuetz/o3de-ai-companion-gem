@@ -1,7 +1,8 @@
 # Self-hosted runner for build-test CI
 
-The `lint` workflow (SPDX headers, hygiene, Python unit tests) runs on standard
-GitHub-hosted runners and is the always-on gate. The Python unit tests run twice
+The `lint` workflow (SPDX headers, hygiene, `clang-format` on the C++ with the
+pinned version, Python unit tests) runs on standard GitHub-hosted runners and is
+the always-on gate. The Python unit tests run twice
 there, on `ubuntu-latest` (the required check) and on `windows-latest`
 (advisory), so a path or line-ending assumption that only holds on Linux is
 caught before it reaches a Windows user of the gem.
@@ -61,13 +62,20 @@ The default test filter runs the full suite (`*`).
 editor. The unit suites stub `azlmbr` and the C++ tests run without an
 application context, so neither can catch a reflection attribute that keeps
 a bus out of Python, a template that no longer produces a real entity, or an
-engine call that crashes instead of failing. The live suite checks those: the
-`ai_companion` package imports inside the editor and reports the versions the
-checkout declares, every advertised API function exists, the native request
-types (`get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene`,
-`get_bus_schema`) answer and agree with each other, the templates create
-entities that `rollback_last_batch` removes again, and `spawn_prefab` refuses
-a missing prefab with the editor still alive.
+engine call that crashes instead of failing. The live suite checks those, one class
+per concern: `TestProtocol` (the versions the checkout declares, the error
+codes), `TestPythonPackage` (the package imports and every advertised function
+exists), `TestNativeRequestTypes` (`get_scene_snapshot`, `get_entity_tree`,
+`get_entity`, `validate_scene`, `get_bus_schema` answer, agree with each other
+and use decimal-string ids), `TestNativeMutations` (`create_entity`,
+`set_transform`, `delete_entity` round-trip, undo, the validation refusals, the
+level-root guard and the protected-entity guard), `TestTemplatesAndRollback`
+(the templates create entities that `rollback_last_batch` removes again, a
+failing call answers a rolled-back error), `TestMultiEntityPersistence`
+(multi-entity calls keep every entity), `TestPrefabGuard` (`spawn_prefab`
+refuses a missing prefab with the editor still alive) and `TestAnimGraphs`
+(the anim graph reads against a fixture graph, and the authoring and wiring
+types with their refusals).
 
 It is opt-in (`O3DE_LIVE_EDITOR_TEST=1`) and talks to the AgentServer with a
 standard-library client (`Tests/live/agent_client.py`), so it needs no extra
@@ -89,17 +97,23 @@ driver in addition to the build requirements above.
 
 `LIVE_SECURE=1` runs the secure-mode variant: the script starts the Editor with
 `AI_COMPANION_SECURE_MODE=1`, so the AgentServer refuses `execute_python` and
-serves only the native read types (see `Docs/safety-model.md`, "Secure Mode").
-Because the Python-ready probe and the level open both go through
-`execute_python`, the script instead waits for `get_api_version` to report
-`"secure_mode": true` and for `get_entity_tree` to answer (which shows the
-editor's main loop is up), opens no level, and runs `pytest Tests/live -k
-Secure`. That selects `TestSecureMode`, which asserts that `execute_python` is
-refused with a secure-mode error and that `ping`, `get_api_version`,
-`get_scene_snapshot`, `get_entity_tree`, `validate_scene` and `get_bus_schema`
-all answer. Every other class in the live file skips itself against a
-secure-mode editor, and `TestSecureMode` skips against a normal one, so the two
-variants can be run back to back from the same checkout:
+serves the native types only: the reads, the validated mutations and the anim
+graph reads and writes (see `Docs/safety-model.md`, "Secure Mode"). Because the
+Python-ready probe and the usual level open both go through `execute_python`,
+the script opens `LIVE_LEVEL` through the editor's own `--runpython` startup
+script instead, waits for `get_api_version` to report `"secure_mode": true` and
+for `get_entity_tree` to answer with a root (which shows the editor's main loop
+is up and the level is open), and runs `pytest Tests/live -k Secure`. That
+selects `TestSecureMode`, which asserts that `execute_python` is refused with
+the code `secure_mode`; that `ping`, `get_api_version`, `get_scene_snapshot`,
+`get_entity_tree`, `validate_scene`, `get_bus_schema` and `list_anim_graphs`
+answer with JSON that carries no error; that `create_entity`, `set_transform`
+and `delete_entity` create, move and delete an entity with no Python; and that
+`create_anim_graph`, `add_anim_graph_node`, `add_anim_graph_parameter`,
+`get_anim_graph` and `remove_anim_graph` author and remove a graph the same
+way. Every other class in the live file skips itself against a secure-mode
+editor, and `TestSecureMode` skips against a normal one, so the two variants
+can be run back to back from the same checkout:
 
 ```bash
 O3DE_ENGINE_PATH=/path/to/o3de \

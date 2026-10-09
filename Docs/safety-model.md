@@ -6,10 +6,10 @@ AI Companion implements defense-in-depth security for AI-driven operations.
 
 When an AI agent creates game content, the primary risks are:
 
-1. **Injection** — Malicious strings in entity names or script paths executing unintended code
-2. **Resource exhaustion** — Creating thousands of entities in a single call
-3. **Data loss** — Accidentally deleting important entities or overwriting levels
-4. **Path traversal** — Accessing files outside the project directory
+1. **Injection**: Malicious strings in entity names or script paths executing unintended code
+2. **Resource exhaustion**: Creating thousands of entities in a single call
+3. **Data loss**: Accidentally deleting important entities or overwriting levels
+4. **Path traversal**: Accessing files outside the project directory
 
 ## Input Validation
 
@@ -21,9 +21,14 @@ All user-supplied strings are validated before reaching `azlmbr` APIs.
 - Must start with a letter
 
 ### Component Types
-- Validated against the component registry whitelist
-- Fuzzy matching suggests corrections for typos
-- Pattern: `^[A-Za-z][A-Za-z0-9 _\-()\[\]]*$`
+- `EntityBuilder.with_component` validates the characters first, pattern
+  `^[A-Za-z][A-Za-z0-9 _\-()\[\]]*$`, so a name carrying shell or Python syntax
+  is refused outright
+- It then resolves the name against the component registry (case-insensitive,
+  aliases accepted) and refuses an unknown one, suggesting the closest known
+  names
+- The typed builder methods (`with_mesh`, `with_physics`, `with_collider`,
+  `with_lua_script`, ...) use fixed registry names and never take a type
 
 ### Positions
 - Must be finite (no NaN, no Infinity)
@@ -39,8 +44,8 @@ All user-supplied strings are validated before reaching `azlmbr` APIs.
 ### Implementation
 
 Validation is implemented in two layers:
-- **Python** (`ai_companion/safety/validators.py`) — Used by all Python API functions
-- **C++** (`Code/Source/Validation/InputValidator.cpp`) — Used by EBus handlers
+- **Python** (`ai_companion/safety/validators.py`): Used by all Python API functions
+- **C++** (`Code/Source/Validation/InputValidator.cpp`): Used by EBus handlers
 
 ## Operation Sandboxing
 
@@ -48,19 +53,31 @@ Each API call runs within an `OperationSandbox` that enforces:
 
 | Limit | Default | Purpose |
 |-------|---------|---------|
-| Max entities per call | 100 | Prevent scene explosion |
-| Max recursion depth | 10 | Prevent infinite nesting |
-| Operation timeout | 30 seconds | Prevent hangs |
+| Max entities per call (`MAX_ENTITIES_PER_CALL`) | 100 | Prevent scene explosion |
+| Operation timeout (`MAX_OPERATION_TIMEOUT_SECONDS`) | 30 seconds | Prevent hangs |
 
-These limits are configurable via the `OperationSandbox` constructor.
+A call is one outermost undo batch: `with_undo_batch` resets the sandbox when
+it opens the batch, so nested API calls share the count and the clock. Both
+limits are constructor arguments of `OperationSandbox`. The sandbox also
+records every entity the call creates, which is what rollback deletes if the
+editor's Undo leaves one behind.
 
 ## System Entity Protection
 
-The following entities cannot be deleted or modified:
-- `EditorGlobal`
-- `SystemEntity`
-- `AZ::SystemEntity`
-- Any entity with a name starting with `AZ::`
+The protected names are `EditorGlobal`, `SystemEntity` and any name starting
+with `AZ::` (which covers `AZ::SystemEntity`). Both layers enforce them:
+
+- The native `set_transform` and `delete_entity` request types look the entity's
+  name up and refuse a protected one with `validation_failed` and the message
+  `entity is protected: '<name>'`, before any undo batch opens
+  (`InputValidator::IsProtectedEntityName`).
+- The Python package never deletes or edits an existing entity by id; its one
+  mutation that names an existing entity is parenting a new entity under it
+  (`EntityBuilder.with_parent`, reached by `create_projectile_spawner`'s
+  `parent_entity_id`). `validate_target_entity` resolves the parent's name
+  through `EditorEntityInfoRequestBus` and refuses a protected one with the same
+  message, before the new entity is created. Any new id-taking mutation must
+  call it.
 
 ## Undo/Rollback
 
@@ -70,11 +87,16 @@ Every mutating API function is wrapped with `@with_undo_batch`:
 2. All entity/component operations execute within the batch
 3. If any operation fails:
    - The batch is ended
-   - The entire batch is undone (rolled back), any entity the batch created
-     that the undo left behind is deleted, and the caller receives a JSON error
-     with `rolled_back: true` and a `code` instead of a traceback
-   - An error response is returned with `"rolled_back": true`
+   - If the editor kept the batch it is undone (an empty batch is discarded by
+     the editor, and an Undo then would land on the previous operation), and
+     any entity the batch created that the undo left behind is deleted
+   - The caller receives a JSON error with `rolled_back: true`, a `code` and
+     `details.rolled_back` (whether an Undo step ran) instead of a traceback
 4. On success, the batch is committed normally
+
+The validators run inside the batch: `with_undo_batch` opens it and resets the
+sandbox first, then the function validates and acts, so a refused argument ends
+as an empty, discarded batch.
 
 Manual control is also available:
 
@@ -113,17 +135,17 @@ consider SSH tunneling, and enable secure mode.
 ### Secure Mode
 
 When secure mode is enabled (`AI_COMPANION_SECURE_MODE=1`), the AgentServer
-disables `execute_python` — the most powerful request type — and only allows
+disables `execute_python`, the most powerful request type, and only allows
 operations served by the gem's own C++, which are read-only except for the
 validated mutation set and the validated anim graph authoring set:
 
-- `ping` — connection health check
-- `get_api_version` — protocol and gem version info
-- `get_scene_snapshot` — full scene state
-- `get_entity_tree` — entity hierarchy
-- `get_entity` — one entity's transform, parent and components
-- `validate_scene` — scene validation
-- `get_bus_schema` — reflected EBus description from the live BehaviorContext
+- `ping`: connection health check
+- `get_api_version`: protocol and gem version info
+- `get_scene_snapshot`: full scene state
+- `get_entity_tree`: entity hierarchy
+- `get_entity`: one entity's transform, parent and components
+- `validate_scene`: scene validation
+- `get_bus_schema`: reflected EBus description from the live BehaviorContext
 - `list_anim_graphs`, `get_anim_graph`: read-only views of the EMotion FX anim
   graphs the engine holds
 - `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
@@ -141,12 +163,12 @@ validated mutation set and the validated anim graph authoring set:
   Asset Processor queries over the editor's own connection (a status query
   escalates that asset's build priority and changes nothing else); a path
   must be non-empty, at most 1024 bytes and free of control characters
-- `create_entity`, `set_transform`, `delete_entity` — the validated mutation set:
+- `create_entity`, `set_transform`, `delete_entity`: the validated mutation set:
   arguments go through the C++ `InputValidator` (names, positions, a scale in
-  (0, 1000] on every axis, a non-zero quaternion), missing entities and the
-  level root are refused, and each call is its own editor undo batch; a
-  non-uniform scale adds the editor's Non-uniform Scale component inside that
-  batch, so one Undo removes it again
+  (0, 1000] on every axis, a non-zero quaternion), missing entities, the level
+  root and the protected system entities are refused, and each call is its own
+  editor undo batch; a non-uniform scale adds the editor's Non-uniform Scale
+  component inside that batch, so one Undo removes it again
 
 An `execute_python` request in secure mode is answered with `status`
 `error`, the code `secure_mode` and a message that lists the request types the
@@ -159,9 +181,12 @@ refused argument or the level root, `not_found`, `unavailable`,
 This limits the attack surface when the server is exposed beyond localhost.
 o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree`,
 `get_entity`, `validate_scene` and `get_bus_schema_live` tools use only these
-request types, so they keep working in secure mode (o3de-mcp wrappers for the
-anim graph and asset readiness types are to follow); `run_editor_python`, the session tools and the `ai_companion`
-Python API do not.
+request types, its `create_entity`, `set_transform` and `delete_entity` tools
+try the native mutations first, and its seventeen anim graph tools wrap the
+anim graph types one to one and its asset readiness tools wrap the three asset
+queries, so all of them keep working in secure mode;
+`run_editor_python`, the session tools and the `ai_companion` Python API do
+not.
 
 ### TLS Encryption
 

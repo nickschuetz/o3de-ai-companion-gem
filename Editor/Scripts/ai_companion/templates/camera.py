@@ -140,21 +140,12 @@ def _activate_camera(keeper_entity_id) -> None:
 
 def _eid_from_jsonable(value):
     """Recover an EntityId proxy from the JSON-safe form ``[12345]``,
-    a raw int, or a string. Returns None if it can't be parsed.
+    a raw int, or a string. Returns None if it can't be resolved (see
+    ``utils.id_helpers.entity_id_from_value`` for why an int is looked up).
     """
-    try:
-        import azlmbr.entity as entity_api
-    except ImportError:
-        return None
+    from ..utils.id_helpers import entity_id_from_value
 
-    if isinstance(value, str):
-        digits = "".join(ch for ch in value if ch.isdigit())
-        if not digits:
-            return None
-        return entity_api.EntityId(int(digits))
-    if isinstance(value, int):
-        return entity_api.EntityId(value)
-    return value
+    return entity_id_from_value(value)
 
 
 def _eids_equal(a, b) -> bool:
