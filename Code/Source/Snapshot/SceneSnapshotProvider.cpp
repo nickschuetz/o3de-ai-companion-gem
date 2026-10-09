@@ -7,6 +7,7 @@
 
 #include <AzCore/Component/ComponentApplicationBus.h>
 #include <AzCore/Component/Entity.h>
+#include <AzCore/Component/NonUniformScaleBus.h>
 #include <AzCore/Component/TransformBus.h>
 #include <AzCore/JSON/document.h>
 #include <AzCore/JSON/prettywriter.h>
@@ -20,16 +21,7 @@ namespace AiCompanion
 {
     namespace Internal
     {
-        struct EntityInfo
-        {
-            AZ::EntityId id;
-            AZStd::string name;
-            AZ::EntityId parentId;
-            AZ::Vector3 position = AZ::Vector3::CreateZero();
-            AZ::Vector3 rotation = AZ::Vector3::CreateZero();
-            AZ::Vector3 scale = AZ::Vector3::CreateOne();
-            AZStd::vector<AZStd::string> componentNames;
-        };
+        using EntityInfo = SceneSnapshotProvider::EntityInfo;
 
         static EntityInfo BuildEntityInfo(AZ::Entity* entity)
         {
@@ -44,9 +36,18 @@ namespace AiCompanion
             AZ::TransformBus::EventResult(quat, info.id, &AZ::TransformBus::Events::GetWorldRotationQuaternion);
             info.rotation = quat.GetEulerDegrees();
 
-            float uniformScale = 1.0f;
-            AZ::TransformBus::EventResult(uniformScale, info.id, &AZ::TransformBus::Events::GetLocalUniformScale);
-            info.scale = AZ::Vector3(uniformScale);
+            AZ::TransformBus::EventResult(info.uniformScale, info.id, &AZ::TransformBus::Events::GetLocalUniformScale);
+
+            // Only an entity with a Non-uniform Scale component (the editor's
+            // EditorNonUniformScaleComponent, or AzFramework's at runtime) has
+            // a handler on this bus; without one EventResult leaves the
+            // default untouched, which would read as a scale of zero.
+            if (AZ::NonUniformScaleRequestBus::HasHandlers(info.id))
+            {
+                AZ::Vector3 nonUniformScale = AZ::Vector3::CreateOne();
+                AZ::NonUniformScaleRequestBus::EventResult(nonUniformScale, info.id, &AZ::NonUniformScaleRequestBus::Events::GetScale);
+                info.nonUniformScale = nonUniformScale;
+            }
 
             // Get parent
             AZ::TransformBus::EventResult(info.parentId, info.id, &AZ::TransformBus::Events::GetParentId);
@@ -98,6 +99,15 @@ namespace AiCompanion
             writer.String(text.c_str(), static_cast<rapidjson::SizeType>(text.size()));
         }
 
+        static void WriteVector3(rapidjson::Writer<rapidjson::StringBuffer>& writer, const AZ::Vector3& v)
+        {
+            writer.StartArray();
+            writer.Double(static_cast<double>(v.GetX()));
+            writer.Double(static_cast<double>(v.GetY()));
+            writer.Double(static_cast<double>(v.GetZ()));
+            writer.EndArray();
+        }
+
         static void WriteEntityJson(rapidjson::Writer<rapidjson::StringBuffer>& writer, const EntityInfo& info)
         {
             writer.StartObject();
@@ -119,25 +129,29 @@ namespace AiCompanion
             }
 
             writer.Key("position");
-            writer.StartArray();
-            writer.Double(static_cast<double>(info.position.GetX()));
-            writer.Double(static_cast<double>(info.position.GetY()));
-            writer.Double(static_cast<double>(info.position.GetZ()));
-            writer.EndArray();
+            WriteVector3(writer, info.position);
 
             writer.Key("rotation");
-            writer.StartArray();
-            writer.Double(static_cast<double>(info.rotation.GetX()));
-            writer.Double(static_cast<double>(info.rotation.GetY()));
-            writer.Double(static_cast<double>(info.rotation.GetZ()));
-            writer.EndArray();
+            WriteVector3(writer, info.rotation);
 
+            // "scale" has always been the Transform's uniform scale on every
+            // axis; the two fields after it carry the Non-uniform Scale
+            // component (API_VERSION 0.5.0 and up).
             writer.Key("scale");
-            writer.StartArray();
-            writer.Double(static_cast<double>(info.scale.GetX()));
-            writer.Double(static_cast<double>(info.scale.GetY()));
-            writer.Double(static_cast<double>(info.scale.GetZ()));
-            writer.EndArray();
+            WriteVector3(writer, AZ::Vector3(info.uniformScale));
+
+            writer.Key("non_uniform_scale");
+            if (info.nonUniformScale.has_value())
+            {
+                WriteVector3(writer, *info.nonUniformScale);
+            }
+            else
+            {
+                writer.Null();
+            }
+
+            writer.Key("effective_scale");
+            WriteVector3(writer, SceneSnapshotProvider::EffectiveScale(info.uniformScale, info.nonUniformScale));
 
             writer.Key("components");
             writer.StartArray();
@@ -150,6 +164,23 @@ namespace AiCompanion
             writer.EndObject();
         }
     } // namespace Internal
+
+    AZ::Vector3 SceneSnapshotProvider::EffectiveScale(float uniformScale, const AZStd::optional<AZ::Vector3>& nonUniformScale)
+    {
+        if (nonUniformScale.has_value())
+        {
+            return *nonUniformScale * uniformScale;
+        }
+        return AZ::Vector3(uniformScale);
+    }
+
+    AZStd::string SceneSnapshotProvider::EntityToJson(const EntityInfo& info)
+    {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        Internal::WriteEntityJson(writer, info);
+        return AZStd::string(buffer.GetString(), buffer.GetSize());
+    }
 
     AZStd::string SceneSnapshotProvider::CaptureSnapshot()
     {

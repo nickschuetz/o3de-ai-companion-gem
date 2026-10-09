@@ -142,8 +142,11 @@ validated mutation set and the validated anim graph authoring set:
   escalates that asset's build priority and changes nothing else); a path
   must be non-empty, at most 1024 bytes and free of control characters
 - `create_entity`, `set_transform`, `delete_entity` — the validated mutation set:
-  arguments go through the C++ `InputValidator`, missing entities and the level
-  root are refused, and each call is its own editor undo batch
+  arguments go through the C++ `InputValidator` (names, positions, a scale in
+  (0, 1000] on every axis, a non-zero quaternion), missing entities and the
+  level root are refused, and each call is its own editor undo batch; a
+  non-uniform scale adds the editor's Non-uniform Scale component inside that
+  batch, so one Undo removes it again
 
 An `execute_python` request in secure mode is answered with `status`
 `error`, the code `secure_mode` and a message that lists the request types the

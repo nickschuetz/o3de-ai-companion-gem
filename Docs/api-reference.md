@@ -140,7 +140,7 @@ build_entity("MyEntity") \
 **EntityBuilder methods:**
 - `.at_position(x, y, z)`
 - `.with_rotation(rx, ry, rz)` — Euler degrees
-- `.with_scale(sx, sy?, sz?)` — Uniform or non-uniform
+- `.with_scale(sx, sy?, sz?)`: uniform or non-uniform. A non-uniform scale is applied through the gem's C++ `SetScale` event, which adds the editor's Non-uniform Scale component the way the Transform component's own button does (editor Python cannot add it); on a gem build without the event the largest axis is applied as a uniform scale
 - `.with_parent(parent_id)`
 - `.with_mesh(mesh_asset)`
 - `.with_material(material_path)`

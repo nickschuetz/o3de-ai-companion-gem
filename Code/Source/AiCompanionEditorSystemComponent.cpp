@@ -12,6 +12,7 @@
 #include "Assets/AssetReadiness.h"
 #include "Introspection/BusSchema.h"
 #include "Network/RequestError.h"
+#include "Snapshot/SceneSnapshotProvider.h"
 
 #include "Validation/InputValidator.h"
 #include <AzCore/Component/ComponentApplicationBus.h>
@@ -25,8 +26,10 @@
 #include <AzFramework/API/ApplicationAPI.h>
 #include <AzFramework/Asset/AssetSystemBus.h>
 
+#include <AzCore/Component/NonUniformScaleBus.h>
 #include <AzCore/Component/TransformBus.h>
 #include <AzCore/Math/Quaternion.h>
+#include <AzCore/Math/Transform.h>
 #include <AzToolsFramework/API/EditorAssetSystemAPI.h>
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
 #include <AzToolsFramework/API/ToolsApplicationAPI.h>
@@ -34,6 +37,7 @@
 #include <AzToolsFramework/Prefab/PrefabPublicInterface.h>
 #include <AzToolsFramework/PropertyTreeEditor/PropertyTreeEditor.h>
 #include <AzToolsFramework/ToolsComponents/GenericComponentWrapper.h>
+#include <AzToolsFramework/ToolsComponents/TransformComponent.h>
 
 #include <QApplication>
 #include <QTimer>
@@ -74,6 +78,13 @@ namespace AiCompanion
                 ->Attribute(AZ::Script::Attributes::ExcludeFrom, AZ::Script::Attributes::ExcludeFlags::All)
                 ->Event("SetComponentPropertyUnwrapped", &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped)
                 ->Event("CommitEntityToPrefab", &AiCompanionEditorRequestBus::Events::CommitEntityToPrefab)
+                ->Event(
+                    "SetScale",
+                    &AiCompanionEditorRequestBus::Events::SetScale,
+                    { { { "entityId", "The entity to scale." },
+                        { "scale",
+                          "The effective local scale: equal elements set the Transform's uniform scale, unequal ones add or "
+                          "update the Non-uniform Scale component." } } })
                 ->Event(
                     "GetBusSchema",
                     &AiCompanionEditorRequestBus::Events::GetBusSchema,
@@ -548,6 +559,90 @@ namespace AiCompanion
                 levelRoot, &AzToolsFramework::ToolsApplicationRequests::GetCurrentLevelEntityId);
             return levelRoot.IsValid() && levelRoot == id;
         }
+
+        AZStd::string FormatVector3(const AZ::Vector3& v)
+        {
+            return AZStd::string::format("[%g, %g, %g]", v.GetX(), v.GetY(), v.GetZ());
+        }
+
+        //! The scale the entity reports now: the Transform's uniform scale times
+        //! the Non-uniform Scale component's value when a handler is connected.
+        AZ::Vector3 ReadEffectiveScale(AZ::EntityId id)
+        {
+            float uniformScale = 1.0f;
+            AZ::TransformBus::EventResult(uniformScale, id, &AZ::TransformBus::Events::GetLocalUniformScale);
+            AZStd::optional<AZ::Vector3> nonUniformScale;
+            if (AZ::NonUniformScaleRequestBus::HasHandlers(id))
+            {
+                AZ::Vector3 value = AZ::Vector3::CreateOne();
+                AZ::NonUniformScaleRequestBus::EventResult(value, id, &AZ::NonUniformScaleRequestBus::Events::GetScale);
+                nonUniformScale = value;
+            }
+            return SceneSnapshotProvider::EffectiveScale(uniformScale, nonUniformScale);
+        }
+
+        //! Applies an effective local scale inside the caller's undo batch; see
+        //! AiCompanionEditorRequests::SetScale for the rules. Failures are
+        //! RequestError-encoded.
+        AZ::Outcome<void, AZStd::string> ApplyScale(AZ::EntityId id, const AZ::Vector3& scale)
+        {
+            if (!InputValidator::IsValidScale(scale.GetX(), scale.GetY(), scale.GetZ()))
+            {
+                return AZ::Failure(RequestError::EncodeError(
+                    RequestError::ValidationFailed,
+                    AZStd::string::format("scale must be in (0, %g] on every axis", InputValidator::MaxScale)));
+            }
+            const bool uniform = InputValidator::IsUniformScale(scale.GetX(), scale.GetY(), scale.GetZ());
+            if (!uniform && scale.GetMinElement() < AZ::MinTransformScale)
+            {
+                return AZ::Failure(RequestError::EncodeError(
+                    RequestError::ValidationFailed,
+                    AZStd::string::format(
+                        "a non-uniform scale element must be at least %g: the Non-uniform Scale component clamps smaller values",
+                        AZ::MinTransformScale)));
+            }
+
+            if (uniform)
+            {
+                AZ::TransformBus::Event(id, &AZ::TransformBus::Events::SetLocalUniformScale, scale.GetX());
+                if (AZ::NonUniformScaleRequestBus::HasHandlers(id))
+                {
+                    AZ::NonUniformScaleRequestBus::Event(id, &AZ::NonUniformScaleRequestBus::Events::SetScale, AZ::Vector3::CreateOne());
+                }
+            }
+            else
+            {
+                AZ::Entity* entity = nullptr;
+                AZ::ComponentApplicationBus::BroadcastResult(entity, &AZ::ComponentApplicationRequests::FindEntity, id);
+                auto* transform = entity ? entity->FindComponent<AzToolsFramework::Components::TransformComponent>() : nullptr;
+                if (!transform)
+                {
+                    return AZ::Failure(
+                        RequestError::EncodeError(RequestError::EngineError, "the entity has no editor Transform component"));
+                }
+                // The same call the Transform component's "Add non-uniform scale"
+                // button makes: adds EditorNonUniformScaleComponent through
+                // EntityCompositionRequestBus when it is missing (so the add is
+                // in the undo batch), then sets its value on the bus. The
+                // uniform scale is touched only once that has worked.
+                if (!transform->AddNonUniformScaleComponent(scale))
+                {
+                    return AZ::Failure(
+                        RequestError::EncodeError(RequestError::EngineError, "the editor did not add the Non-uniform Scale component"));
+                }
+                AZ::TransformBus::Event(id, &AZ::TransformBus::Events::SetLocalUniformScale, 1.0f);
+            }
+
+            const AZ::Vector3 applied = ReadEffectiveScale(id);
+            if (!applied.IsClose(scale, 1e-4f))
+            {
+                return AZ::Failure(RequestError::EncodeError(
+                    RequestError::EngineError,
+                    AZStd::string::format(
+                        "scale did not apply: got %s, asked %s", FormatVector3(applied).c_str(), FormatVector3(scale).c_str())));
+            }
+            return AZ::Success();
+        }
     } // namespace
 
     AZ::Outcome<AZ::u64, AZStd::string> AiCompanionEditorSystemComponent::CreateEntity(
@@ -608,9 +703,9 @@ namespace AiCompanion
         bool setPosition,
         AZ::Vector3 position,
         bool setRotation,
-        AZ::Vector3 rotationDegrees,
+        AZ::Quaternion rotation,
         bool setScale,
-        float uniformScale)
+        AZ::Vector3 scale)
     {
         AZ::EntityId id(entityId);
         if (!EntityExists(id))
@@ -622,9 +717,14 @@ namespace AiCompanion
         {
             return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "position out of bounds"));
         }
-        if (setScale && !(uniformScale > 0.0f && uniformScale <= 1000.0f))
+        if (setScale && !InputValidator::IsValidScale(scale.GetX(), scale.GetY(), scale.GetZ()))
         {
-            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "scale must be in (0, 1000]"));
+            return AZ::Failure(RequestError::EncodeError(
+                RequestError::ValidationFailed, AZStd::string::format("scale must be in (0, %g] on every axis", InputValidator::MaxScale)));
+        }
+        if (setRotation && !(rotation.GetLength() > 0.0f))
+        {
+            return AZ::Failure(RequestError::EncodeError(RequestError::ValidationFailed, "rotation quaternion must not be all zeros"));
         }
 
         AzToolsFramework::ScopedUndoBatch undo("AiCompanion Set Transform");
@@ -634,14 +734,38 @@ namespace AiCompanion
         }
         if (setRotation)
         {
-            AZ::TransformBus::Event(
-                id, &AZ::TransformBus::Events::SetWorldRotationQuaternion, AZ::Quaternion::CreateFromEulerDegreesXYZ(rotationDegrees));
+            AZ::TransformBus::Event(id, &AZ::TransformBus::Events::SetWorldRotationQuaternion, rotation.GetNormalized());
         }
         if (setScale)
         {
-            AZ::TransformBus::Event(id, &AZ::TransformBus::Events::SetLocalUniformScale, uniformScale);
+            auto scaled = ApplyScale(id, scale);
+            if (!scaled.IsSuccess())
+            {
+                return scaled;
+            }
         }
         AzToolsFramework::ToolsApplicationRequestBus::Broadcast(&AzToolsFramework::ToolsApplicationRequests::AddDirtyEntity, id);
+        return AZ::Success();
+    }
+
+    AZ::Outcome<void, AZStd::string> AiCompanionEditorSystemComponent::SetScale(AZ::EntityId entityId, AZ::Vector3 scale)
+    {
+        if (!EntityExists(entityId))
+        {
+            return AZ::Failure(
+                AZStd::string::format("entity %llu does not exist", static_cast<unsigned long long>(static_cast<AZ::u64>(entityId))));
+        }
+        AzToolsFramework::ScopedUndoBatch undo("AiCompanion Set Scale");
+        auto scaled = ApplyScale(entityId, scale);
+        if (!scaled.IsSuccess())
+        {
+            // Called from editor Python, which reads the text, not the code.
+            AZStd::string code;
+            AZStd::string message;
+            RequestError::DecodeError(scaled.GetError(), code, message);
+            return AZ::Failure(message);
+        }
+        AzToolsFramework::ToolsApplicationRequestBus::Broadcast(&AzToolsFramework::ToolsApplicationRequests::AddDirtyEntity, entityId);
         return AZ::Success();
     }
 

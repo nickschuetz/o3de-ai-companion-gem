@@ -104,6 +104,31 @@ namespace UnitTest
         EXPECT_FALSE(AiCompanion::InputValidator::IsValidPosition(0.0f, -10001.0f, 0.0f));
     }
 
+    // --- Scale validation ---
+
+    TEST_F(InputValidatorTestFixture, Scale_AcceptsTheOpenClosedRange)
+    {
+        EXPECT_TRUE(AiCompanion::InputValidator::IsValidScale(1.0f, 1.0f, 1.0f));
+        EXPECT_TRUE(AiCompanion::InputValidator::IsValidScale(0.001f, 50.0f, 1000.0f));
+    }
+
+    TEST_F(InputValidatorTestFixture, Scale_RejectsZeroNegativeOversizedAndNonFinite)
+    {
+        EXPECT_FALSE(AiCompanion::InputValidator::IsValidScale(0.0f, 1.0f, 1.0f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsValidScale(1.0f, -1.0f, 1.0f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsValidScale(1.0f, 1.0f, 1000.001f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsValidScale(std::numeric_limits<float>::quiet_NaN(), 1.0f, 1.0f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsValidScale(1.0f, std::numeric_limits<float>::infinity(), 1.0f));
+    }
+
+    TEST_F(InputValidatorTestFixture, Scale_UniformWithinTolerance)
+    {
+        EXPECT_TRUE(AiCompanion::InputValidator::IsUniformScale(2.0f, 2.0f, 2.0f));
+        EXPECT_TRUE(AiCompanion::InputValidator::IsUniformScale(2.0f, 2.0f + 5e-7f, 2.0f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsUniformScale(2.0f, 2.0001f, 2.0f));
+        EXPECT_FALSE(AiCompanion::InputValidator::IsUniformScale(50.0f, 50.0f, 1.0f));
+    }
+
     // --- Asset path validation ---
 
     TEST_F(InputValidatorTestFixture, AssetPath_ValidPaths)
