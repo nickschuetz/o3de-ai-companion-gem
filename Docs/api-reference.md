@@ -177,7 +177,16 @@ Manually begin an undo batch.
 End the current undo batch.
 
 ### `rollback_last_batch() -> str`
-Undo the last completed batch.
+Undo the last completed batch (one editor Undo step).
+
+Known limitation (O3DE 26.10): an entity that carries a Lua Script component
+may survive the undo. Undoing an entity creation re-instantiates the prefab,
+and if the script asset is already loaded the editor's
+`ScriptEditorComponent::LoadScript` opens an undo batch from inside the undo,
+which `ToolsApplication` rejects ("Can not create a new Undo/Redo batch while
+an Undo or Redo operation is running"). Entities without a Lua Script roll back
+reliably. When it matters, delete the entity explicitly after a failed
+rollback.
 
 ## Further Reading
 
