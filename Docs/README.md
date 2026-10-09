@@ -80,7 +80,7 @@ o3de register --repo-uri https://raw.githubusercontent.com/nickschuetz/o3de-ai-c
 o3de download --gem-name AiCompanion
 
 # Or pin a version, or take the tagged source tree through git instead of the archive
-o3de download --gem-name AiCompanion==0.5.0
+o3de download --gem-name AiCompanion==0.6.0
 o3de download --gem-name AiCompanion --use-source-control
 
 # Enable in your project and rebuild, as above

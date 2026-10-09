@@ -406,7 +406,7 @@ namespace AiCompanion
             AZ_Warning(
                 "AiCompanion",
                 false,
-                "AgentServer binding to %s — this exposes the server to the network. "
+                "AgentServer binding to %s: this exposes the server to the network. "
                 "Best practices: enable TLS (set TlsEnabled=true with cert/key paths), "
                 "use a firewall, restrict to trusted networks, consider SSH tunneling, "
                 "or enable secure mode to disable execute_python.",

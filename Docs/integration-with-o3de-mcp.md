@@ -349,7 +349,7 @@ bare socket from the gem:
 "editor": {
   "status": "connected",
   "ai_companion_gem": true,
-  "agent_server": {"protocol_version": 1, "gem_version": "0.5.0", "api_version": "0.4.0"}
+  "agent_server": {"protocol_version": 1, "gem_version": "0.6.0", "api_version": "0.4.0"}
 }
 ```
 

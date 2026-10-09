@@ -162,7 +162,7 @@ network server.
 | **AnimGraphInspector** | Read-only JSON views of the EMotion FX anim graphs the engine holds (`Code/Source/Animation/`): the listing with ownership flags and actor instances, and one graph's nodes, ports and connections, state transitions with conditions, value parameters and node groups. Resolves the graph from the AnimGraphManager on every call, on the main thread, and never keeps a pointer. Links `Gem::EMotionFX.Editor.Static`; answers `EMotion FX is not available` when that gem is absent |
 | **AnimGraphAuthoring / AnimGraphCommandText** | The fifteen anim graph writes, each one command or command group sent to EMotion Studio's command manager; `AnimGraphCommandText` holds the name rules, type tables, placement rules, condition and port resolution, path checks and command-line builders, unit tested on every string sent |
 | **Agent Mode** (`Code/Source/AgentMode/`) | `State` reads the JSON sidecar `agent_mode.py` writes and writes the observed-state file back; `Filter` is the `QApplication` event filter that closes the welcome dialog, logs the unsaved-files, error-log and startup-error dialogs, and rejects any other `QMessageBox` so an unattended editor never blocks in a modal |
-| **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, secure mode, and audit logging; 28 request types |
+| **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, secure mode, and audit logging; 31 request types |
 
 ### Gameplay Layer
 
