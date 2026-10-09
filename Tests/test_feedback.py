@@ -136,8 +136,12 @@ class TestSandbox(unittest.TestCase):
     def test_timeout(self):
         from ai_companion.safety.sandbox import OperationSandbox, SandboxLimitError
 
-        sandbox = OperationSandbox(timeout=0.0)
+        # A zero timeout relied on the monotonic clock having advanced between
+        # begin() and the check; on Windows its resolution is coarse enough that
+        # it had not, so start the clock a second in the past instead.
+        sandbox = OperationSandbox(timeout=0.5)
         sandbox.begin()
+        sandbox._start_time -= 1.0
 
         with self.assertRaises(SandboxLimitError):
             sandbox.check_timeout()
