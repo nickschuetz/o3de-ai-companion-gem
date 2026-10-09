@@ -9,7 +9,9 @@ safety.rollback and returned None, which the live suite caught when
 import json
 import os
 import sys
+import types
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "Editor", "Scripts"))
 
@@ -33,6 +35,24 @@ class TestUndoApiReturnsJson(unittest.TestCase):
         result = json.loads(api.rollback_last_batch())
         self.assertEqual(result["status"], "ok")
         self.assertTrue(result["data"]["rolled_back"])
+
+    def test_rollback_calls_the_editors_undo(self):
+        # The live suite found rollback leaving entities behind: the bus has no
+        # "Undo" event and the call failed silently, so general.undo() never ran.
+        calls = []
+        legacy = types.ModuleType("azlmbr.legacy")
+        legacy.__path__ = []
+        general = types.ModuleType("azlmbr.legacy.general")
+        general.undo = lambda: calls.append("undo")
+        root = types.ModuleType("azlmbr")
+        root.__path__ = []
+        root.legacy = legacy
+        legacy.general = general
+        modules = {"azlmbr": root, "azlmbr.legacy": legacy, "azlmbr.legacy.general": general}
+        with mock.patch.dict(sys.modules, modules):
+            result = json.loads(api.rollback_last_batch())
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(calls, ["undo"])
 
     def test_every_advertised_function_exists(self):
         for entry in json.loads(api.get_available_functions())["data"]:
