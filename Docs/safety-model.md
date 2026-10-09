@@ -124,6 +124,8 @@ validated mutation set:
 - `get_entity` — one entity's transform, parent and components
 - `validate_scene` — scene validation
 - `get_bus_schema` — reflected EBus description from the live BehaviorContext
+- `list_anim_graphs`, `get_anim_graph`: read-only views of the EMotion FX anim
+  graphs the engine holds (no authoring)
 - `create_entity`, `set_transform`, `delete_entity` — the validated mutation set:
   arguments go through the C++ `InputValidator`, missing entities and the level
   root are refused, and each call is its own editor undo batch
@@ -131,7 +133,8 @@ validated mutation set:
 This limits the attack surface when the server is exposed beyond localhost.
 o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree`,
 `get_entity`, `validate_scene` and `get_bus_schema_live` tools use only these
-request types, so they keep working in secure mode; `run_editor_python`, the session tools and the `ai_companion`
+request types, so they keep working in secure mode (o3de-mcp wrappers for the
+anim graph types are to follow); `run_editor_python`, the session tools and the `ai_companion`
 Python API do not.
 
 ### TLS Encryption

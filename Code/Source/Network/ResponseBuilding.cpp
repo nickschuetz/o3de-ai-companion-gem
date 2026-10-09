@@ -5,8 +5,8 @@
 
 #include "ResponseBuilding.h"
 
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
+#include <AzCore/JSON/stringbuffer.h>
+#include <AzCore/JSON/writer.h>
 
 namespace AiCompanion::ResponseBuilding
 {

@@ -86,6 +86,23 @@ namespace AiCompanion
         //! Deletes an entity and its descendants inside its own undo batch.
         //! Refuses the level's root entity and ids that do not exist.
         virtual AZ::Outcome<void, AZStd::string> DeleteEntity(AZ::u64 entityId) = 0;
+
+        //! Lists every EMotion FX anim graph the engine currently holds, as
+        //! JSON: {"editor_mode", "anim_graphs": [{"id", "file_name",
+        //! "owned_by_runtime", "owned_by_asset", "dirty", "num_nodes",
+        //! "num_parameters", "instances": [{"entity_id", "actor_instance_id",
+        //! "motion_set"}]}]}. Read-only; must be called on the main thread.
+        //! Fails with "EMotion FX is not available" when that gem is absent.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> ListAnimGraphs() = 0;
+
+        //! Describes one anim graph as JSON: its nodes with ports and incoming
+        //! connections, state transitions with conditions, value parameters
+        //! and node groups (see Animation/AnimGraphInspector.h for the shape).
+        //! `selector` is the graph's decimal id or its file name (exact, then
+        //! a case-insensitive match of the file name's tail). Read-only; must
+        //! be called on the main thread. Fails with "anim graph not found: ..."
+        //! or "EMotion FX is not available".
+        virtual AZ::Outcome<AZStd::string, AZStd::string> GetAnimGraph(AZStd::string selector) = 0;
     };
 
     using AiCompanionEditorRequestBus = AZ::EBus<AiCompanionEditorRequests>;

@@ -15,9 +15,9 @@
 #include <AzCore/std/string/conversions.h>
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
 
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
+#include <AzCore/JSON/document.h>
+#include <AzCore/JSON/stringbuffer.h>
+#include <AzCore/JSON/writer.h>
 
 #include <chrono>
 #include <cstdarg>
@@ -577,7 +577,8 @@ namespace AiCompanion
             }
             else if (
                 type == "get_scene_snapshot" || type == "get_entity_tree" || type == "validate_scene" || type == "get_entity" ||
-                type == "get_bus_schema" || type == "create_entity" || type == "set_transform" || type == "delete_entity")
+                type == "get_bus_schema" || type == "create_entity" || type == "set_transform" || type == "delete_entity" ||
+                type == "list_anim_graphs" || type == "get_anim_graph")
             {
                 // Safe EBus calls — dispatch to main thread
                 auto pending = std::make_shared<PendingRequest>();
@@ -619,7 +620,8 @@ namespace AiCompanion
                         id,
                         "execute_python is disabled in secure mode. "
                         "Only ping, get_api_version, get_scene_snapshot, get_entity_tree, validate_scene, "
-                        "get_entity, get_bus_schema, create_entity, set_transform and delete_entity are available.");
+                        "get_entity, get_bus_schema, create_entity, set_transform, delete_entity, "
+                        "list_anim_graphs and get_anim_graph are available.");
                     AZ_Warning("AiCompanion", false, "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
                 }
                 else
@@ -853,6 +855,14 @@ namespace AiCompanion
         else if (type == "delete_entity")
         {
             return HandleDeleteEntity(id, doc);
+        }
+        else if (type == "list_anim_graphs")
+        {
+            return HandleListAnimGraphs(id);
+        }
+        else if (type == "get_anim_graph")
+        {
+            return HandleGetAnimGraph(id, doc);
         }
         else if (type == "execute_python")
         {
@@ -1222,6 +1232,49 @@ namespace AiCompanion
         w.Uint64(entityId);
         w.EndObject();
         return BuildResponse(id, "ok", sb.GetString(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleListAnimGraphs(const AZStd::string& id)
+    {
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::ListAnimGraphs);
+        if (!outcome.IsSuccess())
+        {
+            return BuildErrorResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
+    }
+
+    AZStd::string AgentServer::HandleGetAnimGraph(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        // The selector handed to the inspector is the decimal id when
+        // anim_graph_id is given, else the file name.
+        AZStd::string selector;
+        if (doc.HasMember("anim_graph_id") && !doc["anim_graph_id"].IsNull())
+        {
+            AZ::u32 animGraphId = 0;
+            if (!RequestParsing::ParseAnimGraphId(doc["anim_graph_id"], animGraphId))
+            {
+                return BuildErrorResponse(id, "get_anim_graph 'anim_graph_id' must be a decimal id, as a number or string");
+            }
+            selector = AZStd::string::format("%u", animGraphId);
+        }
+        else if (doc.HasMember("file_name") && doc["file_name"].IsString() && doc["file_name"].GetStringLength() > 0)
+        {
+            selector = doc["file_name"].GetString();
+        }
+        else
+        {
+            return BuildErrorResponse(id, "get_anim_graph needs anim_graph_id or file_name");
+        }
+
+        AZ::Outcome<AZStd::string, AZStd::string> outcome = AZ::Failure(AZStd::string("AiCompanionEditorRequestBus has no handler"));
+        AiCompanionEditorRequestBus::BroadcastResult(outcome, &AiCompanionEditorRequestBus::Events::GetAnimGraph, selector);
+        if (!outcome.IsSuccess())
+        {
+            return BuildErrorResponse(id, outcome.GetError());
+        }
+        return BuildResponse(id, "ok", outcome.GetValue(), "", 0);
     }
 
     // -------------------------------------------------------------------------

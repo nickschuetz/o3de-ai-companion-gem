@@ -58,6 +58,8 @@ namespace AiCompanion
             float uniformScale) override;
         AZ::Outcome<void, AZStd::string> DeleteEntity(AZ::u64 entityId) override;
         AZ::Outcome<void, AZStd::string> CommitEntityToPrefab(AZ::EntityId entityId) override;
+        AZ::Outcome<AZStd::string, AZStd::string> ListAnimGraphs() override;
+        AZ::Outcome<AZStd::string, AZStd::string> GetAnimGraph(AZStd::string selector) override;
 
     protected:
         // AZ::Component overrides

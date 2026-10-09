@@ -18,9 +18,11 @@
         "Automation"
     ],
     "icon_path": "preview.png",
-    "requirements": "Requires EditorPythonBindings gem to be enabled for full functionality. Includes a built-in AgentServer for AI agent communication.",
+    "requirements": "Requires EditorPythonBindings gem to be enabled for full functionality. Depends on the EMotionFX gem for the anim graph request types. Includes a built-in AgentServer for AI agent communication.",
     "documentation_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/Docs/README.md",
-    "dependencies": [],
+    "dependencies": [
+        "EMotionFX"
+    ],
     "compatible_engines": [
         "o3de >= 2.7.0",
         "o3de >= 2305.0",

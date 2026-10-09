@@ -15,7 +15,7 @@
 #include <AzCore/std/smart_ptr/unique_ptr.h>
 #include <AzCore/std/string/string.h>
 
-#include <rapidjson/document.h>
+#include <AzCore/JSON/document.h>
 
 #include <future>
 #include <memory>
@@ -118,6 +118,8 @@ namespace AiCompanion
         AZStd::string HandleCreateEntity(const AZStd::string& id, const rapidjson::Document& doc);
         AZStd::string HandleSetTransform(const AZStd::string& id, const rapidjson::Document& doc);
         AZStd::string HandleDeleteEntity(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleListAnimGraphs(const AZStd::string& id);
+        AZStd::string HandleGetAnimGraph(const AZStd::string& id, const rapidjson::Document& doc);
 
         // Response builders
         AZStd::string BuildResponse(

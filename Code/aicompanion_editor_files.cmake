@@ -15,6 +15,8 @@ set(FILES
     Source/AgentMode/AgentModeFilter.cpp
     Source/AgentMode/AgentModeState.h
     Source/AgentMode/AgentModeState.cpp
+    Source/Animation/AnimGraphInspector.h
+    Source/Animation/AnimGraphInspector.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
     Source/Network/RequestParsing.h

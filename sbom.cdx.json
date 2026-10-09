@@ -166,6 +166,18 @@
     },
     {
       "type": "library",
+      "bom-ref": "o3de-gem-emotionfx",
+      "name": "EMotionFX",
+      "description": "O3DE animation Gem (EMotion FX). The editor module links Gem::EMotionFX.Editor.Static to read anim graphs for the list_anim_graphs and get_anim_graph request types.",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "python-stdlib",
       "name": "Python Standard Library",
       "description": "Python standard library modules used: json, typing, math, re, functools, copy, time. No third-party Python packages are required.",
@@ -210,6 +222,7 @@
         "az-aztoolsframework",
         "rapidjson",
         "o3de-gem-editorpythonbindings",
+        "o3de-gem-emotionfx",
         "python-stdlib",
         "openssl"
       ]
@@ -249,6 +262,12 @@
     },
     {
       "ref": "o3de-gem-editorpythonbindings",
+      "dependsOn": [
+        "o3de-engine"
+      ]
+    },
+    {
+      "ref": "o3de-gem-emotionfx",
       "dependsOn": [
         "o3de-engine"
       ]

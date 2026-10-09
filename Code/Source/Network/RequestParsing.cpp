@@ -51,6 +51,37 @@ namespace AiCompanion::RequestParsing
         return true;
     }
 
+    bool ParseAnimGraphId(const rapidjson::Value& value, AZ::u32& outId)
+    {
+        if (value.IsUint())
+        {
+            outId = value.GetUint();
+            return true;
+        }
+        if (value.IsNumber())
+        {
+            // Negative, fractional, or above the u32 range.
+            return false;
+        }
+        if (!value.IsString())
+        {
+            return false;
+        }
+        const AZStd::string text = value.GetString();
+        if (text.empty() || text.find_first_not_of("0123456789") != AZStd::string::npos)
+        {
+            return false;
+        }
+        char* end = nullptr;
+        const unsigned long long parsed = strtoull(text.c_str(), &end, 10);
+        if (end == text.c_str() || (end && *end != '\0') || parsed > 0xFFFFFFFFull)
+        {
+            return false;
+        }
+        outId = static_cast<AZ::u32>(parsed);
+        return true;
+    }
+
     bool ParseVector3(const rapidjson::Value& value, AZ::Vector3& out)
     {
         if (!value.IsArray() || value.Size() != 3)

@@ -52,7 +52,8 @@ flowchart TB
 
         subgraph CppLayer["C++ Native Layer  (Code/Source/)"]
             SysComp["AiCompanionSystemComponent<br/>EBus Handler"]
-            EdComp["AiCompanionEditorSystemComponent<br/>native mutations, CommitEntityToPrefab,<br/>GetBusSchema, Agent Mode"]
+            EdComp["AiCompanionEditorSystemComponent<br/>native mutations, CommitEntityToPrefab,<br/>GetBusSchema, anim graph reads, Agent Mode"]
+            AGI["AnimGraphInspector<br/>EMotion FX anim graphs"]
             SSP["SceneSnapshotProvider"]
             IV["InputValidator"]
             RP["RequestParsing"]
@@ -71,13 +72,15 @@ flowchart TB
     Agent -->|"MCP tool calls"| MCP
     Agent -->|"TCP JSON"| AgentSrv
     MCP -->|"run_editor_python() / sessions"| API
-    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity"| AgentSrv
+    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph"| AgentSrv
     AgentSrv --> AS
     AS --> RP
     AS -->|"every reply"| RSP
     AS -->|"request queue"| SysComp
-    AS -->|"mutations, bus schema"| EdComp
+    AS -->|"mutations, bus schema, anim graphs"| EdComp
     EdComp -->|"validated, own undo batch"| Engine
+    EdComp --> AGI
+    AGI -->|"read-only, main thread"| Engine
     Builders -->|"CommitEntityToPrefab"| EdComp
 
     API --> Builders
@@ -130,12 +133,13 @@ network server.
 | Component | Purpose |
 |-----------|---------|
 | **AiCompanionSystemComponent** | EBus handler connecting Python API to C++ scene operations (`AiCompanionRequestBus`, exported to editor Python as `azlmbr.ai_companion`) |
-| **AiCompanionEditorSystemComponent** | Editor-side handler (`AiCompanionEditorRequestBus`): the validated native mutations (`CreateEntity`, `SetTransform`, `DeleteEntity`, each in its own undo batch), `CommitEntityToPrefab` (records an entity in the level template immediately, so multi-entity calls persist), `GetBusSchema`, the `SetComponentPropertyUnwrapped` workaround, and Agent Mode's dialog filter |
+| **AiCompanionEditorSystemComponent** | Editor-side handler (`AiCompanionEditorRequestBus`): the validated native mutations (`CreateEntity`, `SetTransform`, `DeleteEntity`, each in its own undo batch), `CommitEntityToPrefab` (records an entity in the level template immediately, so multi-entity calls persist), `GetBusSchema`, `ListAnimGraphs` and `GetAnimGraph` (delegated to AnimGraphInspector), the `SetComponentPropertyUnwrapped` workaround, and Agent Mode's dialog filter |
 | **SceneSnapshotProvider** | Fast entity traversal and JSON serialization of scene state, whole scene or one entity |
 | **InputValidator** | C++ counterpart to Python validators for entity names, positions and component types |
 | **RequestParsing** | Parses request arguments (entity ids as numbers or strings, Vector3 arrays within the position bound) for the native request types |
 | **ResponseBuilding** | Writes every AgentServer reply (`id`, `status`, `output`, `error`, `duration_ms`, and `code` on the unknown-request-type error only) |
 | **BusSchema** | Builds a JSON description of any reflected EBus from the live BehaviorContext, with argument names and tooltips |
+| **AnimGraphInspector** | Read-only JSON views of the EMotion FX anim graphs the engine holds (`Code/Source/Animation/`): the listing with ownership flags and actor instances, and one graph's nodes, ports and connections, state transitions with conditions, value parameters and node groups. Resolves the graph from the AnimGraphManager on every call, on the main thread, and never keeps a pointer. Links `Gem::EMotionFX.Editor.Static`; answers `EMotion FX is not available` when that gem is absent |
 | **AgentServer** | TCP listener (default `127.0.0.1:4600`) with length-prefixed JSON protocol, TLS support, secure mode, and audit logging |
 
 ### Gameplay Layer
@@ -165,13 +169,29 @@ The AgentServer uses a length-prefixed JSON protocol over TCP:
 
 Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
 `get_entity_tree`, `get_entity`, `validate_scene`, `get_bus_schema`,
-`create_entity`, `set_transform`, `delete_entity`, `execute_python`.
+`create_entity`, `set_transform`, `delete_entity`, `list_anim_graphs`,
+`get_anim_graph`, `execute_python`.
 
 `get_entity` takes `entity_id` (decimal, as a number or string) and returns one
 entity's transform, parent and component list; `get_bus_schema` takes an
 optional `bus_name` and returns the reflected EBus description from the live
 `BehaviorContext` (every bus name when `bus_name` is empty). Both are served
 in C++ with no Python involved.
+
+`list_anim_graphs` (no parameters) and `get_anim_graph` (`anim_graph_id` as a
+number or string, or `file_name`) read EMotion FX anim graphs through the
+AnimGraphInspector. The listing gives each graph's `id`, `file_name`,
+`owned_by_runtime`, `owned_by_asset`, `dirty`, `num_nodes`, `num_parameters`
+and `instances` (each with `entity_id`, `actor_instance_id`, `motion_set`),
+plus the engine's `editor_mode` flag. The description gives
+`root_state_machine_id`, `nodes` (id, name, type, palette name, category,
+parent id, state and pose flags, enabled, position, input ports with their
+incoming `connection`, output ports), `transitions` (id, state machine,
+source and target node ids, wildcard, blend time, priority, disabled,
+conditions with type and summary), `parameters` (name, type, description,
+default, min, max, group) and `node_groups`. Node and transition ids are
+decimal strings. Both are read-only, run on the main thread and are allowed in
+secure mode; an unknown graph answers `anim graph not found: <selector>`.
 
 o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
 inside its `get_capabilities` tool to confirm the gem is present and report its
@@ -181,7 +201,8 @@ first in `get_bus_schema_live`, the three mutation types first in its
 `create_entity`, `set_transform` and `delete_entity` tools (falling back to
 editor Python when the reply carries `unknown_request_type`), and
 `execute_python` for everything else (`run_editor_python` and the
-`begin_session` / `exec_in_session` tools).
+`begin_session` / `exec_in_session` tools). o3de-mcp wrappers for
+`list_anim_graphs` and `get_anim_graph` are to follow.
 
 `create_entity` (`name`, optional `position` and `parent_id`), `set_transform`
 (`entity_id` plus any of `position`, `rotation` as Euler degrees, `scale`) and

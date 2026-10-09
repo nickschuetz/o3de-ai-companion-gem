@@ -65,8 +65,27 @@ echo "  level  : $LIVE_LEVEL   port: $LIVE_PORT   display: $LIVE_DISPLAY"
 echo "  secure : $LIVE_SECURE"
 echo "  logs   : $STATE"
 
+# The anim graph fixture for TestAnimGraphs goes into the project before
+# AssetProcessor starts, so it is built by the time the editor is up (the test
+# class copies it itself as a fallback, then waits for the catalog). Removed on
+# exit so the project is left as it was found.
+FIXTURE_SRC="$GEM_PATH/Tests/live/fixtures/AiCompanionSample.animgraph"
+FIXTURE_DIR="$AICOMPANION_PROJECT/Assets/AiCompanionLiveTest"
+FIXTURE_DST="$FIXTURE_DIR/AiCompanionSample.animgraph"
+fixture_copied=0
+if [ -f "$FIXTURE_SRC" ] && [ ! -e "$FIXTURE_DST" ]; then
+    mkdir -p "$FIXTURE_DIR"
+    cp "$FIXTURE_SRC" "$FIXTURE_DST"
+    fixture_copied=1
+    echo "  fixture: $FIXTURE_DST"
+fi
+
 PIDS=()
 cleanup() {
+    if [ "$fixture_copied" = "1" ]; then
+        rm -f "$FIXTURE_DST"
+        rmdir "$FIXTURE_DIR" 2>/dev/null || true
+    fi
     [ "$LIVE_KEEP" = "1" ] && { echo "LIVE_KEEP=1: leaving processes running"; return 0; }
     for pid in "${PIDS[@]:-}"; do
         [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
