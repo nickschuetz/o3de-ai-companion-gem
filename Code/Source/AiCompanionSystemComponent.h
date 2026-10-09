@@ -33,6 +33,7 @@ namespace AiCompanion
         // AiCompanionRequestBus overrides
         AZStd::string GetSceneSnapshot() override;
         AZStd::string GetEntityTree() override;
+        AZStd::string GetEntity(AZ::u64 entityId) override;
         AZStd::string ValidateScene() override;
         bool ValidateEntityName(const AZStd::string& name) override;
         bool ValidateComponentType(const AZStd::string& componentType) override;

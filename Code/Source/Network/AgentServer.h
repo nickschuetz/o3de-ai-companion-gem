@@ -113,6 +113,8 @@ namespace AiCompanion
         AZStd::string HandleGetSceneSnapshot(const AZStd::string& id);
         AZStd::string HandleGetEntityTree(const AZStd::string& id);
         AZStd::string HandleValidateScene(const AZStd::string& id);
+        AZStd::string HandleGetEntity(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleGetBusSchema(const AZStd::string& id, const rapidjson::Document& doc);
 
         // Response builders
         AZStd::string BuildResponse(

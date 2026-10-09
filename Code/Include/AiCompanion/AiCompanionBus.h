@@ -22,6 +22,9 @@ namespace AiCompanion
         //! Returns a JSON representation of the entity hierarchy tree.
         virtual AZStd::string GetEntityTree() = 0;
 
+        //! Returns one entity (transform, parent, components) as JSON, or {"error": ...}.
+        virtual AZStd::string GetEntity(AZ::u64 entityId) = 0;
+
         //! Validates the current scene for common issues. Returns JSON report.
         virtual AZStd::string ValidateScene() = 0;
 

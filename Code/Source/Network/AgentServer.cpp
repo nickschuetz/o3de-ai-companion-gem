@@ -5,6 +5,7 @@
 
 #include "AgentServer.h"
 
+#include <AiCompanion/AiCompanionEditorRequestBus.h>
 #include <AzCore/IO/Path/Path.h>
 #include <AzCore/Utils/Utils.h>
 #include <AzCore/base.h>
@@ -572,7 +573,9 @@ namespace AiCompanion
                 response = HandleGetApiVersion(id);
                 LogStandard("[AgentServer] req=%s type=get_api_version status=ok duration=0ms", id.c_str());
             }
-            else if (type == "get_scene_snapshot" || type == "get_entity_tree" || type == "validate_scene")
+            else if (
+                type == "get_scene_snapshot" || type == "get_entity_tree" || type == "validate_scene" || type == "get_entity" ||
+                type == "get_bus_schema")
             {
                 // Safe EBus calls — dispatch to main thread
                 auto pending = std::make_shared<PendingRequest>();
@@ -614,7 +617,7 @@ namespace AiCompanion
                         id,
                         "execute_python is disabled in secure mode. "
                         "Only ping, get_api_version, get_scene_snapshot, get_entity_tree, "
-                        "and validate_scene are available.");
+                        "validate_scene, get_entity and get_bus_schema are available.");
                     AZ_Warning("AiCompanion", false, "[AgentServer] Blocked execute_python in secure mode (req=%s)", id.c_str());
                 }
                 else
@@ -825,6 +828,14 @@ namespace AiCompanion
         else if (type == "validate_scene")
         {
             return HandleValidateScene(id);
+        }
+        else if (type == "get_entity")
+        {
+            return HandleGetEntity(id, doc);
+        }
+        else if (type == "get_bus_schema")
+        {
+            return HandleGetBusSchema(id, doc);
         }
         else if (type == "execute_python")
         {
@@ -1042,6 +1053,68 @@ namespace AiCompanion
         AZStd::string report;
         AiCompanionRequestBus::BroadcastResult(report, &AiCompanionRequestBus::Events::ValidateScene);
         return BuildResponse(id, "ok", report, "", 0);
+    }
+
+    AZStd::string AgentServer::HandleGetEntity(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        // entity_id may arrive as a JSON number or as a decimal string (the
+        // Python side serializes ids as strings to stay JSON-safe).
+        AZ::u64 entityId = 0;
+        if (doc.HasMember("entity_id"))
+        {
+            const auto& v = doc["entity_id"];
+            if (v.IsUint64())
+            {
+                entityId = v.GetUint64();
+            }
+            else if (v.IsString())
+            {
+                AZStd::string text = v.GetString();
+                while (!text.empty() && (text.front() == '[' || text.front() == ' '))
+                {
+                    text.erase(0, 1);
+                }
+                while (!text.empty() && (text.back() == ']' || text.back() == ' '))
+                {
+                    text.pop_back();
+                }
+                char* end = nullptr;
+                entityId = static_cast<AZ::u64>(strtoull(text.c_str(), &end, 10));
+                if (end == text.c_str() || (end && *end != '\0'))
+                {
+                    entityId = 0;
+                }
+            }
+        }
+        if (entityId == 0)
+        {
+            return BuildErrorResponse(id, "get_entity requires 'entity_id' (a decimal id, as a number or string)");
+        }
+
+        AZStd::string json;
+        AiCompanionRequestBus::BroadcastResult(json, &AiCompanionRequestBus::Events::GetEntity, entityId);
+        if (json.empty())
+        {
+            return BuildErrorResponse(id, "AiCompanionRequestBus has no handler; is the gem's system component active?");
+        }
+        return BuildResponse(id, "ok", json, "", 0);
+    }
+
+    AZStd::string AgentServer::HandleGetBusSchema(const AZStd::string& id, const rapidjson::Document& doc)
+    {
+        AZStd::string busName;
+        if (doc.HasMember("bus_name") && doc["bus_name"].IsString())
+        {
+            busName = doc["bus_name"].GetString();
+        }
+
+        AZStd::string json;
+        AiCompanionEditorRequestBus::BroadcastResult(json, &AiCompanionEditorRequestBus::Events::GetBusSchema, busName);
+        if (json.empty())
+        {
+            return BuildErrorResponse(id, "AiCompanionEditorRequestBus has no handler; is the editor system component active?");
+        }
+        return BuildResponse(id, "ok", json, "", 0);
     }
 
     // -------------------------------------------------------------------------

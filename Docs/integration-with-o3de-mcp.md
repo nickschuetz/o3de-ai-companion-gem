@@ -52,12 +52,14 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `get_api_version` | Protocol and gem version info | No |
 | `get_scene_snapshot` | Full scene state as JSON | No (C++ EBus) |
 | `get_entity_tree` | Entity hierarchy tree | No (C++ EBus) |
+| `get_entity` | One entity (`entity_id` parameter) | No (C++ EBus) |
 | `validate_scene` | Scene validation | No (C++ EBus) |
+| `get_bus_schema` | Reflected EBus description (`bus_name` parameter, empty lists all) | No (C++ BehaviorContext) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
-`get_capabilities()` to confirm the gem is present, and the three C++ request
-types behind its `get_scene_snapshot`, `get_entity_tree` and `validate_scene`
-tools. Everything else goes through `execute_python`. The C++ request types
+`get_capabilities()` to confirm the gem is present, and the C++ request types
+behind its `get_scene_snapshot`, `get_entity_tree`, `get_entity`,
+`validate_scene` and `get_bus_schema_live` tools. Everything else goes through `execute_python`. The C++ request types
 keep working when the AgentServer runs in secure mode, which disables
 `execute_python`.
 

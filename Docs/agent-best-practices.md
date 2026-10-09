@@ -142,8 +142,9 @@ These functions use fast C++ entity traversal (no Python overhead):
 - `get_scene_snapshot()` → `SceneSnapshotProvider::CaptureSnapshot()`
 - `get_entity_tree()` → `SceneSnapshotProvider::CaptureEntityTree()`
 - `validate_scene()` → `SceneSnapshotProvider::ValidateScene()`
+- `inspect_entity(id)` has a C++ counterpart in the `get_entity` request type → `SceneSnapshotProvider::CaptureEntity()`
 
-They are also available as direct AgentServer request types (`get_scene_snapshot`, `get_entity_tree`, `validate_scene`), bypassing Python entirely.
+They are also available as direct AgentServer request types (`get_scene_snapshot`, `get_entity_tree`, `get_entity`, `validate_scene`, plus `get_bus_schema` for live EBus discovery), bypassing Python entirely.
 
 ### TLS performance implications
 

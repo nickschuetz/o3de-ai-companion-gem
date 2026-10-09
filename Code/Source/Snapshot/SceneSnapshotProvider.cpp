@@ -31,6 +31,43 @@ namespace AiCompanion
             AZStd::vector<AZStd::string> componentNames;
         };
 
+        static EntityInfo BuildEntityInfo(AZ::Entity* entity)
+        {
+            EntityInfo info;
+            info.id = entity->GetId();
+            info.name = entity->GetName();
+
+            // Get transform data
+            AZ::TransformBus::EventResult(info.position, info.id, &AZ::TransformBus::Events::GetWorldTranslation);
+
+            AZ::Quaternion quat = AZ::Quaternion::CreateIdentity();
+            AZ::TransformBus::EventResult(quat, info.id, &AZ::TransformBus::Events::GetWorldRotationQuaternion);
+            info.rotation = quat.GetEulerDegrees();
+
+            float uniformScale = 1.0f;
+            AZ::TransformBus::EventResult(uniformScale, info.id, &AZ::TransformBus::Events::GetLocalUniformScale);
+            info.scale = AZ::Vector3(uniformScale);
+
+            // Get parent
+            AZ::TransformBus::EventResult(info.parentId, info.id, &AZ::TransformBus::Events::GetParentId);
+
+            // Gather component type names
+            const auto& components = entity->GetComponents();
+            info.componentNames.reserve(components.size());
+            for (const AZ::Component* component : components)
+            {
+                if (component)
+                {
+                    const char* name = component->RTTI_GetTypeName();
+                    if (name)
+                    {
+                        info.componentNames.emplace_back(name);
+                    }
+                }
+            }
+            return info;
+        }
+
         static AZStd::vector<EntityInfo> GatherEntityInfos()
         {
             AZStd::vector<EntityInfo> infos;
@@ -41,45 +78,10 @@ namespace AiCompanion
                     appRequests->EnumerateEntities(
                         [&infos](AZ::Entity* entity)
                         {
-                            if (!entity)
+                            if (entity)
                             {
-                                return true;
+                                infos.push_back(BuildEntityInfo(entity));
                             }
-
-                            EntityInfo info;
-                            info.id = entity->GetId();
-                            info.name = entity->GetName();
-
-                            // Get transform data
-                            AZ::TransformBus::EventResult(info.position, info.id, &AZ::TransformBus::Events::GetWorldTranslation);
-
-                            AZ::Quaternion quat = AZ::Quaternion::CreateIdentity();
-                            AZ::TransformBus::EventResult(quat, info.id, &AZ::TransformBus::Events::GetWorldRotationQuaternion);
-                            info.rotation = quat.GetEulerDegrees();
-
-                            float uniformScale = 1.0f;
-                            AZ::TransformBus::EventResult(uniformScale, info.id, &AZ::TransformBus::Events::GetLocalUniformScale);
-                            info.scale = AZ::Vector3(uniformScale);
-
-                            // Get parent
-                            AZ::TransformBus::EventResult(info.parentId, info.id, &AZ::TransformBus::Events::GetParentId);
-
-                            // Gather component type names
-                            const auto& components = entity->GetComponents();
-                            info.componentNames.reserve(components.size());
-                            for (const AZ::Component* component : components)
-                            {
-                                if (component)
-                                {
-                                    const char* name = component->RTTI_GetTypeName();
-                                    if (name)
-                                    {
-                                        info.componentNames.emplace_back(name);
-                                    }
-                                }
-                            }
-
-                            infos.push_back(AZStd::move(info));
                             return true; // continue enumeration
                         });
                 });
@@ -162,6 +164,34 @@ namespace AiCompanion
 
         writer.EndObject();
 
+        return AZStd::string(buffer.GetString(), buffer.GetSize());
+    }
+
+    AZStd::string SceneSnapshotProvider::CaptureEntity(AZ::EntityId entityId)
+    {
+        AZ::Entity* entity = nullptr;
+        if (entityId.IsValid())
+        {
+            AZ::ComponentApplicationBus::BroadcastResult(entity, &AZ::ComponentApplicationRequests::FindEntity, entityId);
+        }
+
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+
+        if (!entity)
+        {
+            writer.StartObject();
+            writer.Key("error");
+            AZStd::string message =
+                AZStd::string::format("No entity with id %llu", static_cast<unsigned long long>(static_cast<AZ::u64>(entityId)));
+            writer.String(message.c_str(), static_cast<rapidjson::SizeType>(message.size()));
+            writer.Key("entity_id");
+            writer.Uint64(static_cast<AZ::u64>(entityId));
+            writer.EndObject();
+            return AZStd::string(buffer.GetString(), buffer.GetSize());
+        }
+
+        Internal::WriteEntityJson(writer, Internal::BuildEntityInfo(entity));
         return AZStd::string(buffer.GetString(), buffer.GetSize());
     }
 

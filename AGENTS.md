@@ -174,7 +174,8 @@ These functions route through fast C++ entity traversal, bypassing Python:
 - `validate_scene()` → `SceneSnapshotProvider::ValidateScene()`
 
 They are also available as direct AgentServer request types (`get_scene_snapshot`,
-`get_entity_tree`, `validate_scene`), skipping `execute_python` entirely.
+`get_entity_tree`, `validate_scene`), skipping `execute_python` entirely, alongside
+`get_entity` (one entity by id) and `get_bus_schema` (live EBus reflection).
 
 ### Use `ping` for health checks
 
