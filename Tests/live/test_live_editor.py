@@ -373,6 +373,24 @@ class TestSecureMode(LiveEditorTest):
         self.assertNotIn("error", schema, schema)
         self.assertIn("events", schema)
 
+    def test_native_mutations_work_without_python(self):
+        # The point of the validated mutation set: an agent on a secure-mode
+        # editor can still build and tidy a scene, with no execute_python.
+        created = self.client.request("create_entity", name="SecureNative", position=[1, 2, 3])
+        self.assertEqual(created["status"], "ok", created)
+        new_id = int(json.loads(created["output"])["entity_id"])
+        ids = {int(e["id"]) for e in json.loads(self.client.request("get_scene_snapshot")["output"])["entities"]}
+        self.assertIn(new_id, ids)
+
+        moved = self.client.request("set_transform", entity_id=new_id, position=[4, 5, 6])
+        self.assertEqual(moved["status"], "ok", moved)
+        self.assertAlmostEqual(json.loads(moved["output"])["position"][0], 4.0, places=3)
+
+        deleted = self.client.request("delete_entity", entity_id=new_id)
+        self.assertEqual(deleted["status"], "ok", deleted)
+        ids = {int(e["id"]) for e in json.loads(self.client.request("get_scene_snapshot")["output"])["entities"]}
+        self.assertNotIn(new_id, ids)
+
 
 if __name__ == "__main__":
     unittest.main()
