@@ -24,7 +24,8 @@ safety rules in compiled code. The AgentServer answers scene snapshots, entity
 trees, single entities, validation, live EBus schemas and views of EMotion FX
 anim graphs (`list_anim_graphs`, `get_anim_graph`) straight from C++, authors
 anim graphs through the Animation Editor's command system (create, load and
-save a graph, add and remove nodes and parameters, set the entry state), and
+save a graph, add and remove nodes and parameters, set the entry state, wire
+transitions with conditions and blend tree ports, adjust nodes), and
 serves a validated mutation set (`create_entity`, `set_transform`,
 `delete_entity`) that runs in its own undo batch, so an agent on a secure-mode
 editor, where arbitrary code execution is disabled, can still build and tidy a

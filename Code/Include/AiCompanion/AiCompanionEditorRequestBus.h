@@ -21,7 +21,9 @@ namespace AiCompanion
     //! SetTransform, DeleteEntity, ListAnimGraphs, GetAnimGraph,
     //! CreateAnimGraph, RemoveAnimGraph, LoadAnimGraph, SaveAnimGraph,
     //! AddAnimGraphNode, RemoveAnimGraphNode, SetAnimGraphEntryState,
-    //! AddAnimGraphParameter, RemoveAnimGraphParameter) return their failure as
+    //! AddAnimGraphParameter, RemoveAnimGraphParameter, AddAnimGraphTransition,
+    //! RemoveAnimGraphTransition, SetAnimGraphTransition, ConnectAnimGraphPorts,
+    //! DisconnectAnimGraphPorts, SetAnimGraphNode) return their failure as
     //! the JSON text {"code": "<code>", "message": "<text>"} written by
     //! RequestError::EncodeError, with the code from the RequestError
     //! vocabulary (validation_failed, not_found, unavailable, engine_error).
@@ -191,6 +193,48 @@ namespace AiCompanion
         //! Removes a value parameter by name; a group is refused. Success
         //! JSON: {"removed": "<name>"}.
         virtual AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphParameter(AZ::u32 animGraphId, AZStd::string name) = 0;
+
+        //! Adds a state transition. `argumentsJson` is a JSON object:
+        //! "target_node_id" (a state), optional "source_node_id" (absent or
+        //! null: a wildcard transition; else a state of the same state
+        //! machine), optional "blend_time", "priority", "disabled",
+        //! "sync_mode", "interpolation", and optional "conditions": a list of
+        //! {"condition_type": <ParameterCondition, TimeCondition,
+        //! PlayTimeCondition, MotionCondition, StateCondition, TagCondition,
+        //! Vector2Condition, or the class name>, "attributes": {<reflected
+        //! field>: <value>}}. One command group, undone on failure. Success
+        //! JSON: the transition object exactly as GetAnimGraph emits it.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphTransition(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
+
+        //! Removes a transition by id. Success JSON: {"removed": "<id>"}.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphTransition(AZ::u32 animGraphId, AZStd::string transitionId) = 0;
+
+        //! Adjusts a transition. `argumentsJson` is a JSON object:
+        //! "transition_id" and at least one of "blend_time" (seconds),
+        //! "priority", "disabled" (bool), "sync_mode" (0 disabled, 1 track
+        //! based, 2 clip based), "interpolation" (0 linear, 1 ease curve).
+        //! Success JSON: the transition object as GetAnimGraph emits it.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphTransition(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
+
+        //! Connects an output port to an input port inside a blend tree.
+        //! `argumentsJson` is a JSON object: "source_node_id", "source_port",
+        //! "target_node_id", "target_port" (a port is an index or a name).
+        //! Success JSON: the target's input port object as GetAnimGraph
+        //! emits it (index, name, connection).
+        virtual AZ::Outcome<AZStd::string, AZStd::string> ConnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
+
+        //! Removes the connection into an input port. `argumentsJson` is a
+        //! JSON object: "target_node_id", "target_port". Success JSON:
+        //! {"removed": "<connection id>"}.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> DisconnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
+
+        //! Adjusts a node. `argumentsJson` is a JSON object: "node_id" and at
+        //! least one of "name", "position" [x, y], "enabled" (bool) and
+        //! "attributes": {<reflected field>: <value>} (a number, bool or
+        //! string; a list of strings for a string list and for a motion
+        //! node's "motionIds"). Success JSON: the node object as
+        //! GetAnimGraph emits it.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphNode(AZ::u32 animGraphId, AZStd::string argumentsJson) = 0;
     };
 
     using AiCompanionEditorRequestBus = AZ::EBus<AiCompanionEditorRequests>;

@@ -69,6 +69,12 @@ namespace AiCompanion
         AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphEntryState(AZ::u32 animGraphId, AZStd::string nodeId) override;
         AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphParameter(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
         AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphParameter(AZ::u32 animGraphId, AZStd::string name) override;
+        AZ::Outcome<AZStd::string, AZStd::string> AddAnimGraphTransition(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> RemoveAnimGraphTransition(AZ::u32 animGraphId, AZStd::string transitionId) override;
+        AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphTransition(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> ConnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> DisconnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphNode(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
 
     protected:
         // AZ::Component overrides

@@ -129,11 +129,14 @@ validated mutation set and the validated anim graph authoring set:
 - `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
   `save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,
   `set_anim_graph_entry_state`, `add_anim_graph_parameter`,
-  `remove_anim_graph_parameter`: anim graph authoring through EMotion Studio's
-  command system; names, types, placement, values and paths are validated in
-  C++ before a command is sent, paths must stay inside the project (or, for a
-  load, the engine) root, and a graph an asset or runtime instance owns is
-  refused
+  `remove_anim_graph_parameter`, `add_anim_graph_transition`,
+  `remove_anim_graph_transition`, `set_anim_graph_transition`,
+  `connect_anim_graph_ports`, `disconnect_anim_graph_ports`,
+  `set_anim_graph_node`: anim graph authoring through EMotion Studio's
+  command system; names, types, placement, values, condition attributes,
+  ports, node fields and paths are validated in C++ before a command is
+  sent, paths must stay inside the project (or, for a load, the engine)
+  root, and a graph an asset or runtime instance owns is refused
 - `create_entity`, `set_transform`, `delete_entity` — the validated mutation set:
   arguments go through the C++ `InputValidator`, missing entities and the level
   root are refused, and each call is its own editor undo batch

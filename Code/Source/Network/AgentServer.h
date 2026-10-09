@@ -7,6 +7,7 @@
 
 #include <AiCompanion/AgentServerBus.h>
 #include <AiCompanion/AiCompanionBus.h>
+#include <AiCompanion/AiCompanionEditorRequestBus.h>
 
 #include <AzCore/std/containers/deque.h>
 #include <AzCore/std/parallel/atomic.h>
@@ -132,6 +133,16 @@ namespace AiCompanion
         AZStd::string HandleAddAnimGraphParameter(
             const AZStd::string& id, const rapidjson::Document& doc, const AZStd::string& jsonRequest);
         AZStd::string HandleRemoveAnimGraphParameter(const AZStd::string& id, const rapidjson::Document& doc);
+        AZStd::string HandleRemoveAnimGraphTransition(const AZStd::string& id, const rapidjson::Document& doc);
+        //! The anim graph request types whose arguments the engine-facing
+        //! code reads from the request itself: the handler checks
+        //! anim_graph_id and forwards the whole JSON.
+        AZStd::string HandleAnimGraphJsonRequest(
+            const AZStd::string& id,
+            const rapidjson::Document& doc,
+            const AZStd::string& jsonRequest,
+            const char* requestType,
+            AZ::Outcome<AZStd::string, AZStd::string> (AiCompanionEditorRequests::*event)(AZ::u32, AZStd::string));
 
         // Response builders
         AZStd::string BuildResponse(

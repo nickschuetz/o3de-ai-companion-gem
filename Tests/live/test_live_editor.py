@@ -874,6 +874,291 @@ class TestAnimGraphs(LiveEditorTest):
             removed = self.native("remove_anim_graph", anim_graph_id=graph_id)
         self.assertEqual(removed["status"], "ok", removed)
 
+    def _add_node(self, graph_id: int, node_type: str, name: str, **fields) -> dict:
+        response = self.native("add_anim_graph_node", anim_graph_id=graph_id, node_type=node_type, name=name, **fields)
+        self.assertEqual(response["status"], "ok", response)
+        return json.loads(response["output"])
+
+    def test_transitions_connections_and_node_edits(self):
+        # The second authoring batch: state transitions with conditions, blend
+        # tree port connections and node adjustments, each verified through
+        # get_anim_graph and torn down with the graph.
+        graph_id = self._create_editable_graph()
+        try:
+            idle = self._add_node(graph_id, "Motion", "Idle")
+            walk = self._add_node(graph_id, "Motion", "Walk", position=[240, 0])
+            speed = self.native("add_anim_graph_parameter", anim_graph_id=graph_id, name="Speed", parameter_type="FloatSlider")
+            self.assertEqual(speed["status"], "ok", speed)
+
+            # A transition with a blend time and a parameter condition, built
+            # as one command group (create, adjust, add condition).
+            added = self.native(
+                "add_anim_graph_transition",
+                anim_graph_id=graph_id,
+                source_node_id=idle["id"],
+                target_node_id=walk["id"],
+                blend_time=0.25,
+                conditions=[
+                    {"condition_type": "ParameterCondition", "attributes": {"parameterName": "Speed", "function": "GREATER", "testValue": 0.5}}
+                ],
+            )
+            self.assertEqual(added["status"], "ok", added)
+            transition = json.loads(added["output"])
+            self.assertTrue(re.fullmatch(r"\d+", transition["id"]), transition)
+            self.assertEqual(transition["source_node_id"], idle["id"])
+            self.assertEqual(transition["target_node_id"], walk["id"])
+            self.assertFalse(transition["wildcard"])
+            self.assertAlmostEqual(transition["blend_time"], 0.25, places=5)
+            self.assertEqual(transition["priority"], 0)
+            self.assertFalse(transition["disabled"])
+            self.assertEqual(len(transition["conditions"]), 1, transition)
+            self.assertEqual(transition["conditions"][0]["type"], "AnimGraphParameterCondition")
+            # The engine's summary: "...: Parameter Name='Speed', Test Function='param > testValue', Test Value=0.50, ..."
+            self.assertIn("Speed", transition["conditions"][0]["summary"])
+            self.assertIn("param > testValue", transition["conditions"][0]["summary"])
+            self.assertIn("0.50", transition["conditions"][0]["summary"])
+            described, nodes = self._describe(graph_id)
+            self.assertEqual(transition["state_machine_id"], nodes["Root"]["id"])
+            # The write reply is the same object get_anim_graph emits.
+            self.assertEqual(described["transitions"], [transition])
+
+            # A wildcard transition names no source.
+            added = self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=None, target_node_id=idle["id"])
+            self.assertEqual(added["status"], "ok", added)
+            wildcard = json.loads(added["output"])
+            self.assertTrue(wildcard["wildcard"])
+            self.assertIsNone(wildcard["source_node_id"])
+            self.assertEqual(wildcard["target_node_id"], idle["id"])
+            self.assertEqual(wildcard["conditions"], [])
+            described, _ = self._describe(graph_id)
+            self.assertEqual({t["id"] for t in described["transitions"]}, {transition["id"], wildcard["id"]})
+
+            adjusted = self.native(
+                "set_anim_graph_transition", anim_graph_id=graph_id, transition_id=transition["id"], disabled=True, priority=3, blend_time=0.1
+            )
+            self.assertEqual(adjusted["status"], "ok", adjusted)
+            adjusted = json.loads(adjusted["output"])
+            self.assertEqual(adjusted["id"], transition["id"])
+            self.assertTrue(adjusted["disabled"])
+            self.assertEqual(adjusted["priority"], 3)
+            self.assertAlmostEqual(adjusted["blend_time"], 0.1, places=5)
+            self.assertEqual(len(adjusted["conditions"]), 1)  # adjusting keeps the conditions
+            described, _ = self._describe(graph_id)
+            self.assertIn(adjusted, described["transitions"])
+
+            for transition_id in (transition["id"], wildcard["id"]):
+                removed = self.native("remove_anim_graph_transition", anim_graph_id=graph_id, transition_id=transition_id)
+                self.assertEqual(removed["status"], "ok", removed)
+                self.assertEqual(json.loads(removed["output"])["removed"], transition_id)
+            described, _ = self._describe(graph_id)
+            self.assertEqual(described["transitions"], [])
+
+            # Blend tree wiring: a Blend Two node's output pose into the final node.
+            tree = self._add_node(graph_id, "BlendTree", "Tree")
+            final = self._add_node(graph_id, "BlendTreeFinalNode", "Final", parent_id=tree["id"])
+            blend = self._add_node(graph_id, "Blend Two", "Blend", parent_id=tree["id"])
+            connected = self.native(
+                "connect_anim_graph_ports",
+                anim_graph_id=graph_id,
+                source_node_id=blend["id"],
+                source_port="Output Pose",
+                target_node_id=final["id"],
+                target_port="Input Pose",
+            )
+            self.assertEqual(connected["status"], "ok", connected)
+            port = json.loads(connected["output"])
+            self.assertEqual(port["index"], 0)
+            self.assertEqual(port["name"], "Input Pose")
+            self.assertEqual(port["connection"], {"source_node_id": blend["id"], "source_port": 0})
+            _, nodes = self._describe(graph_id)
+            self.assertEqual(nodes["Final"]["input_ports"], [port])
+            # The port's connection is the one entry an input port holds.
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=blend["id"],
+                    source_port=0,
+                    target_node_id=final["id"],
+                    target_port=0,
+                ),
+                "validation_failed",
+                "already has a connection",
+            )
+            disconnected = self.native("disconnect_anim_graph_ports", anim_graph_id=graph_id, target_node_id=final["id"], target_port=0)
+            self.assertEqual(disconnected["status"], "ok", disconnected)
+            self.assertTrue(re.fullmatch(r"\d+", json.loads(disconnected["output"])["removed"]), disconnected)
+            _, nodes = self._describe(graph_id)
+            self.assertIsNone(nodes["Final"]["input_ports"][0]["connection"])
+
+            # Node adjustments: rename and move, then the motion node's motion
+            # ids (the engine stores them with random-selection weights), then
+            # disable.
+            renamed = self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], name="Stand", position=[10, 20])
+            self.assertEqual(renamed["status"], "ok", renamed)
+            renamed = json.loads(renamed["output"])
+            self.assertEqual(renamed["id"], idle["id"])
+            self.assertEqual(renamed["name"], "Stand")
+            self.assertEqual(renamed["position"], [10, 20])
+            self.assertEqual(renamed["motion_ids"], [])
+            motions = self.native(
+                "set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], attributes={"motionIds": ["jack_idle_zup"], "loop": False}
+            )
+            self.assertEqual(motions["status"], "ok", motions)
+            motions = json.loads(motions["output"])
+            self.assertEqual(motions["motion_ids"], ["jack_idle_zup"])
+            _, nodes = self._describe(graph_id)
+            self.assertEqual(nodes["Stand"], motions)
+            self.assertEqual(nodes["Stand"]["motion_ids"], ["jack_idle_zup"])
+            self.assertIsNone(nodes["Tree"]["motion_ids"])
+            disabled = self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=walk["id"], enabled=False)
+            self.assertEqual(disabled["status"], "ok", disabled)
+            self.assertFalse(json.loads(disabled["output"])["enabled"])
+            _, nodes = self._describe(graph_id)
+            self.assertFalse(nodes["Walk"]["enabled"])
+        finally:
+            removed = self.native("remove_anim_graph", anim_graph_id=graph_id)
+        self.assertEqual(removed["status"], "ok", removed)
+
+    def test_transition_and_connection_refusals(self):
+        graph_id = self._create_editable_graph()
+        try:
+            idle = self._add_node(graph_id, "Motion", "Idle")
+            walk = self._add_node(graph_id, "Motion", "Walk")
+            sub = self._add_node(graph_id, "AnimGraphStateMachine", "Sub")
+            inner = self._add_node(graph_id, "Motion", "Inner", parent_id=sub["id"])
+            tree = self._add_node(graph_id, "BlendTree", "Tree")
+            final = self._add_node(graph_id, "BlendTreeFinalNode", "Final", parent_id=tree["id"])
+            blend = self._add_node(graph_id, "Blend Two", "Blend", parent_id=tree["id"])
+            const = self._add_node(graph_id, "Float Constant", "Const", parent_id=tree["id"])
+            # The states of different state machines cannot be joined.
+            self._expect_error(
+                self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=idle["id"], target_node_id=inner["id"]),
+                "validation_failed",
+                "same state machine",
+            )
+            # A blend tree node is not a state.
+            self._expect_error(
+                self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=blend["id"], target_node_id=final["id"]),
+                "validation_failed",
+                "not a state",
+            )
+            self._expect_error(
+                self.native(
+                    "add_anim_graph_transition",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    target_node_id=walk["id"],
+                    conditions=[{"condition_type": "NoSuchCondition"}],
+                ),
+                "validation_failed",
+                "known:",
+            )
+            self._expect_error(
+                self.native(
+                    "add_anim_graph_transition",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    target_node_id=walk["id"],
+                    conditions=[{"condition_type": "TimeCondition", "attributes": {"parameterName": "Speed"}}],
+                ),
+                "validation_failed",
+                "supported:",
+            )
+            self._expect_error(
+                self.native(
+                    "add_anim_graph_transition",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    target_node_id=walk["id"],
+                    conditions=[{"condition_type": "ParameterCondition", "attributes": {"parameterName": "Nope"}}],
+                ),
+                "validation_failed",
+                "no value parameter",
+            )
+            self._expect_error(
+                self.native("add_anim_graph_transition", anim_graph_id=graph_id, source_node_id=idle["id"], target_node_id=walk["id"], blend_time=-1),
+                "validation_failed",
+                "blend_time",
+            )
+            self._expect_error(self.native("remove_anim_graph_transition", anim_graph_id=graph_id, transition_id="123456789"), "not_found")
+            self._expect_error(
+                self.native("set_anim_graph_transition", anim_graph_id=graph_id, transition_id="123456789", disabled=True), "not_found"
+            )
+            # Ports: a state has none to connect, and names are checked.
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=idle["id"],
+                    source_port=0,
+                    target_node_id=walk["id"],
+                    target_port=0,
+                ),
+                "validation_failed",
+                "add_anim_graph_transition",
+            )
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=blend["id"],
+                    source_port="Output Pose",
+                    target_node_id=final["id"],
+                    target_port="Pose In",
+                ),
+                "validation_failed",
+                '"Input Pose" (0)',
+            )
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=blend["id"],
+                    source_port="Output Pose",
+                    target_node_id=blend["id"],
+                    target_port="Pose 1",
+                ),
+                "validation_failed",
+                "same node",
+            )
+            # A float output into a pose input carries the wrong data.
+            self._expect_error(
+                self.native(
+                    "connect_anim_graph_ports",
+                    anim_graph_id=graph_id,
+                    source_node_id=const["id"],
+                    source_port=0,
+                    target_node_id=final["id"],
+                    target_port="Input Pose",
+                ),
+                "validation_failed",
+                "incompatible",
+            )
+            self._expect_error(
+                self.native("disconnect_anim_graph_ports", anim_graph_id=graph_id, target_node_id=final["id"], target_port="Input Pose"),
+                "not_found",
+                "no connection",
+            )
+            # Node edits: unknown fields are listed, names stay unique.
+            self._expect_error(
+                self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], attributes={"motionId": ["x"]}),
+                "validation_failed",
+                "motionIds",
+            )
+            self._expect_error(
+                self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"], name="Walk"), "validation_failed", "already exists"
+            )
+            self._expect_error(self.native("set_anim_graph_node", anim_graph_id=graph_id, node_id=idle["id"]), "validation_failed", "at least one")
+            # Nothing above touched the graph.
+            described, nodes = self._describe(graph_id)
+            self.assertEqual(described["transitions"], [])
+            self.assertEqual(set(nodes), {"Root", "Idle", "Walk", "Sub", "Inner", "Tree", "Final", "Blend", "Const"})
+            self.assertIsNone(nodes["Final"]["input_ports"][0]["connection"])
+        finally:
+            removed = self.native("remove_anim_graph", anim_graph_id=graph_id)
+        self.assertEqual(removed["status"], "ok", removed)
+
 
 class TestSecureMode(LiveEditorTest):
     """What the AgentServer serves and refuses under AI_COMPANION_SECURE_MODE=1.

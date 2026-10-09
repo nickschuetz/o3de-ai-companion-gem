@@ -296,6 +296,331 @@ namespace UnitTest
             "SaveAnimGraph -filename \"/proj/Assets/Graphs/My Graph.animgraph\" -index 2 -sourceControl false");
     }
 
+    // -- Scalars -------------------------------------------------------------
+
+    TEST_F(AnimGraphCommandTextFixture, ScalarText_NumbersBoolsAndStrings)
+    {
+        rapidjson::Document doc = Parse(R"({"i": 3, "n": -7, "f": 0.25, "b": false, "s": "jack_idle_zup", "bad": "a}b", "arr": [1]})");
+        AZStd::string text;
+        AZStd::string reason;
+        EXPECT_TRUE(Text::FormatScalarText(doc["i"], text, reason));
+        EXPECT_EQ(text, "3");
+        EXPECT_TRUE(Text::FormatScalarText(doc["n"], text, reason));
+        EXPECT_EQ(text, "-7");
+        EXPECT_TRUE(Text::FormatScalarText(doc["f"], text, reason));
+        EXPECT_EQ(text, "0.25");
+        EXPECT_TRUE(Text::FormatScalarText(doc["b"], text, reason));
+        EXPECT_EQ(text, "false");
+        EXPECT_TRUE(Text::FormatScalarText(doc["s"], text, reason));
+        EXPECT_EQ(text, "jack_idle_zup");
+        EXPECT_FALSE(Text::FormatScalarText(doc["bad"], text, reason));
+        EXPECT_NE(reason.find("may not contain"), AZStd::string::npos) << reason.c_str();
+        EXPECT_FALSE(Text::FormatScalarText(doc["arr"], text, reason));
+        EXPECT_EQ(reason, "must be a JSON number, bool or string");
+        EXPECT_EQ(Text::FloatText(0.3), "0.3");
+        EXPECT_EQ(Text::FloatText(1.0), "1");
+    }
+
+    // -- Conditions ----------------------------------------------------------
+
+    TEST_F(AnimGraphCommandTextFixture, ConditionTypeTable_HoldsDistinctValidUuidsAndResolvesNames)
+    {
+        ASSERT_EQ(Text::ConditionTypeCount(), 7u);
+        for (size_t i = 0; i < Text::ConditionTypeCount(); ++i)
+        {
+            const Text::ConditionType& type = Text::ConditionTypeAt(i);
+            const AZ::Uuid uuid = AZ::Uuid::CreateStringPermissive(type.m_uuid);
+            EXPECT_FALSE(uuid.IsNull()) << type.m_shortName;
+            EXPECT_EQ(AZStd::string(uuid.ToFixedString().c_str()), AZStd::string(type.m_uuid)) << type.m_shortName;
+            for (size_t j = i + 1; j < Text::ConditionTypeCount(); ++j)
+            {
+                EXPECT_STRNE(type.m_uuid, Text::ConditionTypeAt(j).m_uuid);
+            }
+            EXPECT_EQ(Text::FindConditionType(type.m_shortName), &type);
+            EXPECT_EQ(Text::FindConditionType(type.m_rttiName), &type);
+            EXPECT_GT(type.m_attributeCount, 0u);
+            // Every enum attribute carries its table.
+            for (size_t a = 0; a < type.m_attributeCount; ++a)
+            {
+                const Text::ConditionAttribute& attribute = type.m_attributes[a];
+                EXPECT_EQ(attribute.m_kind == Text::AttributeKind::Enum, attribute.m_enum != nullptr) << attribute.m_key;
+            }
+        }
+        EXPECT_STREQ(Text::FindConditionType("parametercondition")->m_uuid, "{458D0D08-3F1E-4116-89FC-50F447EDC84E}");
+        EXPECT_STREQ(Text::FindConditionType("ANIMGRAPHTIMECONDITION")->m_shortName, "TimeCondition");
+        EXPECT_EQ(Text::FindConditionType("Condition"), nullptr);
+        EXPECT_EQ(Text::FindConditionType(""), nullptr);
+        EXPECT_EQ(
+            Text::ConditionTypeNames(),
+            "ParameterCondition, TimeCondition, PlayTimeCondition, MotionCondition, StateCondition, TagCondition, Vector2Condition");
+    }
+
+    TEST_F(AnimGraphCommandTextFixture, ConditionAttributes_PerTypeKeysAreTheReflectedFieldNames)
+    {
+        const Text::ConditionType* parameter = Text::FindConditionType("ParameterCondition");
+        ASSERT_NE(parameter, nullptr);
+        EXPECT_EQ(
+            Text::ConditionAttributeNames(*parameter),
+            "parameterName, function, testValue, rangeValue, timeRequirement, stringFunction, testString");
+        EXPECT_EQ(
+            Text::ConditionAttributeNames(*Text::FindConditionType("TimeCondition")),
+            "countDownTime, useRandomization, minRandomTime, maxRandomTime");
+        EXPECT_EQ(Text::ConditionAttributeNames(*Text::FindConditionType("PlayTimeCondition")), "nodeId, mode, playTime");
+        EXPECT_EQ(
+            Text::ConditionAttributeNames(*Text::FindConditionType("MotionCondition")), "motionNodeId, testFunction, numLoops, playTime");
+        EXPECT_EQ(Text::ConditionAttributeNames(*Text::FindConditionType("StateCondition")), "stateId, testFunction, playTime");
+        EXPECT_EQ(Text::ConditionAttributeNames(*Text::FindConditionType("TagCondition")), "function, tags");
+        EXPECT_EQ(
+            Text::ConditionAttributeNames(*Text::FindConditionType("Vector2Condition")),
+            "parameterName, operation, testFunction, testValue, rangeValue");
+
+        const Text::ConditionAttribute* function = Text::FindConditionAttribute(*parameter, "function");
+        ASSERT_NE(function, nullptr);
+        EXPECT_EQ(function->m_kind, Text::AttributeKind::Enum);
+        EXPECT_EQ(Text::EnumNames(*function->m_enum), "GREATER, GREATEREQUAL, LESS, LESSEQUAL, NOTEQUAL, EQUAL, INRANGE, NOTINRANGE");
+        EXPECT_EQ(Text::FindConditionAttribute(*parameter, "Function"), nullptr); // field names are case-sensitive
+        EXPECT_EQ(Text::FindConditionAttribute(*parameter, "tags"), nullptr);
+        EXPECT_EQ(Text::FindConditionAttribute(*Text::FindConditionType("TagCondition"), "tags")->m_kind, Text::AttributeKind::StringList);
+        EXPECT_EQ(
+            Text::FindConditionAttribute(*Text::FindConditionType("MotionCondition"), "motionNodeId")->m_kind, Text::AttributeKind::NodeId);
+        EXPECT_EQ(
+            Text::FindConditionAttribute(*Text::FindConditionType("MotionCondition"), "numLoops")->m_kind, Text::AttributeKind::Count);
+    }
+
+    TEST_F(AnimGraphCommandTextFixture, ConditionAttribute_FormatsEveryKind)
+    {
+        const Text::ConditionType& parameter = *Text::FindConditionType("ParameterCondition");
+        const Text::ConditionType& time = *Text::FindConditionType("TimeCondition");
+        const Text::ConditionType& motion = *Text::FindConditionType("MotionCondition");
+        const Text::ConditionType& tag = *Text::FindConditionType("TagCondition");
+        rapidjson::Document doc = Parse(
+            R"({"f": 0.5, "fs": "0.5", "c": 3, "cn": -1, "cf": 2.5, "b": true, "bi": 1, "s": "Speed", "sbad": "50%",
+                "id": "17720413266153757478", "idn": 42, "idbad": "0", "e": 6, "ebad": 8, "en": "greater", "enp": "FUNCTION_LESS",
+                "enbad": "BIGGER", "eb": true, "l": ["Attack", "Jump"], "lbad": ["Attack", 2], "lchar": ["a{b"], "ls": "Attack"})");
+        Text::AttributeValue value;
+        AZStd::string reason;
+        auto format = [&](const Text::ConditionType& type, const char* key, const char* json)
+        {
+            const Text::ConditionAttribute* attribute = Text::FindConditionAttribute(type, key);
+            EXPECT_NE(attribute, nullptr) << key;
+            reason.clear();
+            return attribute && Text::FormatConditionAttribute(*attribute, doc[json], value, reason);
+        };
+
+        EXPECT_TRUE(format(parameter, "testValue", "f"));
+        EXPECT_EQ(value.m_text, "0.5");
+        EXPECT_FALSE(format(parameter, "testValue", "fs"));
+        EXPECT_EQ(reason, "must be a JSON number");
+
+        EXPECT_TRUE(format(motion, "numLoops", "c"));
+        EXPECT_EQ(value.m_text, "3");
+        EXPECT_FALSE(format(motion, "numLoops", "cn"));
+        EXPECT_FALSE(format(motion, "numLoops", "cf"));
+        EXPECT_EQ(reason, "must be a JSON integer from 0 to 4294967295");
+
+        EXPECT_TRUE(format(time, "useRandomization", "b"));
+        EXPECT_EQ(value.m_text, "true");
+        EXPECT_FALSE(format(time, "useRandomization", "bi"));
+
+        EXPECT_TRUE(format(parameter, "parameterName", "s"));
+        EXPECT_EQ(value.m_text, "Speed");
+        EXPECT_FALSE(format(parameter, "parameterName", "sbad"));
+        EXPECT_FALSE(format(parameter, "parameterName", "f"));
+
+        EXPECT_TRUE(format(motion, "motionNodeId", "id"));
+        EXPECT_EQ(value.m_text, "17720413266153757478");
+        EXPECT_TRUE(format(motion, "motionNodeId", "idn"));
+        EXPECT_EQ(value.m_text, "42");
+        EXPECT_FALSE(format(motion, "motionNodeId", "idbad"));
+        EXPECT_NE(reason.find("node id"), AZStd::string::npos) << reason.c_str();
+
+        EXPECT_TRUE(format(parameter, "function", "e"));
+        EXPECT_EQ(value.m_text, "6");
+        EXPECT_FALSE(format(parameter, "function", "ebad"));
+        EXPECT_NE(reason.find("GREATER, GREATEREQUAL"), AZStd::string::npos) << reason.c_str();
+        EXPECT_TRUE(format(parameter, "function", "en")); // case-insensitive name
+        EXPECT_EQ(value.m_text, "0");
+        EXPECT_TRUE(format(parameter, "function", "enp")); // the engine identifier's prefix is accepted
+        EXPECT_EQ(value.m_text, "2");
+        EXPECT_FALSE(format(parameter, "function", "enbad"));
+        EXPECT_NE(reason.find("'BIGGER' is not a name"), AZStd::string::npos) << reason.c_str();
+        EXPECT_FALSE(format(parameter, "function", "eb"));
+        // The other enums map their own identifiers.
+        EXPECT_FALSE(format(motion, "testFunction", "enp")); // the FUNCTION_ prefix is fine, but LESS is not a motion test function
+        EXPECT_FALSE(format(tag, "function", "e")); // 6 is out of the tag range 0..3
+        {
+            rapidjson::Document names =
+                Parse(R"({"m": "HASENDED", "t": "oneormore", "p": "MODE_REACHEDEND", "o": "GetY", "sf": "NOTEQUAL_CASESENSITIVE"})");
+            const Text::ConditionAttribute* a = Text::FindConditionAttribute(motion, "testFunction");
+            EXPECT_TRUE(Text::FormatConditionAttribute(*a, names["m"], value, reason));
+            EXPECT_EQ(value.m_text, "1");
+            a = Text::FindConditionAttribute(tag, "function");
+            EXPECT_TRUE(Text::FormatConditionAttribute(*a, names["t"], value, reason));
+            EXPECT_EQ(value.m_text, "2");
+            a = Text::FindConditionAttribute(*Text::FindConditionType("PlayTimeCondition"), "mode");
+            EXPECT_TRUE(Text::FormatConditionAttribute(*a, names["p"], value, reason));
+            EXPECT_EQ(value.m_text, "1");
+            a = Text::FindConditionAttribute(*Text::FindConditionType("Vector2Condition"), "operation");
+            EXPECT_TRUE(Text::FormatConditionAttribute(*a, names["o"], value, reason));
+            EXPECT_EQ(value.m_text, "2");
+            a = Text::FindConditionAttribute(parameter, "stringFunction");
+            EXPECT_TRUE(Text::FormatConditionAttribute(*a, names["sf"], value, reason));
+            EXPECT_EQ(value.m_text, "1");
+        }
+
+        EXPECT_TRUE(format(tag, "tags", "l"));
+        ASSERT_EQ(value.m_list.size(), 2u);
+        EXPECT_EQ(value.m_list[0], "Attack");
+        EXPECT_EQ(value.m_list[1], "Jump");
+        EXPECT_TRUE(value.m_text.empty());
+        EXPECT_FALSE(format(tag, "tags", "lbad"));
+        EXPECT_EQ(reason, "element 1 is not a string");
+        EXPECT_FALSE(format(tag, "tags", "lchar"));
+        EXPECT_FALSE(format(tag, "tags", "ls"));
+        EXPECT_EQ(reason, "must be a JSON array of strings");
+    }
+
+    // -- Ports ---------------------------------------------------------------
+
+    TEST_F(AnimGraphCommandTextFixture, ResolvePort_IndexOrNameExactThenCaseInsensitive)
+    {
+        const AZStd::vector<AZStd::string> ports = { "Pose 1", "Pose 2", "Weight" };
+        rapidjson::Document doc = Parse(R"({"i": 1, "big": 3, "neg": -1, "n": "Weight", "ci": "pose 2", "no": "Mask", "o": {}})");
+        size_t index = Text::NoPort;
+        AZStd::string reason;
+        EXPECT_TRUE(Text::ResolvePort(ports, doc["i"], index, reason));
+        EXPECT_EQ(index, 1u);
+        EXPECT_TRUE(Text::ResolvePort(ports, doc["n"], index, reason));
+        EXPECT_EQ(index, 2u);
+        EXPECT_TRUE(Text::ResolvePort(ports, doc["ci"], index, reason));
+        EXPECT_EQ(index, 1u);
+        EXPECT_FALSE(Text::ResolvePort(ports, doc["big"], index, reason));
+        EXPECT_EQ(index, Text::NoPort);
+        EXPECT_NE(reason.find("out of range"), AZStd::string::npos) << reason.c_str();
+        EXPECT_NE(reason.find("\"Weight\" (2)"), AZStd::string::npos) << reason.c_str();
+        EXPECT_FALSE(Text::ResolvePort(ports, doc["neg"], index, reason)); // a negative number is not an index
+        EXPECT_FALSE(Text::ResolvePort(ports, doc["no"], index, reason));
+        EXPECT_NE(reason.find("no port named 'Mask'"), AZStd::string::npos) << reason.c_str();
+        EXPECT_NE(reason.find("\"Pose 1\" (0), \"Pose 2\" (1), \"Weight\" (2)"), AZStd::string::npos) << reason.c_str();
+        EXPECT_FALSE(Text::ResolvePort(ports, doc["o"], index, reason));
+        EXPECT_EQ(Text::PortNames({}), "none");
+        EXPECT_FALSE(Text::ResolvePort({}, doc["i"], index, reason));
+        EXPECT_NE(reason.find("the ports are none"), AZStd::string::npos) << reason.c_str();
+    }
+
+    // -- Transition, connection and node commands ----------------------------
+
+    TEST_F(AnimGraphCommandTextFixture, CreateTransitionCommand_NamedAndWildcard)
+    {
+        EXPECT_EQ(
+            Text::CreateTransitionCommand(7, "Idle", "Walk", "123"),
+            "AnimGraphCreateConnection -animGraphID 7 -sourceNode \"Idle\" -targetNode \"Walk\" -sourcePort 0 -targetPort 0 "
+            "-startOffsetX 0 -startOffsetY 0 -endOffsetX 0 -endOffsetY 0 -id 123 -transitionType {E69C8C6E-7066-43DD-B1BF-0D2FFBDDF457}");
+        // A wildcard transition names no source: the engine finds no node
+        // named "" and sets the wildcard flag.
+        EXPECT_EQ(
+            Text::CreateTransitionCommand(7, "", "Idle", "456"),
+            "AnimGraphCreateConnection -animGraphID 7 -sourceNode \"\" -targetNode \"Idle\" -sourcePort 0 -targetPort 0 "
+            "-startOffsetX 0 -startOffsetY 0 -endOffsetX 0 -endOffsetY 0 -id 456 -transitionType {E69C8C6E-7066-43DD-B1BF-0D2FFBDDF457}");
+    }
+
+    TEST_F(AnimGraphCommandTextFixture, AdjustTransitionCommand_OnlyTheGivenFields)
+    {
+        Text::TransitionAdjustments none;
+        EXPECT_FALSE(none.Any());
+        EXPECT_EQ(Text::AdjustTransitionCommand(7, "123", none), "AnimGraphAdjustTransition -animGraphId 7 -transitionId 123");
+
+        Text::TransitionAdjustments blend;
+        blend.m_hasBlendTime = true;
+        blend.m_blendTime = 0.25f;
+        EXPECT_TRUE(blend.Any());
+        EXPECT_EQ(
+            Text::AdjustTransitionCommand(7, "123", blend),
+            "AnimGraphAdjustTransition -animGraphId 7 -transitionId 123 -attributesString {-transitionTime {0.25}}");
+
+        Text::TransitionAdjustments all;
+        all.m_hasBlendTime = true;
+        all.m_blendTime = 0.5f;
+        all.m_hasPriority = true;
+        all.m_priority = 3;
+        all.m_hasDisabled = true;
+        all.m_disabled = true;
+        all.m_hasSyncMode = true;
+        all.m_syncMode = 2;
+        all.m_hasInterpolation = true;
+        all.m_interpolation = 1;
+        EXPECT_EQ(
+            Text::AdjustTransitionCommand(7, "123", all),
+            "AnimGraphAdjustTransition -animGraphId 7 -transitionId 123 -isDisabled true "
+            "-attributesString {-transitionTime {0.5} -priority {3} -syncMode {2} -interpolationType {1}}");
+
+        Text::TransitionAdjustments enable;
+        enable.m_hasDisabled = true;
+        enable.m_disabled = false;
+        EXPECT_EQ(
+            Text::AdjustTransitionCommand(7, "123", enable),
+            "AnimGraphAdjustTransition -animGraphId 7 -transitionId 123 -isDisabled false");
+    }
+
+    TEST_F(AnimGraphCommandTextFixture, ConditionAndRemoveTransitionCommands)
+    {
+        EXPECT_EQ(
+            Text::AddConditionCommand(
+                7, "123", "{458D0D08-3F1E-4116-89FC-50F447EDC84E}", "<ObjectStream version=\"3\">\n</ObjectStream>\n"),
+            "AnimGraphAddCondition -animGraphId 7 -transitionId 123 -conditionType {458D0D08-3F1E-4116-89FC-50F447EDC84E} "
+            "-contents {<ObjectStream version=\"3\">\n</ObjectStream>\n}");
+        EXPECT_EQ(
+            Text::RemoveTransitionCommand(7, "Idle", "Walk", "123"),
+            "AnimGraphRemoveConnection -animGraphID 7 -sourceNode \"Idle\" -targetNode \"Walk\" -sourcePort 0 -targetPort 0 -id 123");
+        EXPECT_EQ(
+            Text::RemoveTransitionCommand(7, "", "Idle", "456"),
+            "AnimGraphRemoveConnection -animGraphID 7 -sourceNode \"\" -targetNode \"Idle\" -sourcePort 0 -targetPort 0 -id 456");
+    }
+
+    TEST_F(AnimGraphCommandTextFixture, PortConnectionCommands_ByIndexWithoutTransitionType)
+    {
+        EXPECT_EQ(
+            Text::CreatePortConnectionCommand(7, "Blend", "Final Node", 0, 2),
+            "AnimGraphCreateConnection -animGraphID 7 -sourceNode \"Blend\" -targetNode \"Final Node\" -sourcePort 0 -targetPort 2 "
+            "-startOffsetX 0 -startOffsetY 0 -endOffsetX 0 -endOffsetY 0");
+        EXPECT_EQ(
+            Text::RemovePortConnectionCommand(7, "Blend", "Final Node", 0, 2),
+            "AnimGraphRemoveConnection -animGraphID 7 -sourceNode \"Blend\" -targetNode \"Final Node\" -sourcePort 0 -targetPort 2");
+    }
+
+    TEST_F(AnimGraphCommandTextFixture, AttributesString_BracesEachValue)
+    {
+        EXPECT_EQ(Text::AttributesString({}), "");
+        EXPECT_EQ(Text::AttributesString({ { "playSpeed", "-0.5" } }), "-playSpeed {-0.5}");
+        EXPECT_EQ(
+            Text::AttributesString({ { "loop", "false" }, { "motionIds", "<ObjectStream version=\"3\">\n</ObjectStream>" } }),
+            "-loop {false} -motionIds {<ObjectStream version=\"3\">\n</ObjectStream>}");
+    }
+
+    TEST_F(AnimGraphCommandTextFixture, AdjustNodeCommand_OnlyTheGivenPieces)
+    {
+        Text::NodeAdjustments none;
+        EXPECT_EQ(Text::AdjustNodeCommand(7, "Idle", none), "AnimGraphAdjustNode -animGraphID 7 -name \"Idle\" -updateAttributes true");
+
+        Text::NodeAdjustments rename;
+        rename.m_newName = "Stand Still";
+        rename.m_hasPosition = true;
+        rename.m_xPos = -10;
+        rename.m_yPos = 20;
+        EXPECT_EQ(
+            Text::AdjustNodeCommand(7, "Idle", rename),
+            "AnimGraphAdjustNode -animGraphID 7 -name \"Idle\" -newName \"Stand Still\" -xPos -10 -yPos 20 -updateAttributes true");
+
+        Text::NodeAdjustments disable;
+        disable.m_hasEnabled = true;
+        disable.m_enabled = false;
+        disable.m_attributes = { { "loop", "false" }, { "playSpeed", "1.5" } };
+        EXPECT_EQ(
+            Text::AdjustNodeCommand(7, "Idle", disable),
+            "AnimGraphAdjustNode -animGraphID 7 -name \"Idle\" -enabled false -updateAttributes true "
+            "-attributesString {-loop {false} -playSpeed {1.5}}");
+    }
+
     // -- Paths ---------------------------------------------------------------
 
     TEST_F(AnimGraphCommandTextFixture, ResolveAgainstRoot_JoinsRelativeKeepsAbsoluteAndNormalizes)

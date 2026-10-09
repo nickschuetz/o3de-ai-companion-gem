@@ -346,7 +346,13 @@ namespace UnitTest
                                                    "remove_anim_graph_node",
                                                    "set_anim_graph_entry_state",
                                                    "add_anim_graph_parameter",
-                                                   "remove_anim_graph_parameter" };
+                                                   "remove_anim_graph_parameter",
+                                                   "add_anim_graph_transition",
+                                                   "remove_anim_graph_transition",
+                                                   "set_anim_graph_transition",
+                                                   "connect_anim_graph_ports",
+                                                   "disconnect_anim_graph_ports",
+                                                   "set_anim_graph_node" };
 
         for (const auto& type : safeTypes)
         {
@@ -364,7 +370,9 @@ namespace UnitTest
              type == "set_transform" || type == "delete_entity" || type == "list_anim_graphs" || type == "get_anim_graph" ||
              type == "create_anim_graph" || type == "remove_anim_graph" || type == "load_anim_graph" || type == "save_anim_graph" ||
              type == "add_anim_graph_node" || type == "remove_anim_graph_node" || type == "set_anim_graph_entry_state" ||
-             type == "add_anim_graph_parameter" || type == "remove_anim_graph_parameter");
+             type == "add_anim_graph_parameter" || type == "remove_anim_graph_parameter" || type == "add_anim_graph_transition" ||
+             type == "remove_anim_graph_transition" || type == "set_anim_graph_transition" || type == "connect_anim_graph_ports" ||
+             type == "disconnect_anim_graph_ports" || type == "set_anim_graph_node");
         EXPECT_FALSE(isSafe);
     }
 

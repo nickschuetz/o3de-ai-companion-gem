@@ -11,6 +11,7 @@
 #include <AzCore/base.h>
 #include <AzCore/std/containers/vector.h>
 #include <AzCore/std/string/string.h>
+#include <AzCore/std/utility/pair.h>
 
 namespace AiCompanion::AnimGraphCommandText
 {
@@ -92,6 +93,17 @@ namespace AiCompanion::AnimGraphCommandText
     //! Returns false with a reason for a value of the wrong JSON shape.
     bool FormatParameterValue(const rapidjson::Value& value, ValueKind kind, AZStd::string& outText, AZStd::string& outReason);
 
+    //! A float as the engine's text parsers read it: %.9g in the C locale,
+    //! whatever the process locale (survey 0.5).
+    AZStd::string FloatText(double value);
+
+    //! A JSON scalar as the text ReflectionSerializer::DeserializeIntoMember
+    //! hands a field's serializer: an integer as decimal, another number as
+    //! FloatText, a bool as the exact words true and false, a string
+    //! verbatim under the command-text character rule. False with a reason
+    //! for an array, object or null.
+    bool FormatScalarText(const rapidjson::Value& value, AZStd::string& outText, AZStd::string& outReason);
+
     // -- Nodes --------------------------------------------------------------
 
     //! One creatable AnimGraphNode class, as the engine-facing code collects
@@ -124,6 +136,105 @@ namespace AiCompanion::AnimGraphCommandText
     //! AnimGraphNodeCommands.cpp:34-57), so "MotionNode0" is what a user of
     //! the Animation Editor also gets.
     AZStd::string GeneratedNamePrefix(const AZStd::string& rttiName);
+
+    // -- Transitions and conditions -----------------------------------------
+
+    //! AnimGraphStateTransition's AZ_RTTI id, the -transitionType that makes
+    //! AnimGraphCreateConnection create a state transition
+    //! (AnimGraphStateTransition.h:33; survey 3).
+    inline constexpr const char* StateTransitionTypeUuid = "{E69C8C6E-7066-43DD-B1BF-0D2FFBDDF457}";
+
+    //! How a condition attribute is typed on the wire and formatted for
+    //! MCore::ReflectionSerializer::DeserializeIntoMember (survey 4).
+    enum class AttributeKind : AZ::u8
+    {
+        Float, //!< a JSON number; FloatText
+        Count, //!< a JSON integer from 0 to 2^32-1; decimal
+        Bool, //!< a JSON bool; true or false
+        String, //!< a JSON string under the command-text rule; verbatim
+        NodeId, //!< a node id, decimal string or number; the decimal u64 (the engine-facing code checks the node exists)
+        Enum, //!< a JSON integer the enum defines, or one of its names; decimal
+        StringList //!< a JSON array of strings; the engine-facing code serializes the vector to ObjectStream XML
+    };
+
+    struct EnumName
+    {
+        const char* m_name; //!< e.g. "GREATER"
+        int m_value;
+    };
+
+    struct EnumTable
+    {
+        const char* m_prefix; //!< the engine identifier's prefix, e.g. "FUNCTION_", accepted in front of a name too
+        const EnumName* m_names;
+        size_t m_count;
+    };
+
+    struct ConditionAttribute
+    {
+        const char* m_key; //!< the reflected serialize field name, e.g. "parameterName"
+        AttributeKind m_kind;
+        const EnumTable* m_enum; //!< for AttributeKind::Enum, else null
+    };
+
+    struct ConditionType
+    {
+        const char* m_shortName; //!< the name a request passes, e.g. "ParameterCondition"
+        const char* m_rttiName; //!< the engine class, e.g. "AnimGraphParameterCondition"; accepted as a name too
+        const char* m_uuid; //!< the class's AZ_RTTI id, braced and dashed, as -conditionType takes it
+        const ConditionAttribute* m_attributes;
+        size_t m_attributeCount;
+    };
+
+    size_t ConditionTypeCount();
+    const ConditionType& ConditionTypeAt(size_t index);
+
+    //! Resolves a request's condition_type, case-insensitively, against each
+    //! short name and each class name. Null when unknown.
+    const ConditionType* FindConditionType(const AZStd::string& name);
+
+    //! "ParameterCondition, TimeCondition, ..." for the unknown-type message.
+    AZStd::string ConditionTypeNames();
+
+    //! The attribute descriptor for `key` on `type` (exact, case-sensitive:
+    //! the serialize field names are), or null.
+    const ConditionAttribute* FindConditionAttribute(const ConditionType& type, const AZStd::string& key);
+
+    //! "parameterName, function, ..." for the unsupported-attribute message.
+    AZStd::string ConditionAttributeNames(const ConditionType& type);
+
+    //! The names of an enum joined with ", " for a message.
+    AZStd::string EnumNames(const EnumTable& table);
+
+    //! A formatted condition attribute: the text for every kind but
+    //! StringList, whose strings wait for the engine-facing serializer.
+    struct AttributeValue
+    {
+        AZStd::string m_text;
+        AZStd::vector<AZStd::string> m_list;
+    };
+
+    //! Formats a JSON value for `attribute`'s kind. False with a reason for a
+    //! value of the wrong shape, an enum value or name the table lacks, a
+    //! malformed node id, or a string carrying the parser's characters.
+    bool FormatConditionAttribute(
+        const ConditionAttribute& attribute, const rapidjson::Value& value, AttributeValue& out, AZStd::string& outReason);
+
+    // -- Ports --------------------------------------------------------------
+
+    inline constexpr size_t NoPort = static_cast<size_t>(-1);
+
+    //! Resolves a request's port, a JSON unsigned integer (the index) or a
+    //! string (the port name, matched exactly and then case-insensitively,
+    //! since the engine's own lookup is exact and answers InvalidIndex
+    //! otherwise, AnimGraphNode.cpp:515-533), against `portNames`. False with
+    //! a reason that lists the ports for an out-of-range index, an unknown
+    //! name or another JSON shape.
+    bool ResolvePort(
+        const AZStd::vector<AZStd::string>& portNames, const rapidjson::Value& spec, size_t& outIndex, AZStd::string& outReason);
+
+    //! "\"Pose 1\" (0), \"Pose 2\" (1), ..." for a message; "none" when empty.
+    AZStd::string PortNames(const AZStd::vector<AZStd::string>& portNames);
 
     // -- Command lines ------------------------------------------------------
 
@@ -184,6 +295,95 @@ namespace AiCompanion::AnimGraphCommandText
     //! graph id (EMStudioSDK/Source/Commands.cpp:554-562); -sourceControl
     //! false keeps RequestEditForFileBlocking from blocking the main thread.
     AZStd::string SaveCommand(const AZStd::string& absolutePath, size_t managerIndex);
+
+    //! AnimGraphCreateConnection -animGraphID <id> -sourceNode "<source>"
+    //! -targetNode "<target>" -sourcePort 0 -targetPort 0 -startOffsetX 0
+    //! -startOffsetY 0 -endOffsetX 0 -endOffsetY 0 -id <transition id>
+    //! -transitionType {E69C8C6E-...}. An empty source makes a wildcard
+    //! transition (the engine finds no node named "" and sets the flag,
+    //! AnimGraphConnectionCommands.cpp:102, 246-266); -id fixes the id so
+    //! the commands that follow in the same group can name it.
+    AZStd::string CreateTransitionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, const AZStd::string& transitionId);
+
+    struct TransitionAdjustments
+    {
+        float m_blendTime = 0.0f;
+        AZ::u32 m_priority = 0;
+        bool m_disabled = false;
+        int m_syncMode = 0;
+        int m_interpolation = 0;
+        bool m_hasBlendTime = false;
+        bool m_hasPriority = false;
+        bool m_hasDisabled = false;
+        bool m_hasSyncMode = false;
+        bool m_hasInterpolation = false;
+
+        bool Any() const
+        {
+            return m_hasBlendTime || m_hasPriority || m_hasDisabled || m_hasSyncMode || m_hasInterpolation;
+        }
+    };
+
+    //! AnimGraphAdjustTransition -animGraphId <id> -transitionId <id>
+    //! [-isDisabled true|false] [-attributesString {-transitionTime <f>
+    //! -priority <u> -syncMode <d> -interpolationType <d>}], each piece only
+    //! when given. The attribute names are AnimGraphStateTransition's
+    //! reflected fields (AnimGraphStateTransition.cpp:1002-1030); the enums
+    //! serialize as their underlying integer.
+    AZStd::string AdjustTransitionCommand(AZ::u32 animGraphId, const AZStd::string& transitionId, const TransitionAdjustments& adjustments);
+
+    //! AnimGraphAddCondition -animGraphId <id> -transitionId <id>
+    //! -conditionType {uuid} -contents {<ObjectStream XML>}. -contents is a
+    //! required parameter of the command (survey 4) and goes last, since the
+    //! XML is free text.
+    AZStd::string AddConditionCommand(
+        AZ::u32 animGraphId, const AZStd::string& transitionId, const AZStd::string& conditionUuid, const AZStd::string& contentsXml);
+
+    //! AnimGraphRemoveConnection -animGraphID <id> -sourceNode "<source>"
+    //! -targetNode "<target>" -sourcePort 0 -targetPort 0 -id <transition id>.
+    //! The ports are required by the syntax and unused for a state
+    //! transition, which the command finds by -id
+    //! (AnimGraphConnectionCommands.cpp:534-548, 651-661); an empty source
+    //! is a wildcard transition.
+    AZStd::string RemoveTransitionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, const AZStd::string& transitionId);
+
+    //! AnimGraphCreateConnection -animGraphID <id> -sourceNode "<source>"
+    //! -targetNode "<target>" -sourcePort <s> -targetPort <t> -startOffsetX 0
+    //! -startOffsetY 0 -endOffsetX 0 -endOffsetY 0: a blend tree connection
+    //! (no -transitionType). Ports go by index; the gem resolves names first.
+    AZStd::string CreatePortConnectionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, size_t sourcePort, size_t targetPort);
+
+    //! AnimGraphRemoveConnection -animGraphID <id> -sourceNode "<source>"
+    //! -targetNode "<target>" -sourcePort <s> -targetPort <t>.
+    AZStd::string RemovePortConnectionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, size_t sourcePort, size_t targetPort);
+
+    //! "-<field> {<text>} -<field> {<text>}": the -attributesString syntax,
+    //! each value braced so multi-token text, negative numbers and XML stay
+    //! one value (the engine's own SerializeIntoCommandLine form,
+    //! ReflectionSerializer.cpp:302-323).
+    AZStd::string AttributesString(const AZStd::vector<AZStd::pair<AZStd::string, AZStd::string>>& fields);
+
+    struct NodeAdjustments
+    {
+        AZStd::string m_newName; //!< empty: keep the name
+        int m_xPos = 0;
+        int m_yPos = 0;
+        bool m_hasPosition = false;
+        bool m_enabled = true;
+        bool m_hasEnabled = false;
+        AZStd::vector<AZStd::pair<AZStd::string, AZStd::string>> m_attributes; //!< field name, formatted text
+    };
+
+    //! AnimGraphAdjustNode -animGraphID <id> -name "<current>"
+    //! [-newName "<name>"] [-xPos <x> -yPos <y>] [-enabled true|false]
+    //! -updateAttributes true [-attributesString {...}], the attributes last
+    //! since they may hold XML. -updateAttributes makes the node Reinit
+    //! after the change (AnimGraphNodeCommands.cpp:572-577).
+    AZStd::string AdjustNodeCommand(AZ::u32 animGraphId, const AZStd::string& currentName, const NodeAdjustments& adjustments);
 
     // -- Paths --------------------------------------------------------------
 

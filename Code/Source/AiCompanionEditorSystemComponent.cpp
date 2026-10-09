@@ -115,7 +115,41 @@ namespace AiCompanion
                 ->Event(
                     "RemoveAnimGraphParameter",
                     &AiCompanionEditorRequestBus::Events::RemoveAnimGraphParameter,
-                    { { { "animGraphId", "The anim graph's id." }, { "name", "The value parameter's name." } } });
+                    { { { "animGraphId", "The anim graph's id." }, { "name", "The value parameter's name." } } })
+                ->Event(
+                    "AddAnimGraphTransition",
+                    &AiCompanionEditorRequestBus::Events::AddAnimGraphTransition,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson",
+                          "A JSON object: target_node_id, and optional source_node_id (null for a wildcard), blend_time, priority, "
+                          "conditions [{condition_type, attributes}]." } } })
+                ->Event(
+                    "RemoveAnimGraphTransition",
+                    &AiCompanionEditorRequestBus::Events::RemoveAnimGraphTransition,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "transitionId", "The transition's id as GetAnimGraph reports it." } } })
+                ->Event(
+                    "SetAnimGraphTransition",
+                    &AiCompanionEditorRequestBus::Events::SetAnimGraphTransition,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson",
+                          "A JSON object: transition_id, and any of blend_time, priority, disabled, sync_mode, interpolation." } } })
+                ->Event(
+                    "ConnectAnimGraphPorts",
+                    &AiCompanionEditorRequestBus::Events::ConnectAnimGraphPorts,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: source_node_id, source_port, target_node_id, target_port (index or name)." } } })
+                ->Event(
+                    "DisconnectAnimGraphPorts",
+                    &AiCompanionEditorRequestBus::Events::DisconnectAnimGraphPorts,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson", "A JSON object: target_node_id, target_port (index or name)." } } })
+                ->Event(
+                    "SetAnimGraphNode",
+                    &AiCompanionEditorRequestBus::Events::SetAnimGraphNode,
+                    { { { "animGraphId", "The anim graph's id." },
+                        { "argumentsJson",
+                          "A JSON object: node_id, and any of name, position [x, y], enabled, attributes {field: value}." } } });
         }
     }
 
@@ -700,6 +734,42 @@ namespace AiCompanion
         AZ::u32 animGraphId, AZStd::string name)
     {
         return AnimGraphAuthoring::RemoveParameter(animGraphId, name);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::AddAnimGraphTransition(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::AddTransition(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::RemoveAnimGraphTransition(
+        AZ::u32 animGraphId, AZStd::string transitionId)
+    {
+        return AnimGraphAuthoring::RemoveTransition(animGraphId, transitionId);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SetAnimGraphTransition(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::SetTransition(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::ConnectAnimGraphPorts(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::ConnectPorts(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::DisconnectAnimGraphPorts(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::DisconnectPorts(animGraphId, argumentsJson);
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::SetAnimGraphNode(
+        AZ::u32 animGraphId, AZStd::string argumentsJson)
+    {
+        return AnimGraphAuthoring::SetNode(animGraphId, argumentsJson);
     }
 
 } // namespace AiCompanion

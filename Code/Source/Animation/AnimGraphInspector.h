@@ -12,6 +12,8 @@
 namespace EMotionFX
 {
     class AnimGraphNode;
+    class AnimGraphStateMachine;
+    class AnimGraphStateTransition;
     class ValueParameter;
 } // namespace EMotionFX
 
@@ -46,9 +48,20 @@ namespace AiCompanion::AnimGraphInspector
 
     //! One node object: id, name, type, palette_name, category, parent_id,
     //! can_act_as_state, has_output_pose, enabled, position, entry_state_id
-    //! (a state machine's entry state, null for other nodes), input_ports
+    //! (a state machine's entry state, null for other nodes), motion_ids (a
+    //! motion node's motion set entries, null for other nodes), input_ports
     //! with their incoming connection, output_ports.
     void WriteNode(JsonWriter& w, const EMotionFX::AnimGraphNode& node);
+
+    //! One input port object of `node`: index, name, connection (the
+    //! incoming connection's source_node_id and source_port, or null).
+    void WriteInputPort(JsonWriter& w, const EMotionFX::AnimGraphNode& node, size_t portIndex);
+
+    //! One transition object: id, state_machine_id, source_node_id (null for
+    //! a wildcard), target_node_id, wildcard, blend_time, priority, disabled,
+    //! conditions (type and the engine's summary text).
+    void WriteTransition(
+        JsonWriter& w, const EMotionFX::AnimGraphStateMachine& stateMachine, const EMotionFX::AnimGraphStateTransition& transition);
 
     //! One value parameter object: name, type, description, default, min,
     //! max (null for unranged types), group (`groupName` null at the root).

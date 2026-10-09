@@ -69,6 +69,12 @@ The AgentServer uses a length-prefixed JSON protocol:
 | `set_anim_graph_entry_state` | Make `node_id` its state machine's entry state | No (C++ EMotion Studio) |
 | `add_anim_graph_parameter` | Add value parameter `name` of `parameter_type` with optional `default`, `min`, `max`, `description`, `group`; answers the parameter as `get_anim_graph` does | No (C++ EMotion Studio) |
 | `remove_anim_graph_parameter` | Remove value parameter `name` | No (C++ EMotion Studio) |
+| `add_anim_graph_transition` | Add a transition into state `target_node_id` from `source_node_id` (absent or null: wildcard) with optional `blend_time`, `priority`, `disabled`, `sync_mode`, `interpolation` and `conditions` (`[{condition_type, attributes}]`); answers the transition as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `remove_anim_graph_transition` | Remove `transition_id` | No (C++ EMotion Studio) |
+| `set_anim_graph_transition` | Set any of `blend_time`, `priority`, `disabled`, `sync_mode`, `interpolation` on `transition_id` | No (C++ EMotion Studio) |
+| `connect_anim_graph_ports` | Connect `source_port` of `source_node_id` to `target_port` of `target_node_id` inside a blend tree (a port is an index or a name); answers the input port as `get_anim_graph` does | No (C++ EMotion Studio) |
+| `disconnect_anim_graph_ports` | Remove the connection into `target_port` of `target_node_id` | No (C++ EMotion Studio) |
+| `set_anim_graph_node` | Set any of `name`, `position`, `enabled`, `attributes` (reflected fields, e.g. a motion node's `motionIds`) on `node_id`; answers the node as `get_anim_graph` does | No (C++ EMotion Studio) |
 
 o3de-mcp uses `ping` for protocol detection, `get_api_version` inside
 `get_capabilities()` to confirm the gem is present, and the C++ request types
@@ -82,7 +88,7 @@ directly. Both are read-only: `get_anim_graph` answers
 both answer `EMotion FX is not available` (code `unavailable`) when the
 EMotionFX gem is not loaded.
 
-The nine authoring types run through EMotion Studio's command system, so each
+The fifteen authoring types run through EMotion Studio's command system, so each
 request is one step in the Animation Editor's own undo history, not the
 editor's main Undo (and a save is not undoable). The gem validates every
 argument before sending a command: names may not contain `"`, `%`, `{` or
@@ -97,7 +103,30 @@ numbers); paths are normalized against the project root. The type fields are
 `node_type` and `parameter_type` because `type` is the request envelope's own
 field. A graph owned by an asset or runtime instance (one an Anim Graph
 component plays) is refused for every write with `validation_failed`; load
-the file with `load_anim_graph` to edit a copy, then save it. Without EMotion
+the file with `load_anim_graph` to edit a copy, then save it.
+
+The wiring types add their own checks. `add_anim_graph_transition` needs a
+target state inside a state machine and a source that is a state of the same
+state machine and not an exit node (absent or null: a wildcard transition);
+its `conditions` are `{"condition_type", "attributes"}` objects where the type
+is ParameterCondition, TimeCondition, PlayTimeCondition, MotionCondition,
+StateCondition, TagCondition, Vector2Condition or the engine class name, and
+the attributes are the condition's reflected fields (for a parameter
+condition `parameterName`, `function` as 0 to 7 or GREATER, GREATEREQUAL,
+LESS, LESSEQUAL, NOTEQUAL, EQUAL, INRANGE, NOTINRANGE, `testValue`,
+`rangeValue`, `timeRequirement`, `stringFunction`, `testString`; the other
+types are listed in `Code/Source/Animation/AnimGraphCommandText.cpp`); node
+ids named by a condition must exist and parameter names must name a value
+parameter. The field is `condition_type` because `type` is the envelope's
+own field. `connect_anim_graph_ports` resolves a port given as a name
+(exactly, then case-insensitively) before the engine sees it, needs both nodes
+in the same blend tree, compatible port data types, a free input port and no
+cycle, and refuses a state as the target with a pointer to
+`add_anim_graph_transition`. `set_anim_graph_node` checks a new name is
+unique and that each `attributes` key is a reflected field of the node's
+class, taking a number, bool or string, or a list of strings for a string
+list and for a motion node's `motionIds`; an unknown key answers
+`validation_failed` listing the settable fields. Without EMotion
 Studio (the Animation Editor's command system) every authoring type answers
 `unavailable`; a command the engine refuses answers `engine_error` with the
 engine's own text.

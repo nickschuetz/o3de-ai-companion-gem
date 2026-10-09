@@ -89,4 +89,52 @@ namespace AiCompanion::AnimGraphAuthoring
     //! Removes a value parameter by name; a group is refused.
     //! {"removed": "<name>"}.
     AZ::Outcome<AZStd::string, AZStd::string> RemoveParameter(AZ::u32 animGraphId, const AZStd::string& name);
+
+    //! Adds a state transition. `argumentsJson` is an object with
+    //! "target_node_id" (a state inside a state machine), optional
+    //! "source_node_id" (absent or null: a wildcard transition; else a state
+    //! of the same state machine, never an exit node), the optional
+    //! transition fields of SetTransition ("blend_time", "priority",
+    //! "disabled", "sync_mode", "interpolation"), and optional "conditions":
+    //! a list of {"condition_type": <ParameterCondition, TimeCondition,
+    //! PlayTimeCondition, MotionCondition, StateCondition, TagCondition,
+    //! Vector2Condition, or the engine class name>, "attributes": {<reflected
+    //! field>: <value>}} (see AnimGraphCommandText's condition tables). The
+    //! create, adjust and add-condition commands run as one group that is
+    //! undone on failure. Answers the transition object exactly as
+    //! get_anim_graph emits it.
+    AZ::Outcome<AZStd::string, AZStd::string> AddTransition(AZ::u32 animGraphId, const AZStd::string& argumentsJson);
+
+    //! Removes a transition by id. {"removed": "<transition id>"}.
+    AZ::Outcome<AZStd::string, AZStd::string> RemoveTransition(AZ::u32 animGraphId, const AZStd::string& transitionId);
+
+    //! Adjusts a transition. `argumentsJson` is an object with
+    //! "transition_id" and at least one of "blend_time" (seconds, >= 0),
+    //! "priority" (u32), "disabled" (bool), "sync_mode" (0 disabled, 1 track
+    //! based, 2 clip based) and "interpolation" (0 linear, 1 ease curve).
+    //! Answers the transition object as get_anim_graph emits it.
+    AZ::Outcome<AZStd::string, AZStd::string> SetTransition(AZ::u32 animGraphId, const AZStd::string& argumentsJson);
+
+    //! Connects an output port to an input port inside a blend tree.
+    //! `argumentsJson` is an object with "source_node_id", "source_port",
+    //! "target_node_id" and "target_port"; a port is an index or a name
+    //! (exact, then case-insensitive). Both nodes must share a parent that
+    //! is not a state machine, the ports must carry compatible data, the
+    //! input port must be free, and the connection must not close a cycle.
+    //! Answers the target's input port object as get_anim_graph emits it.
+    AZ::Outcome<AZStd::string, AZStd::string> ConnectPorts(AZ::u32 animGraphId, const AZStd::string& argumentsJson);
+
+    //! Removes the connection into an input port. `argumentsJson` is an
+    //! object with "target_node_id" and "target_port" (index or name).
+    //! {"removed": "<connection id>"}.
+    AZ::Outcome<AZStd::string, AZStd::string> DisconnectPorts(AZ::u32 animGraphId, const AZStd::string& argumentsJson);
+
+    //! Adjusts a node. `argumentsJson` is an object with "node_id" and at
+    //! least one of "name" (unique graph-wide), "position" [x, y], "enabled"
+    //! (bool) and "attributes": {<reflected field>: <value>}, each field a
+    //! serialize field of the node's class (bases included, AnimGraphNode's
+    //! own and the structural fields excluded) taking a number, bool or
+    //! string, or a list of strings for a string list and for a motion
+    //! node's "motionIds". Answers the node object as get_anim_graph emits it.
+    AZ::Outcome<AZStd::string, AZStd::string> SetNode(AZ::u32 animGraphId, const AZStd::string& argumentsJson);
 } // namespace AiCompanion::AnimGraphAuthoring

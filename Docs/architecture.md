@@ -72,7 +72,7 @@ flowchart TB
     Agent -->|"MCP tool calls"| MCP
     Agent -->|"TCP JSON"| AgentSrv
     MCP -->|"run_editor_python() / sessions"| API
-    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph,<br/>create/remove/load/save_anim_graph,<br/>add/remove_anim_graph_node, set_anim_graph_entry_state,<br/>add/remove_anim_graph_parameter"| AgentSrv
+    MCP -->|"native requests:<br/>get_api_version, get_scene_snapshot,<br/>get_entity_tree, get_entity, validate_scene,<br/>get_bus_schema, create_entity, set_transform, delete_entity,<br/>list_anim_graphs, get_anim_graph,<br/>create/remove/load/save_anim_graph,<br/>add/remove_anim_graph_node, set_anim_graph_entry_state,<br/>add/remove_anim_graph_parameter,<br/>add/remove/set_anim_graph_transition,<br/>connect/disconnect_anim_graph_ports, set_anim_graph_node"| AgentSrv
     AgentSrv --> AS
     AS --> RP
     AS -->|"every reply"| RSP
@@ -173,7 +173,10 @@ Supported request types: `ping`, `get_api_version`, `get_scene_snapshot`,
 `get_anim_graph`, `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
 `save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,
 `set_anim_graph_entry_state`, `add_anim_graph_parameter`,
-`remove_anim_graph_parameter`, `execute_python`.
+`remove_anim_graph_parameter`, `add_anim_graph_transition`,
+`remove_anim_graph_transition`, `set_anim_graph_transition`,
+`connect_anim_graph_ports`, `disconnect_anim_graph_ports`,
+`set_anim_graph_node`, `execute_python`.
 
 `get_entity` takes `entity_id` (decimal, as a number or string) and returns one
 entity's transform, parent and component list; `get_bus_schema` takes an
@@ -226,6 +229,29 @@ editor's main Undo and from the gem's rollback functions, and a save is not
 undoable. Implemented in `Code/Source/Animation/AnimGraphAuthoring`, with the
 text rules and command builders in `AnimGraphCommandText`, which the C++ unit
 tests cover.
+
+Six more types wire the graph: `add_anim_graph_transition` (`target_node_id`,
+optional `source_node_id` whose absence makes a wildcard transition, optional
+`blend_time`, `priority`, `disabled`, `sync_mode`, `interpolation` and
+`conditions`, a list of `{condition_type, attributes}` objects over the seven
+condition classes and their reflected fields, with enums taken as integers or
+names), `remove_anim_graph_transition` (`transition_id`),
+`set_anim_graph_transition` (`transition_id` plus any of the transition
+fields), `connect_anim_graph_ports` and `disconnect_anim_graph_ports` (nodes
+and ports inside a blend tree, a port given as an index or a name) and
+`set_anim_graph_node` (`node_id` plus any of `name`, `position`, `enabled` and
+`attributes`, the node class's reflected fields, including a motion node's
+`motionIds` as a list of strings). The transition and node replies are the
+objects `get_anim_graph` emits, and `get_anim_graph` node objects carry
+`motion_ids` for motion nodes. A transition with extras is one command group
+(create with a chosen id, adjust, one add-condition per entry) undone on
+failure; a condition's `-contents` is ObjectStream XML serialized in the gem
+from a prototype of the condition class with the attributes applied, as the
+Animation Editor's copy and paste does. The gem checks what the engine's
+commands do not: same state machine for both states, no exit node as a
+source, existing nodes and parameters in conditions, same blend tree and
+compatible, free ports with no cycle for a connection, and a unique new node
+name.
 
 o3de-mcp uses all of them: `ping` for protocol detection, `get_api_version`
 inside its `get_capabilities` tool to confirm the gem is present and report its

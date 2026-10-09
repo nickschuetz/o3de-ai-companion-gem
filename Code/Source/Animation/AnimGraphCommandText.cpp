@@ -42,6 +42,120 @@ namespace AiCompanion::AnimGraphCommandText
         };
         constexpr size_t s_parameterTypeCount = sizeof(s_parameterTypes) / sizeof(s_parameterTypes[0]);
 
+        // The condition classes' AZ_RTTI ids and reflected fields, from the
+        // installed headers and the engine's Reflect functions (survey 4):
+        // AnimGraphParameterCondition.cpp:575-583, AnimGraphTimeCondition.cpp
+        // :231-236, AnimGraphPlayTimeCondition.cpp:298-302,
+        // AnimGraphMotionCondition.cpp:511-517 (eventDatas left out),
+        // AnimGraphStateCondition.cpp:473-477, AnimGraphTagCondition.cpp
+        // :356-359, AnimGraphVector2Condition.cpp:393-399. The enums are
+        // `enum X : AZ::u8` members reflected without an Enum<> entry, so
+        // they serialize as "unsigned char" and take integer text; the names
+        // are the engine's identifiers with their prefix stripped.
+        constexpr EnumName s_parameterFunctionNames[] = {
+            { "GREATER", 0 },  { "GREATEREQUAL", 1 }, { "LESS", 2 },    { "LESSEQUAL", 3 },
+            { "NOTEQUAL", 4 }, { "EQUAL", 5 },        { "INRANGE", 6 }, { "NOTINRANGE", 7 },
+        };
+        constexpr EnumTable s_parameterFunction = { "FUNCTION_", s_parameterFunctionNames, 8 };
+
+        constexpr EnumName s_stringFunctionNames[] = {
+            { "EQUAL_CASESENSITIVE", 0 },
+            { "NOTEQUAL_CASESENSITIVE", 1 },
+        };
+        constexpr EnumTable s_stringFunction = { "STRINGFUNCTION_", s_stringFunctionNames, 2 };
+
+        constexpr EnumName s_playTimeModeNames[] = {
+            { "REACHEDTIME", 0 },
+            { "REACHEDEND", 1 },
+            { "HASLESSTHAN", 2 },
+        };
+        constexpr EnumTable s_playTimeMode = { "MODE_", s_playTimeModeNames, 3 };
+
+        constexpr EnumName s_motionTestFunctionNames[] = {
+            { "EVENT", 0 },        { "HASENDED", 1 },         { "HASREACHEDMAXNUMLOOPS", 2 }, { "PLAYTIME", 3 },
+            { "PLAYTIMELEFT", 4 }, { "ISMOTIONASSIGNED", 5 }, { "ISMOTIONNOTASSIGNED", 6 },   { "NONE", 7 },
+        };
+        constexpr EnumTable s_motionTestFunction = { "FUNCTION_", s_motionTestFunctionNames, 8 };
+
+        constexpr EnumName s_stateTestFunctionNames[] = {
+            { "EXITSTATES", 0 }, { "ENTERING", 1 }, { "ENTER", 2 }, { "EXIT", 3 }, { "END", 4 }, { "PLAYTIME", 5 }, { "NONE", 6 },
+        };
+        constexpr EnumTable s_stateTestFunction = { "FUNCTION_", s_stateTestFunctionNames, 7 };
+
+        constexpr EnumName s_tagFunctionNames[] = {
+            { "ALL", 0 },
+            { "NOTALL", 1 },
+            { "ONEORMORE", 2 },
+            { "NONE", 3 },
+        };
+        constexpr EnumTable s_tagFunction = { "FUNCTION_", s_tagFunctionNames, 4 };
+
+        constexpr EnumName s_vector2OperationNames[] = {
+            { "LENGTH", 0 },
+            { "GETX", 1 },
+            { "GETY", 2 },
+        };
+        constexpr EnumTable s_vector2Operation = { "OPERATION_", s_vector2OperationNames, 3 };
+
+        constexpr ConditionAttribute s_parameterConditionAttributes[] = {
+            { "parameterName", AttributeKind::String, nullptr },  { "function", AttributeKind::Enum, &s_parameterFunction },
+            { "testValue", AttributeKind::Float, nullptr },       { "rangeValue", AttributeKind::Float, nullptr },
+            { "timeRequirement", AttributeKind::Float, nullptr }, { "stringFunction", AttributeKind::Enum, &s_stringFunction },
+            { "testString", AttributeKind::String, nullptr },
+        };
+        constexpr ConditionAttribute s_timeConditionAttributes[] = {
+            { "countDownTime", AttributeKind::Float, nullptr },
+            { "useRandomization", AttributeKind::Bool, nullptr },
+            { "minRandomTime", AttributeKind::Float, nullptr },
+            { "maxRandomTime", AttributeKind::Float, nullptr },
+        };
+        constexpr ConditionAttribute s_playTimeConditionAttributes[] = {
+            { "nodeId", AttributeKind::NodeId, nullptr },
+            { "mode", AttributeKind::Enum, &s_playTimeMode },
+            { "playTime", AttributeKind::Float, nullptr },
+        };
+        constexpr ConditionAttribute s_motionConditionAttributes[] = {
+            { "motionNodeId", AttributeKind::NodeId, nullptr },
+            { "testFunction", AttributeKind::Enum, &s_motionTestFunction },
+            { "numLoops", AttributeKind::Count, nullptr },
+            { "playTime", AttributeKind::Float, nullptr },
+        };
+        constexpr ConditionAttribute s_stateConditionAttributes[] = {
+            { "stateId", AttributeKind::NodeId, nullptr },
+            { "testFunction", AttributeKind::Enum, &s_stateTestFunction },
+            { "playTime", AttributeKind::Float, nullptr },
+        };
+        constexpr ConditionAttribute s_tagConditionAttributes[] = {
+            { "function", AttributeKind::Enum, &s_tagFunction },
+            { "tags", AttributeKind::StringList, nullptr },
+        };
+        constexpr ConditionAttribute s_vector2ConditionAttributes[] = {
+            { "parameterName", AttributeKind::String, nullptr },
+            { "operation", AttributeKind::Enum, &s_vector2Operation },
+            { "testFunction", AttributeKind::Enum, &s_parameterFunction },
+            { "testValue", AttributeKind::Float, nullptr },
+            { "rangeValue", AttributeKind::Float, nullptr },
+        };
+
+        constexpr ConditionType s_conditionTypes[] = {
+            { "ParameterCondition",
+              "AnimGraphParameterCondition",
+              "{458D0D08-3F1E-4116-89FC-50F447EDC84E}",
+              s_parameterConditionAttributes,
+              7 },
+            { "TimeCondition", "AnimGraphTimeCondition", "{9CFC3B92-0D9B-4EC8-9999-625EF21A9993}", s_timeConditionAttributes, 4 },
+            { "PlayTimeCondition",
+              "AnimGraphPlayTimeCondition",
+              "{5368D058-9552-4282-A273-AA9344E65D2E}",
+              s_playTimeConditionAttributes,
+              3 },
+            { "MotionCondition", "AnimGraphMotionCondition", "{0E2EDE4E-BDEE-4383-AB18-208CE7F7A784}", s_motionConditionAttributes, 4 },
+            { "StateCondition", "AnimGraphStateCondition", "{8C955719-5D14-4BB5-BA64-F2A3385CAF7E}", s_stateConditionAttributes, 3 },
+            { "TagCondition", "AnimGraphTagCondition", "{2A786756-80F5-4A55-B00F-5AA876CC4D3A}", s_tagConditionAttributes, 2 },
+            { "Vector2Condition", "AnimGraphVector2Condition", "{605DF8B0-C39A-4BB4-B1A9-ABAF528E0739}", s_vector2ConditionAttributes, 5 },
+        };
+        constexpr size_t s_conditionTypeCount = sizeof(s_conditionTypes) / sizeof(s_conditionTypes[0]);
+
         bool EqualsNoCase(AZStd::string_view a, AZStd::string_view b)
         {
             if (a.size() != b.size())
@@ -220,7 +334,7 @@ namespace AiCompanion::AnimGraphCommandText
                 outReason = "must be a JSON number";
                 return false;
             }
-            outText = AZStd::string::format("%.9g", value.GetDouble());
+            outText = FloatText(value.GetDouble());
             return true;
         case ValueKind::Int:
             if (!value.IsInt())
@@ -274,6 +388,325 @@ namespace AiCompanion::AnimGraphCommandText
         }
         outReason = "unsupported value kind";
         return false;
+    }
+
+    AZStd::string FloatText(double value)
+    {
+        AZ::Locale::ScopedSerializationLocale cLocale;
+        return AZStd::string::format("%.9g", value);
+    }
+
+    bool FormatScalarText(const rapidjson::Value& value, AZStd::string& outText, AZStd::string& outReason)
+    {
+        if (value.IsBool())
+        {
+            outText = value.GetBool() ? "true" : "false";
+            return true;
+        }
+        if (value.IsInt64())
+        {
+            outText = AZStd::string::format("%lld", static_cast<long long>(value.GetInt64()));
+            return true;
+        }
+        if (value.IsUint64())
+        {
+            outText = AZStd::string::format("%llu", static_cast<unsigned long long>(value.GetUint64()));
+            return true;
+        }
+        if (value.IsNumber())
+        {
+            if (!std::isfinite(value.GetDouble()))
+            {
+                outReason = "must be a finite number";
+                return false;
+            }
+            outText = FloatText(value.GetDouble());
+            return true;
+        }
+        if (value.IsString())
+        {
+            outText.assign(value.GetString(), value.GetStringLength());
+            return IsValidCommandText(outText, outReason);
+        }
+        outReason = "must be a JSON number, bool or string";
+        return false;
+    }
+
+    // -- Conditions -------------------------------------------------------------
+
+    size_t ConditionTypeCount()
+    {
+        return s_conditionTypeCount;
+    }
+
+    const ConditionType& ConditionTypeAt(size_t index)
+    {
+        return s_conditionTypes[index < s_conditionTypeCount ? index : 0];
+    }
+
+    const ConditionType* FindConditionType(const AZStd::string& name)
+    {
+        for (const ConditionType& type : s_conditionTypes)
+        {
+            if (EqualsNoCase(name, type.m_shortName) || EqualsNoCase(name, type.m_rttiName))
+            {
+                return &type;
+            }
+        }
+        return nullptr;
+    }
+
+    AZStd::string ConditionTypeNames()
+    {
+        AZStd::string names;
+        for (const ConditionType& type : s_conditionTypes)
+        {
+            if (!names.empty())
+            {
+                names += ", ";
+            }
+            names += type.m_shortName;
+        }
+        return names;
+    }
+
+    const ConditionAttribute* FindConditionAttribute(const ConditionType& type, const AZStd::string& key)
+    {
+        for (size_t i = 0; i < type.m_attributeCount; ++i)
+        {
+            if (key == type.m_attributes[i].m_key)
+            {
+                return &type.m_attributes[i];
+            }
+        }
+        return nullptr;
+    }
+
+    AZStd::string ConditionAttributeNames(const ConditionType& type)
+    {
+        AZStd::string names;
+        for (size_t i = 0; i < type.m_attributeCount; ++i)
+        {
+            if (!names.empty())
+            {
+                names += ", ";
+            }
+            names += type.m_attributes[i].m_key;
+        }
+        return names;
+    }
+
+    AZStd::string EnumNames(const EnumTable& table)
+    {
+        AZStd::string names;
+        for (size_t i = 0; i < table.m_count; ++i)
+        {
+            if (!names.empty())
+            {
+                names += ", ";
+            }
+            names += table.m_names[i].m_name;
+        }
+        return names;
+    }
+
+    bool FormatConditionAttribute(
+        const ConditionAttribute& attribute, const rapidjson::Value& value, AttributeValue& out, AZStd::string& outReason)
+    {
+        out.m_text.clear();
+        out.m_list.clear();
+        switch (attribute.m_kind)
+        {
+        case AttributeKind::Float:
+            if (!value.IsNumber() || !std::isfinite(value.GetDouble()))
+            {
+                outReason = "must be a JSON number";
+                return false;
+            }
+            out.m_text = FloatText(value.GetDouble());
+            return true;
+        case AttributeKind::Count:
+            if (!value.IsUint())
+            {
+                outReason = "must be a JSON integer from 0 to 4294967295";
+                return false;
+            }
+            out.m_text = AZStd::string::format("%u", value.GetUint());
+            return true;
+        case AttributeKind::Bool:
+            if (!value.IsBool())
+            {
+                outReason = "must be a JSON bool";
+                return false;
+            }
+            out.m_text = value.GetBool() ? "true" : "false";
+            return true;
+        case AttributeKind::String:
+            if (!value.IsString())
+            {
+                outReason = "must be a JSON string";
+                return false;
+            }
+            out.m_text.assign(value.GetString(), value.GetStringLength());
+            return IsValidCommandText(out.m_text, outReason);
+        case AttributeKind::NodeId:
+            {
+                AZStd::string text;
+                if (value.IsUint64())
+                {
+                    text = AZStd::string::format("%llu", static_cast<unsigned long long>(value.GetUint64()));
+                }
+                else if (value.IsString())
+                {
+                    text.assign(value.GetString(), value.GetStringLength());
+                }
+                AZ::u64 id = 0;
+                if (!ParseObjectId(text, id))
+                {
+                    outReason = "must be a node id, the decimal string get_anim_graph reports";
+                    return false;
+                }
+                out.m_text = AZStd::string::format("%llu", static_cast<unsigned long long>(id));
+                return true;
+            }
+        case AttributeKind::Enum:
+            {
+                const EnumTable* table = attribute.m_enum;
+                if (!table)
+                {
+                    outReason = "has no enum table";
+                    return false;
+                }
+                if (value.IsInt())
+                {
+                    for (size_t i = 0; i < table->m_count; ++i)
+                    {
+                        if (table->m_names[i].m_value == value.GetInt())
+                        {
+                            out.m_text = AZStd::string::format("%d", value.GetInt());
+                            return true;
+                        }
+                    }
+                    outReason = AZStd::string::format("%d is not a value of this enum (%s)", value.GetInt(), EnumNames(*table).c_str());
+                    return false;
+                }
+                if (value.IsString())
+                {
+                    AZStd::string_view name(value.GetString(), value.GetStringLength());
+                    const AZStd::string_view prefix = table->m_prefix;
+                    if (name.size() > prefix.size() && EqualsNoCase(name.substr(0, prefix.size()), prefix))
+                    {
+                        name.remove_prefix(prefix.size());
+                    }
+                    for (size_t i = 0; i < table->m_count; ++i)
+                    {
+                        if (EqualsNoCase(name, table->m_names[i].m_name))
+                        {
+                            out.m_text = AZStd::string::format("%d", table->m_names[i].m_value);
+                            return true;
+                        }
+                    }
+                    outReason = AZStd::string::format(
+                        "'%.*s' is not a name of this enum (%s)",
+                        static_cast<int>(value.GetStringLength()),
+                        value.GetString(),
+                        EnumNames(*table).c_str());
+                    return false;
+                }
+                outReason = AZStd::string::format("must be an integer or one of %s", EnumNames(*table).c_str());
+                return false;
+            }
+        case AttributeKind::StringList:
+            if (!value.IsArray())
+            {
+                outReason = "must be a JSON array of strings";
+                return false;
+            }
+            for (rapidjson::SizeType i = 0; i < value.Size(); ++i)
+            {
+                if (!value[i].IsString())
+                {
+                    outReason = AZStd::string::format("element %u is not a string", i);
+                    return false;
+                }
+                AZStd::string element(value[i].GetString(), value[i].GetStringLength());
+                AZStd::string reason;
+                if (!IsValidCommandText(element, reason))
+                {
+                    outReason = AZStd::string::format("element %u %s", i, reason.c_str());
+                    return false;
+                }
+                out.m_list.push_back(AZStd::move(element));
+            }
+            return true;
+        }
+        outReason = "unsupported attribute kind";
+        return false;
+    }
+
+    // -- Ports --------------------------------------------------------------
+
+    bool ResolvePort(
+        const AZStd::vector<AZStd::string>& portNames, const rapidjson::Value& spec, size_t& outIndex, AZStd::string& outReason)
+    {
+        outIndex = NoPort;
+        if (spec.IsUint64())
+        {
+            const AZ::u64 index = spec.GetUint64();
+            if (index >= portNames.size())
+            {
+                outReason = AZStd::string::format(
+                    "port index %llu is out of range; the ports are %s",
+                    static_cast<unsigned long long>(index),
+                    PortNames(portNames).c_str());
+                return false;
+            }
+            outIndex = static_cast<size_t>(index);
+            return true;
+        }
+        if (spec.IsString())
+        {
+            const AZStd::string_view name(spec.GetString(), spec.GetStringLength());
+            for (size_t i = 0; i < portNames.size(); ++i)
+            {
+                if (AZStd::string_view(portNames[i]) == name)
+                {
+                    outIndex = i;
+                    return true;
+                }
+            }
+            for (size_t i = 0; i < portNames.size(); ++i)
+            {
+                if (EqualsNoCase(portNames[i], name))
+                {
+                    outIndex = i;
+                    return true;
+                }
+            }
+            outReason = AZStd::string::format(
+                "no port named '%.*s'; the ports are %s", static_cast<int>(name.size()), name.data(), PortNames(portNames).c_str());
+            return false;
+        }
+        outReason = AZStd::string::format("must be a port index or a port name; the ports are %s", PortNames(portNames).c_str());
+        return false;
+    }
+
+    AZStd::string PortNames(const AZStd::vector<AZStd::string>& portNames)
+    {
+        if (portNames.empty())
+        {
+            return "none";
+        }
+        AZStd::string names;
+        for (size_t i = 0; i < portNames.size(); ++i)
+        {
+            if (i > 0)
+            {
+                names += ", ";
+            }
+            names += AZStd::string::format("\"%s\" (%zu)", portNames[i].c_str(), i);
+        }
+        return names;
     }
 
     size_t FindNodeType(const AZStd::vector<NodeType>& types, const AZStd::string& name)
@@ -398,6 +831,136 @@ namespace AiCompanion::AnimGraphCommandText
     {
         return AZStd::string::format(
             "SaveAnimGraph -filename %s -index %zu -sourceControl false", Quoted(absolutePath).c_str(), managerIndex);
+    }
+
+    AZStd::string CreateTransitionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, const AZStd::string& transitionId)
+    {
+        return AZStd::string::format(
+            "AnimGraphCreateConnection -animGraphID %u -sourceNode %s -targetNode %s -sourcePort 0 -targetPort 0 -startOffsetX 0 "
+            "-startOffsetY 0 -endOffsetX 0 -endOffsetY 0 -id %s -transitionType %s",
+            animGraphId,
+            Quoted(sourceName).c_str(),
+            Quoted(targetName).c_str(),
+            transitionId.c_str(),
+            StateTransitionTypeUuid);
+    }
+
+    AZStd::string AdjustTransitionCommand(AZ::u32 animGraphId, const AZStd::string& transitionId, const TransitionAdjustments& adjustments)
+    {
+        AZStd::string command =
+            AZStd::string::format("AnimGraphAdjustTransition -animGraphId %u -transitionId %s", animGraphId, transitionId.c_str());
+        if (adjustments.m_hasDisabled)
+        {
+            command += adjustments.m_disabled ? " -isDisabled true" : " -isDisabled false";
+        }
+        AZStd::vector<AZStd::pair<AZStd::string, AZStd::string>> fields;
+        if (adjustments.m_hasBlendTime)
+        {
+            fields.emplace_back("transitionTime", FloatText(adjustments.m_blendTime));
+        }
+        if (adjustments.m_hasPriority)
+        {
+            fields.emplace_back("priority", AZStd::string::format("%u", adjustments.m_priority));
+        }
+        if (adjustments.m_hasSyncMode)
+        {
+            fields.emplace_back("syncMode", AZStd::string::format("%d", adjustments.m_syncMode));
+        }
+        if (adjustments.m_hasInterpolation)
+        {
+            fields.emplace_back("interpolationType", AZStd::string::format("%d", adjustments.m_interpolation));
+        }
+        if (!fields.empty())
+        {
+            command += " -attributesString " + Braced(AttributesString(fields));
+        }
+        return command;
+    }
+
+    AZStd::string AddConditionCommand(
+        AZ::u32 animGraphId, const AZStd::string& transitionId, const AZStd::string& conditionUuid, const AZStd::string& contentsXml)
+    {
+        return AZStd::string::format(
+            "AnimGraphAddCondition -animGraphId %u -transitionId %s -conditionType %s -contents %s",
+            animGraphId,
+            transitionId.c_str(),
+            conditionUuid.c_str(),
+            Braced(contentsXml).c_str());
+    }
+
+    AZStd::string RemoveTransitionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, const AZStd::string& transitionId)
+    {
+        return AZStd::string::format(
+            "AnimGraphRemoveConnection -animGraphID %u -sourceNode %s -targetNode %s -sourcePort 0 -targetPort 0 -id %s",
+            animGraphId,
+            Quoted(sourceName).c_str(),
+            Quoted(targetName).c_str(),
+            transitionId.c_str());
+    }
+
+    AZStd::string CreatePortConnectionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, size_t sourcePort, size_t targetPort)
+    {
+        return AZStd::string::format(
+            "AnimGraphCreateConnection -animGraphID %u -sourceNode %s -targetNode %s -sourcePort %zu -targetPort %zu -startOffsetX 0 "
+            "-startOffsetY 0 -endOffsetX 0 -endOffsetY 0",
+            animGraphId,
+            Quoted(sourceName).c_str(),
+            Quoted(targetName).c_str(),
+            sourcePort,
+            targetPort);
+    }
+
+    AZStd::string RemovePortConnectionCommand(
+        AZ::u32 animGraphId, const AZStd::string& sourceName, const AZStd::string& targetName, size_t sourcePort, size_t targetPort)
+    {
+        return AZStd::string::format(
+            "AnimGraphRemoveConnection -animGraphID %u -sourceNode %s -targetNode %s -sourcePort %zu -targetPort %zu",
+            animGraphId,
+            Quoted(sourceName).c_str(),
+            Quoted(targetName).c_str(),
+            sourcePort,
+            targetPort);
+    }
+
+    AZStd::string AttributesString(const AZStd::vector<AZStd::pair<AZStd::string, AZStd::string>>& fields)
+    {
+        AZStd::string text;
+        for (const auto& field : fields)
+        {
+            if (!text.empty())
+            {
+                text += ' ';
+            }
+            text += "-" + field.first + " " + Braced(field.second);
+        }
+        return text;
+    }
+
+    AZStd::string AdjustNodeCommand(AZ::u32 animGraphId, const AZStd::string& currentName, const NodeAdjustments& adjustments)
+    {
+        AZStd::string command =
+            AZStd::string::format("AnimGraphAdjustNode -animGraphID %u -name %s", animGraphId, Quoted(currentName).c_str());
+        if (!adjustments.m_newName.empty())
+        {
+            command += " -newName " + Quoted(adjustments.m_newName);
+        }
+        if (adjustments.m_hasPosition)
+        {
+            command += AZStd::string::format(" -xPos %d -yPos %d", adjustments.m_xPos, adjustments.m_yPos);
+        }
+        if (adjustments.m_hasEnabled)
+        {
+            command += adjustments.m_enabled ? " -enabled true" : " -enabled false";
+        }
+        command += " -updateAttributes true";
+        if (!adjustments.m_attributes.empty())
+        {
+            command += " -attributesString " + Braced(AttributesString(adjustments.m_attributes));
+        }
+        return command;
     }
 
     AZ::IO::FixedMaxPath ResolveAgainstRoot(const AZStd::string& input, const AZ::IO::PathView& root)
