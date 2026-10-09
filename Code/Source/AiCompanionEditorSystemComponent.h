@@ -75,6 +75,9 @@ namespace AiCompanion
         AZ::Outcome<AZStd::string, AZStd::string> ConnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
         AZ::Outcome<AZStd::string, AZStd::string> DisconnectAnimGraphPorts(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
         AZ::Outcome<AZStd::string, AZStd::string> SetAnimGraphNode(AZ::u32 animGraphId, AZStd::string argumentsJson) override;
+        AZ::Outcome<AZStd::string, AZStd::string> GetAssetStatus(AZStd::string path, bool flushIo) override;
+        AZ::Outcome<AZStd::string, AZStd::string> GetAssetJobs(AZStd::string sourcePath, bool escalate, bool includeLogs) override;
+        AZ::Outcome<AZStd::string, AZStd::string> GetAssetProcessorStatus() override;
 
     protected:
         // AZ::Component overrides

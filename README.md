@@ -20,13 +20,15 @@ report what the editor accepted.
 Beneath the Python API, a C++ native layer serves requests with no Python
 at all. The SceneSnapshotProvider traverses entities at engine speed and
 serializes scene state as JSON, while the InputValidator enforces the same
-safety rules in compiled code. The AgentServer serves 28 request types. It answers scene
-snapshots, entity trees, single entities, validation, live EBus schemas and
-views of EMotion FX anim graphs (`list_anim_graphs`, `get_anim_graph`) straight
-from C++, authors anim graphs through the Animation Editor's command system
-(create, load and save a graph, add and remove nodes and parameters, set the
-entry state, wire transitions with conditions and blend tree ports, adjust
-nodes), and serves a validated mutation set (`create_entity`, `set_transform`,
+safety rules in compiled code. The AgentServer serves 31 request types. It answers scene
+snapshots, entity trees, single entities, validation, live EBus schemas, Asset
+Processor readiness (`get_asset_status`, `get_asset_jobs`,
+`get_asset_processor_status`) and views of EMotion FX anim graphs
+(`list_anim_graphs`, `get_anim_graph`) straight from C++, authors anim graphs
+through the Animation Editor's command system (create, load and save a graph,
+add and remove nodes and parameters, set the entry state, wire transitions with
+conditions and blend tree ports, adjust nodes), and serves a validated mutation
+set (`create_entity`, `set_transform`,
 `delete_entity`) that runs in its own undo batch, so an agent on a secure-mode
 editor, where arbitrary code execution is disabled, can still build and tidy a
 scene. Everything but `execute_python` works in secure mode.

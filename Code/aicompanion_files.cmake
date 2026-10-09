@@ -15,6 +15,8 @@ set(FILES
     Source/Validation/InputValidator.cpp
     Source/Animation/AnimGraphCommandText.h
     Source/Animation/AnimGraphCommandText.cpp
+    Source/Assets/AssetReadiness.h
+    Source/Assets/AssetReadiness.cpp
     Source/Network/RequestParsing.h
     Source/Network/RequestParsing.cpp
     Source/Network/RequestError.h

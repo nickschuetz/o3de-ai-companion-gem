@@ -206,7 +206,7 @@ envelope. Only the package's own results use the bracketed `"[id]"` form.
 - `get_entity_tree()` calls `SceneSnapshotProvider::CaptureEntityTree()`
 - `validate_scene()` calls `SceneSnapshotProvider::ValidateScene()`
 
-The AgentServer serves 28 request types. Every one but `execute_python` is served
+The AgentServer serves 31 request types. Every one but `execute_python` is served
 in C++ with no Python and stays available in secure mode:
 - `ping` and `get_api_version`, answered on the network thread
 - the reads `get_scene_snapshot`, `get_entity_tree`, `validate_scene`, `get_entity`
@@ -214,6 +214,9 @@ in C++ with no Python and stays available in secure mode:
 - the validated mutation set `create_entity`, `set_transform`, `delete_entity`,
   each in its own undo batch, refusing missing entities, the level root and the
   protected system entities
+- the asset readiness queries `get_asset_status`, `get_asset_jobs` and
+  `get_asset_processor_status` (poll `get_asset_status` after writing a file;
+  the gem never compiles synchronously)
 - the anim graph reads `list_anim_graphs` and `get_anim_graph`
 - the anim graph writes `create_anim_graph`, `remove_anim_graph`, `load_anim_graph`,
   `save_anim_graph`, `add_anim_graph_node`, `remove_anim_graph_node`,

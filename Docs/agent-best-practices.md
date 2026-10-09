@@ -149,7 +149,8 @@ The AgentServer serves them as direct request types, bypassing Python entirely,
 alongside the rest of its native set: `get_entity`, `get_bus_schema` (live EBus
 discovery), the validated mutations `create_entity`, `set_transform` and
 `delete_entity` (each its own undo batch; missing entities, the level root and
-the protected system entities refused), the anim graph reads `list_anim_graphs`
+the protected system entities refused), the asset readiness queries
+`get_asset_status`, `get_asset_jobs` and `get_asset_processor_status`, the anim graph reads `list_anim_graphs`
 and `get_anim_graph`, and the anim graph writes `create_anim_graph`,
 `remove_anim_graph`, `load_anim_graph`, `save_anim_graph`,
 `add_anim_graph_node`, `remove_anim_graph_node`, `set_anim_graph_entry_state`,
@@ -220,6 +221,47 @@ only way when the AgentServer runs in secure mode, where the native
 tools of the same names try them first) are the only way to change it, and the
 anim graph types behind o3de-mcp's animation tools the only way to read and
 author an anim graph.
+
+### Wait for an asset you just wrote
+
+Writing a source file (an anim graph, a prefab, a texture) starts an Asset
+Processor job, and the product is not usable until that job completes. Poll
+the native `get_asset_status` request type instead of sleeping, and never ask
+the engine to compile synchronously: the gem does not expose
+`CompileAssetSync`, which would hold the editor's main thread for the whole
+build.
+
+1. Right after the write, call `get_asset_status` once with `flush_io: true`.
+   The Asset Processor flushes its file change queue before answering, so the
+   file is seen even if the OS has not finished writing it. `path` is the
+   source path relative to its scan folder (`Assets/MyGraphs/Walk.animgraph`),
+   the product path (`assets/mygraphs/walk.animgraph`) or a full path.
+2. Poll `get_asset_status` without `flush_io` about once a second until
+   `status` is `compiled` or `failed`. `queued` and `compiling` mean the Asset
+   Processor has the file. Asking also moves the asset up the build queue.
+   Observed on O3DE 26.10.0: a source whose job failed keeps answering
+   `missing` (a failed source has no products), the same word as a file the
+   Asset Processor has not registered yet, so `missing` that lasts more than a
+   few seconds after a write is not "still waiting": go to step 3.
+3. On `failed`, or on a lasting `missing`, call `get_asset_jobs` with
+   `source_path` and `include_logs: true`: a job with `status` `failed` is the
+   build failure, and each failed job carries its `log` (cut at 64 KB) and
+   `error_count`. A source the Asset Processor has never seen answers
+   `engine_error` here (it has no job record), which tells the two cases
+   apart. A full path under the project or engine root is turned into the
+   root-relative form before either query (the reply's `query_path` shows
+   it); on 26.10.0 the engine answers `missing` for a full source path asked
+   as is, although its header lists full paths as accepted.
+4. `get_asset_processor_status` says whether the editor is connected at all
+   (`connected`, `ping_ms`); the two queries answer `unavailable` without a
+   connection.
+
+```json
+{"id": "w-1", "type": "get_asset_status", "path": "Assets/MyGraphs/Walk.animgraph", "flush_io": true}
+→ {"id": "w-1", "status": "ok", "output": "{\"path\": \"Assets/MyGraphs/Walk.animgraph\", \"status\": \"queued\", \"connected\": true}", ...}
+```
+
+o3de-mcp's `wait_for_asset` tool (to follow) runs this loop for you.
 
 ### Error handling
 

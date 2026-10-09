@@ -159,6 +159,10 @@ validated mutation set and the validated anim graph authoring set:
   ports, node fields and paths are validated in C++ before a command is
   sent, paths must stay inside the project (or, for a load, the engine)
   root, and a graph an asset or runtime instance owns is refused
+- `get_asset_status`, `get_asset_jobs`, `get_asset_processor_status`: read-only
+  Asset Processor queries over the editor's own connection (a status query
+  escalates that asset's build priority and changes nothing else); a path
+  must be non-empty, at most 1024 bytes and free of control characters
 - `create_entity`, `set_transform`, `delete_entity`: the validated mutation set:
   arguments go through the C++ `InputValidator`, missing entities, the level
   root and the protected system entities are refused, and each call is its own
@@ -177,7 +181,8 @@ o3de-mcp's `get_capabilities`, `get_scene_snapshot`, `get_entity_tree`,
 `get_entity`, `validate_scene` and `get_bus_schema_live` tools use only these
 request types, its `create_entity`, `set_transform` and `delete_entity` tools
 try the native mutations first, and its seventeen anim graph tools wrap the
-anim graph types one to one, so all of them keep working in secure mode;
+anim graph types one to one and its asset readiness tools wrap the three asset
+queries, so all of them keep working in secure mode;
 `run_editor_python`, the session tools and the `ai_companion` Python API do
 not.
 
