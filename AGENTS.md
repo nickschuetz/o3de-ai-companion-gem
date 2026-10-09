@@ -30,7 +30,7 @@ Docs/                       Documentation
 
 ## Versioning
 
-This project is in **alpha** (0.x.y). The current version is defined in five places
+This project is in **alpha** (0.x.y). The current version is defined in six places
 that must stay in sync:
 
 - `gem.json` — `"version"` field (gem version)
@@ -38,11 +38,17 @@ that must stay in sync:
 - `Code/Source/Network/AgentServer.cpp` — `gem_version` and `api_version` string literals
 - `Code/Source/Tests/AgentServerTests.cpp` — expected version strings in tests
 - `sbom.cdx.json` — the component `version` and its `purl`
+- `repo.json`: the remote gem repository manifest. Bump the gem entry's `version`,
+  its `download_source_uri` (the `vX.Y.Z.zip` tag archive), `source_control_ref`,
+  the matching `versions_data` entry, and both `last_updated` dates. The gem entry
+  mirrors `gem.json`, so any field changed there is changed here too.
 
-When bumping the version, update all five files, move the `[Unreleased]` entries in
+When bumping the version, update all six files, move the `[Unreleased]` entries in
 CHANGELOG.md under the new version with the date, and add the release link at the
-bottom. The live suite's `test_api_version_matches_the_checkout` fails if the C++
-literal and `gem.json` disagree.
+bottom. `repo.json` is only correct once the `vX.Y.Z` tag exists on GitHub, since
+its download URL points at that tag's archive. The live suite's
+`test_api_version_matches_the_checkout` fails if the C++ literal and `gem.json`
+disagree.
 
 ## License Headers
 

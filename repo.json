@@ -1,0 +1,59 @@
+{
+    "repo_name": "o3de-ai-companion-gem",
+    "repo_uri": "https://raw.githubusercontent.com/nickschuetz/o3de-ai-companion-gem/main",
+    "$schemaVersion": "1.0.0",
+    "origin": "Nick Schuetz",
+    "origin_url": "https://github.com/nickschuetz/o3de-ai-companion-gem",
+    "summary": "Remote repository for the AI Companion gem: high-level Python APIs, Lua gameplay scripts, prefabs and safety guardrails for AI-driven game development in O3DE.",
+    "additional_info": "Register with: o3de register --repo-uri https://raw.githubusercontent.com/nickschuetz/o3de-ai-companion-gem/main. Then: o3de download --gem-name AiCompanion. Each release tag ships a source archive on GitHub; the entry below points at it.",
+    "last_updated": "2026-10-08",
+    "gems_data": [
+        {
+            "gem_name": "AiCompanion",
+            "version": "0.4.0",
+            "display_name": "AI Companion",
+            "license": "Apache-2.0 Or MIT",
+            "license_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/LICENSE.txt",
+            "origin": "Nick Schuetz",
+            "origin_url": "https://github.com/nickschuetz/o3de-ai-companion-gem",
+            "type": "Code",
+            "summary": "Makes O3DE AI-agent-friendly with high-level Python APIs, Lua gameplay scripts, prefabs, and safety guardrails for AI-driven game development via o3de-mcp.",
+            "canonical_tags": [
+                "Gem"
+            ],
+            "user_tags": [
+                "AI",
+                "Scripting",
+                "Utility",
+                "Automation"
+            ],
+            "icon_path": "preview.png",
+            "requirements": "Requires EditorPythonBindings gem to be enabled for full functionality. Includes a built-in AgentServer for AI agent communication.",
+            "documentation_url": "https://github.com/nickschuetz/o3de-ai-companion-gem/blob/main/Docs/README.md",
+            "dependencies": [],
+            "compatible_engines": [
+                "o3de >= 2.7.0",
+                "o3de >= 2305.0",
+                "o3de >= 24.09",
+                "o3de >= 26.05.0",
+                "o3de >= 26.10.0"
+            ],
+            "engine_api_dependencies": [],
+            "download_source_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem/archive/refs/tags/v0.4.0.zip",
+            "source_control_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem.git",
+            "source_control_ref": "v0.4.0",
+            "versions_data": [
+                {
+                    "version": "0.4.0",
+                    "last_updated": "2026-10-08",
+                    "download_source_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem/archive/refs/tags/v0.4.0.zip",
+                    "source_control_uri": "https://github.com/nickschuetz/o3de-ai-companion-gem.git",
+                    "source_control_ref": "v0.4.0"
+                }
+            ]
+        }
+    ],
+    "projects_data": [],
+    "templates_data": [],
+    "repos": []
+}
