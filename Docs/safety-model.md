@@ -27,6 +27,13 @@ All user-supplied strings are validated before reaching `azlmbr` APIs.
 - It then resolves the name against the component registry (case-insensitive,
   aliases accepted) and refuses an unknown one, suggesting the closest known
   names
+- A component type UUID (`{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`, braces
+  optional) is accepted instead of a name and passed to the editor as is; a
+  UUID that is not a component fails the build with `engine_error`
+- On build, every type is resolved in the editor before the entity is created;
+  a name the editor does not know fails the build with `not_found` and nothing
+  is created, and a component the editor accepts but cannot activate is
+  reported in `component_warnings` with the editor's reason
 - The typed builder methods (`with_mesh`, `with_physics`, `with_collider`,
   `with_lua_script`, ...) use fixed registry names and never take a type
 

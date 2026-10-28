@@ -16,7 +16,13 @@ from ..safety.validators import (
 )
 from ..safety.sandbox import get_sandbox
 from ..utils.json_output import success, error, entity_result
-from ..utils.component_registry import resolve_component
+from ..utils.component_registry import (
+    ComponentNotFoundError,
+    is_addable,
+    is_component_type_uuid,
+    normalize_component_type_uuid,
+    resolve_component,
+)
 
 Number = Union[int, float]
 
@@ -51,6 +57,27 @@ COLLIDER_SHAPE_TYPES: Dict[str, int] = {
 # Mass in kilograms. The engine's lower bound is 0 (treated as infinite mass);
 # the upper bound here is only a sanity check against typos.
 MAX_MASS_KG = 1.0e9
+
+# What FindComponentTypeIdsByEntityType answers for a name it does not know.
+NULL_UUID = "00000000-0000-0000-0000-000000000000"
+
+# Atom's "Light" component keeps its kind in AreaLightComponentConfig::
+# m_lightType, reflected as "Light type" under the controller's
+# "Configuration" (Gems/AtomLyIntegration/CommonFeatures/Code/Source/
+# CoreLights/EditorAreaLightComponent.cpp). The values are the LightType
+# enum (AreaLightComponentConfig.h): the two "simple" kinds are punctual
+# lights that need no shape component; the others take their shape from a
+# Sphere, Disk, Capsule, Quad or Polygon Prism Shape on the same entity.
+LIGHT_TYPE_PATH = "Controller|Configuration|Light type"
+LIGHT_TYPES: Dict[str, int] = {
+    "point": 6,    # SimplePoint, "Point (simple punctual)"
+    "spot": 7,     # SimpleSpot, "Spot (simple punctual)"
+    "sphere": 1,   # Sphere, needs a Sphere Shape
+    "disk": 2,     # SpotDisk, needs a Disk Shape
+    "capsule": 3,  # Capsule, needs a Capsule Shape
+    "quad": 4,     # Quad, needs a Quad Shape
+    "polygon": 5,  # Polygon, needs a Polygon Prism Shape
+}
 
 _BUS_CALL_ERRORS = (AttributeError, TypeError, RuntimeError, ValueError)
 
@@ -233,19 +260,59 @@ class EntityBuilder:
         })
         return self
 
-    def with_component(self, component_type: str, **properties) -> "EntityBuilder":
-        """Add an arbitrary component by type name.
+    def with_light(self, light_type: str = "point") -> "EntityBuilder":
+        """Add Atom's Light component and set its "Light type" on build.
 
-        The name's characters are validated first (letters, digits, spaces,
+        ``light_type`` is ``point`` or ``spot`` (punctual lights that need no
+        shape), or ``sphere``, ``disk``, ``capsule``, ``quad`` or ``polygon``,
+        which take their shape from the matching Shape component on the same
+        entity. For a sun, use ``with_component("Directional Light")``.
+        """
+        key = str(light_type).strip().lower()
+        if key not in LIGHT_TYPES:
+            raise ValueError(
+                f"Unknown light type '{light_type}'. Available: {', '.join(LIGHT_TYPES)}")
+        self._components.append({
+            "type": "Light",
+            "properties": {"light_type": key},
+        })
+        return self
+
+    def with_component(self, component_type: str, **properties) -> "EntityBuilder":
+        """Add an arbitrary component by registry name or by type UUID.
+
+        A name's characters are validated first (letters, digits, spaces,
         hyphens, underscores, parentheses), then it is resolved against the
         component registry, which suggests the closest known names on a miss.
+        On build the editor must know the name too: it finds components by
+        name only among those its Add Component menu lists for a game entity,
+        and a name it does not find fails the build before anything is
+        created (``not_found``).
+
+        A type UUID (``{2933FB4F-B3DA-4CD1-8106-F37300730777}``, braces
+        optional) skips both lookups and adds that type directly, which is
+        the only way to add a component the menu does not list, such as the
+        editor's Non-uniform Scale component. The result's ``component_ids``
+        is keyed by the UUID as given here.
         """
+        if is_component_type_uuid(component_type):
+            canonical = normalize_component_type_uuid(component_type)
+            self._components.append({
+                "type": canonical,
+                "type_id": canonical,
+                "properties": properties,
+            })
+            return self
         valid, err = validate_component_type(component_type)
         if not valid:
             raise ValueError(err)
         canonical, err = resolve_component(component_type)
         if canonical is None:
             raise ValueError(err)
+        if not is_addable(canonical):
+            raise ValueError(
+                f"Component '{canonical}' is on every entity and cannot be added; "
+                "set its values with the builder's transform methods instead")
         self._components.append({
             "type": canonical,
             "properties": properties,
@@ -265,14 +332,137 @@ class EntityBuilder:
             import azlmbr.editor as editor
             import azlmbr.bus as bus
             import azlmbr.entity as entity_api
-
-            return self._build_in_editor(editor, bus, entity_api)
-
+            import azlmbr.math as math_api
         except ImportError:
             return self._outside_editor_result()
 
-    def _build_in_editor(self, editor, bus, entity_api) -> str:
-        """Create and configure the entity, then commit it to the prefab template."""
+        from ..safety.rollback import failure_response, in_undo_batch
+
+        # Inside a with_undo_batch call the exception reaches the decorator,
+        # which undoes the whole batch; a raw build() has no batch, so it
+        # deletes what it created and answers the same error shape.
+        created: List[Any] = []
+        try:
+            return self._build_in_editor(editor, bus, entity_api, math_api, created)
+        except Exception as exc:
+            if in_undo_batch():
+                raise
+            return failure_response(exc, f"Build entity {self._name}", created)
+
+    def _resolve_component_type_ids(self, editor, bus, entity_api, math_api) -> Dict[str, Any]:
+        """Map every requested component type to the editor's type id.
+
+        A registry name is looked up with ``FindComponentTypeIdsByEntityType``,
+        which answers the null UUID for a name it does not know: a component
+        that does not appear in the Add Component menu for a game entity, or
+        one from a gem the project has not enabled. A type UUID given to
+        ``with_component`` is used as is. Every miss is collected and reported
+        together in a ``ComponentNotFoundError`` before the entity exists, so
+        a build never reports success without a component it was asked for.
+        """
+        entity_type_game = entity_api.EntityType().Game
+        resolved: Dict[str, Any] = {}
+        unresolved: List[str] = []
+        for comp in self._components:
+            comp_type = comp["type"]
+            if comp_type in resolved:
+                continue
+            if comp.get("type_id"):
+                resolved[comp_type] = math_api.Uuid_CreateString(comp["type_id"])
+                continue
+            type_ids = editor.EditorComponentAPIBus(
+                bus.Broadcast, "FindComponentTypeIdsByEntityType",
+                [comp_type], entity_type_game
+            )
+            tid = type_ids[0] if type_ids else None
+            if tid is None or NULL_UUID in str(tid):
+                unresolved.append(comp_type)
+                continue
+            resolved[comp_type] = tid
+        if unresolved:
+            raise ComponentNotFoundError(
+                "component type not found in this editor: "
+                + ", ".join(repr(name) for name in unresolved)
+                + ". The editor finds a component by name only when its Add Component "
+                "menu lists it for a game entity; a component without that menu entry, "
+                "or from a gem the project has not enabled, is added by its type UUID: "
+                "with_component('{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}')."
+            )
+        return resolved
+
+    @staticmethod
+    def _add_component(editor, bus, entity_id, type_id) -> Tuple[Any, str]:
+        """Add one component and return ``(pair, "")`` or ``(None, reason)``.
+
+        ``AddComponentOfType`` returns ``Outcome<vector<EntityComponentIdPair>>``
+        on this build, despite the singular name; the pair is at index 0. Older
+        builds only have ``AddComponentsOfType`` (plural), tried second.
+        """
+        reason = ""
+        for event, argument in (("AddComponentOfType", type_id), ("AddComponentsOfType", [type_id])):
+            try:
+                outcome = editor.EditorComponentAPIBus(bus.Broadcast, event, entity_id, argument)
+            except _BUS_CALL_ERRORS as exc:
+                reason = reason or f"{type(exc).__name__}: {exc}"
+                continue
+            if outcome is None:
+                reason = reason or f"{event} returned no outcome"
+                continue
+            if hasattr(outcome, "IsSuccess") and outcome.IsSuccess():
+                val = outcome.GetValue()
+                pair = val[0] if isinstance(val, list) and val else val
+                if pair is not None and not isinstance(pair, list):
+                    return pair, ""
+                reason = reason or f"{event} succeeded but returned no component"
+                continue
+            if hasattr(outcome, "GetError"):
+                reason = reason or str(outcome.GetError())
+        return None, reason or "the editor did not add the component"
+
+    @staticmethod
+    def _component_state_if_inactive(editor, bus, pair) -> Optional[Dict[str, Any]]:
+        """``None`` when the component is active, else what the editor says about it.
+
+        ``AddComponentOfType`` reports success even when the editor cannot
+        activate the component (a Sphere Shape next to a Box Shape, say) and
+        parks it in the entity's pending list; without this check the only
+        sign is the Entity Inspector's notice. ``IsComponentEnabled`` is false
+        for a pending and for a user-disabled component alike and gives no
+        reason, so the reason comes from the gem's ``GetComponentState``
+        (``{"state", "summary", "incompatible_with", ...}``). On a gem build
+        without that event the state is reported without a reason.
+        """
+        try:
+            enabled = editor.EditorComponentAPIBus(bus.Broadcast, "IsComponentEnabled", pair)
+        except _BUS_CALL_ERRORS:
+            return None
+        if enabled is not False:
+            return None
+        state: Dict[str, Any] = {
+            "state": "disabled",
+            "summary": "disabled (reason unavailable: this gem build has no GetComponentState)",
+        }
+        gem_bus = getattr(editor, "AiCompanionEditorRequestBus", None)
+        if gem_bus is None:
+            return state
+        try:
+            outcome = gem_bus(bus.Broadcast, "GetComponentState", pair)
+        except _BUS_CALL_ERRORS:
+            return state
+        if outcome is None or not (hasattr(outcome, "IsSuccess") and outcome.IsSuccess()):
+            return state
+        try:
+            described = json.loads(str(outcome.GetValue()))
+        except (TypeError, ValueError):
+            return state
+        return described if isinstance(described, dict) else state
+
+    def _build_in_editor(self, editor, bus, entity_api, math_api=None, created=None) -> str:
+        """Create and configure the entity, then commit it to the prefab template.
+
+        ``created`` receives the entity id as soon as it exists, so a caller
+        outside an undo batch can delete it if a later step fails.
+        """
         from ..utils.transform_helpers import (
             commit_entity_to_prefab,
             mark_entity_dirty,
@@ -282,10 +472,19 @@ class EntityBuilder:
             set_entity_parent,
         )
 
+        if math_api is None:
+            import azlmbr.math as math_api
+
+        # Resolve every component type before the entity exists, so an
+        # unknown one leaves nothing behind.
+        type_ids = self._resolve_component_type_ids(editor, bus, entity_api, math_api)
+
         # Create entity
         entity_id = editor.ToolsApplicationRequestBus(
             bus.Broadcast, "CreateNewEntity", entity_api.EntityId()
         )
+        if created is not None:
+            created.append(entity_id)
         get_sandbox().record_entity(entity_id)
 
         # Set name
@@ -313,51 +512,28 @@ class EntityBuilder:
         # keeps the entity's defaults.
         mark_entity_dirty(entity_id)
 
-        # Add components.
-        #
-        # AddComponentOfType returns Outcome<vector<EntityComponentIdPair>>
-        # on this build, despite the singular name. The actual pair is at
-        # index 0 of the wrapped vector; we need that proxy to address
-        # SetComponentProperty by EntityComponentIdPair.
-        component_ids = {}
-        component_pairs = {}
-        entity_type_game = entity_api.EntityType().Game
-        null_uuid_str = "00000000-0000-0000-0000-000000000000"
+        # Add components. An add the editor refuses fails the build (the
+        # entity is rolled back by the caller); one the editor accepts but
+        # cannot activate is kept and reported in component_warnings and
+        # disabled_components, the way the Entity Inspector would show it.
+        from ..utils.id_helpers import id_to_jsonable
+
+        component_ids: Dict[str, Any] = {}
+        component_pairs: Dict[str, Any] = {}
+        component_warnings: List[str] = []
+        disabled_components: Dict[str, Dict[str, Any]] = {}
         for comp in self._components:
             comp_type = comp["type"]
-            type_ids = editor.EditorComponentAPIBus(
-                bus.Broadcast, "FindComponentTypeIdsByEntityType",
-                [comp_type], entity_type_game
-            )
-            if not type_ids:
-                continue
-            tid = type_ids[0]
-            if null_uuid_str in str(tid):
-                continue
-
-            pair = None
-            outcome = editor.EditorComponentAPIBus(
-                bus.Broadcast, "AddComponentOfType", entity_id, tid
-            )
-            if hasattr(outcome, "IsSuccess") and outcome.IsSuccess():
-                val = outcome.GetValue()
-                pair = val[0] if isinstance(val, list) and val else val
-            else:
-                # Older builds only have AddComponentsOfType (plural).
-                outcome = editor.EditorComponentAPIBus(
-                    bus.Broadcast, "AddComponentsOfType", entity_id, [tid]
-                )
-                if hasattr(outcome, "IsSuccess") and outcome.IsSuccess():
-                    val = outcome.GetValue()
-                    if val:
-                        pair = val[0] if isinstance(val, list) else val
-
-            if pair is not None:
-                from ..utils.id_helpers import id_to_jsonable
-                component_ids[comp_type] = id_to_jsonable(pair)
-                component_pairs[comp_type] = pair
-
-        from ..utils.id_helpers import id_to_jsonable
+            pair, reason = self._add_component(editor, bus, entity_id, type_ids[comp_type])
+            if pair is None:
+                raise RuntimeError(f"could not add component '{comp_type}': {reason}")
+            component_ids[comp_type] = id_to_jsonable(pair)
+            component_pairs[comp_type] = pair
+            state = self._component_state_if_inactive(editor, bus, pair)
+            if state is not None:
+                disabled_components[comp_type] = state
+                component_warnings.append(
+                    f"{comp_type}: added but {state.get('summary') or 'disabled'}")
 
         self._apply_asset_properties(component_pairs)
         applied, warnings = self._apply_physics_properties(component_pairs)
@@ -369,6 +545,9 @@ class EntityBuilder:
             extra["applied_properties"] = applied
         if warnings:
             extra["property_warnings"] = warnings
+        if component_warnings:
+            extra["component_warnings"] = component_warnings
+            extra["disabled_components"] = disabled_components
 
         return entity_result(
             entity_id=id_to_jsonable(entity_id),
@@ -424,6 +603,12 @@ class EntityBuilder:
                         f"PhysX Primitive Collider: unknown shape '{props['shape']}' not applied")
                     continue
                 set_property("PhysX Primitive Collider", COLLIDER_SHAPE_PATH, shape_value)
+            elif comp["type"] == "Light" and "light_type" in props:
+                light_value = LIGHT_TYPES.get(props["light_type"])
+                if light_value is None:
+                    warnings.append(f"Light: unknown light type '{props['light_type']}' not applied")
+                    continue
+                set_property("Light", LIGHT_TYPE_PATH, light_value)
 
         return applied, warnings
 

@@ -17,6 +17,8 @@ set(FILES
     Source/Animation/AnimGraphCommandText.cpp
     Source/Assets/AssetReadiness.h
     Source/Assets/AssetReadiness.cpp
+    Source/Components/ComponentState.h
+    Source/Components/ComponentState.cpp
     Source/Network/RequestParsing.h
     Source/Network/RequestParsing.cpp
     Source/Network/RequestError.h

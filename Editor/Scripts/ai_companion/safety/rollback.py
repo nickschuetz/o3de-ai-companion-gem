@@ -120,11 +120,43 @@ def _undo(entity_ids=None) -> dict:
 def _error_code_for(exc: BaseException) -> str:
     if isinstance(exc, SandboxLimitError):
         return "limit_exceeded"
+    if isinstance(exc, LookupError):
+        return "not_found"
     if isinstance(exc, (ValueError, TypeError)):
         return "validation_failed"
     if isinstance(exc, ImportError):
         return "not_in_editor"
     return "engine_error"
+
+
+def in_undo_batch() -> bool:
+    """Whether a ``with_undo_batch`` call or a manual batch is open.
+
+    A builder running inside one lets its exception propagate so the outermost
+    batch is rolled back as a whole; outside one it must clean up itself.
+    """
+    return _batch_depth > 0
+
+
+def failure_response(exc: BaseException, label: str, created_entity_ids) -> str:
+    """The error JSON for a call that failed outside any undo batch.
+
+    Deletes the entities the call created (there is no batch to undo) and
+    reports the exception the way ``with_undo_batch`` does, so an agent sees
+    one shape whether it called a wrapped API function or a raw builder.
+    """
+    deleted = _delete_survivors(list(created_entity_ids or []))
+    return error(
+        str(exc) or exc.__class__.__name__,
+        code=_error_code_for(exc),
+        details={
+            "exception": exc.__class__.__name__,
+            "operation": label,
+            "rolled_back": False,
+            "leftover_entities_deleted": deleted,
+        },
+        rolled_back=True,
+    )
 
 
 def with_undo_batch(label: str):

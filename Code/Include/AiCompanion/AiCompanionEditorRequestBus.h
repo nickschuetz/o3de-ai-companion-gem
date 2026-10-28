@@ -31,8 +31,9 @@ namespace AiCompanion
     //! vocabulary (validation_failed, not_found, unavailable, engine_error).
     //! The server decodes it into the reply's "code" and "error" fields; an
     //! editor Python caller that reads GetError() sees the JSON text.
-    //! SetComponentPropertyUnwrapped, CommitEntityToPrefab and SetScale are
-    //! called only from the Python package and keep plain-text failures.
+    //! SetComponentPropertyUnwrapped, GetComponentState, CommitEntityToPrefab
+    //! and SetScale are called only from the Python package and keep
+    //! plain-text failures.
     class AiCompanionEditorRequests : public AZ::EBusTraits
     {
     public:
@@ -57,6 +58,19 @@ namespace AiCompanion
         //! engine build the gem ships against.
         virtual AZ::Outcome<void, AZStd::string> SetComponentPropertyUnwrapped(
             AZ::EntityComponentIdPair pair, AZStd::string propertyPath, AZStd::any value) = 0;
+
+        //! Describes one component on an entity after it was added: whether
+        //! the editor activated it, left it pending (an incompatible active
+        //! sibling, or a required service nothing on the entity provides) or
+        //! the user disabled it, and why. EditorComponentAPIBus's
+        //! IsComponentEnabled answers false for both pending and disabled and
+        //! gives no reason; the composition buses that know the reason are not
+        //! reflected to Python. The pair is the one AddComponentOfType
+        //! returned. Answers the JSON object of ComponentState::Info
+        //! ({"name", "state", "summary", "incompatible_with", ...}); fails
+        //! with plain text when the entity or component does not exist. Called
+        //! from the Python package after every add; o3de-mcp may call it too.
+        virtual AZ::Outcome<AZStd::string, AZStd::string> GetComponentState(AZ::EntityComponentIdPair pair) = 0;
 
         //! Returns the reflected schema of an EBus as a JSON string, read live
         //! from the BehaviorContext. Unlike the editor's generated .pyi stub

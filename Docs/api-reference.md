@@ -155,8 +155,9 @@ build_entity("MyEntity") \
 - `.with_collider(shape)`: `"box"`, `"sphere"`, `"capsule"` or `"cylinder"`
 - `.with_lua_script(script_path)`
 - `.with_script_canvas(graph_path)`
-- `.with_component(component_type, **properties)`: the name's characters are validated (letters, digits, spaces, hyphens, underscores, parentheses), then it is resolved against the component registry, case-insensitively and through aliases, with the closest known names suggested on a miss
-- `.build()`: Execute and return JSON
+- `.with_light(light_type="point")`: Atom's `Light` component with its `Controller|Configuration|Light type` set on build. `point` and `spot` are the punctual kinds that need no shape; `sphere`, `disk`, `capsule`, `quad` and `polygon` take their shape from the matching Shape component on the same entity. For a sun, `with_component("Directional Light")`. The pre-Atom names `Point Light`, `Spot Light` and `Area Light` resolve to `Light` in the registry
+- `.with_component(component_type, **properties)`: a registry name or a component type UUID. A name's characters are validated (letters, digits, spaces, hyphens, underscores, parentheses), then it is resolved against the component registry, case-insensitively and through aliases, with the closest known names suggested on a miss. A UUID (`{2933FB4F-B3DA-4CD1-8106-F37300730777}`, braces optional) is added by type id with no lookup, which is the only way to add a component the editor's Add Component menu does not list, such as Non-uniform Scale; `component_ids` is then keyed by the UUID in its braced uppercase form
+- `.build()`: Execute and return JSON. Every component type is resolved in the editor before the entity is created: a registry name the editor does not find (it finds a component by name only among those its Add Component menu lists for a game entity) fails the build with `not_found`, naming every unresolved type, with nothing created; an add the editor refuses is `engine_error`. Outside an undo batch, `build()` deletes the entity it created on failure and answers the same `rolled_back` error shape the wrapped API functions do
 
 **Physics properties applied on build.** For a dynamic body, `build()` sets
 `Configuration|Compute Mass` to false and `Configuration|Mass` to the requested
@@ -169,10 +170,26 @@ not applied; set them afterwards with `set_component_property`. The result's
 `applied_properties` lists what the editor accepted, and `property_warnings`
 lists any set the editor refused; a refused set does not fail the build.
 
+**Components that end up inactive.** `AddComponentOfType` reports success for
+a component the editor cannot activate (a Sphere Shape on an entity that has a
+Box Shape, say) and parks it in the entity's pending list, where the Entity
+Inspector shows it disabled. After every add, `build()` checks the component
+is active and, when it is not, asks the gem's `GetComponentState` event why.
+The result then carries `component_warnings` (one line per component, such as
+`Sphere Shape: added but disabled: incompatible with "Box Shape"`) and
+`disabled_components` (the component's state object: `name`, `state` as
+`pending` or `disabled`, `summary`, `incompatible_with`, `waiting_on_pending`,
+`missing_required_services`, `incompatible_services`, `warnings`). An inactive
+component does not fail the build; the entity is what the editor would show.
+
 ## Lighting / Physics / Camera
 
 ### `setup_lighting(preset="three_point") -> str`
-Creates a lighting rig. Presets: `"three_point"`, `"outdoor"`, `"indoor"`.
+Creates a lighting rig. Presets: `"three_point"` (a `Directional Light` key, a
+point `Light` fill and a spot `Light` rim), `"outdoor"` (one `Directional
+Light`), `"indoor"` (three point `Light`s). Each entry in the result's
+`lights` is the builder result for that entity, with the light's component in
+`component_ids` and its "Light type" in `applied_properties`.
 
 ### `create_camera(name="MainCamera", camera_type="perspective", follow_target=None, offset=None) -> str`
 Creates a camera entity.

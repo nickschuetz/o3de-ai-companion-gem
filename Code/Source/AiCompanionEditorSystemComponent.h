@@ -45,6 +45,7 @@ namespace AiCompanion
         // AiCompanionEditorRequestBus::Handler
         AZ::Outcome<void, AZStd::string> SetComponentPropertyUnwrapped(
             AZ::EntityComponentIdPair pair, AZStd::string propertyPath, AZStd::any value) override;
+        AZ::Outcome<AZStd::string, AZStd::string> GetComponentState(AZ::EntityComponentIdPair pair) override;
 
         AZStd::string GetBusSchema(AZStd::string busName) override;
         AZ::Outcome<AZ::u64, AZStd::string> CreateEntity(AZStd::string name, AZ::Vector3 position, AZ::u64 parentId) override;
