@@ -9,13 +9,16 @@ from typing import Dict
 from .entity_builder import EntityBuilder
 from ..utils.json_output import success
 
+# A light is either Atom's "Directional Light" component or its "Light"
+# component with a "light_type" (point or spot here) that
+# EntityBuilder.with_light applies on build.
 LIGHTING_PRESETS: Dict[str, dict] = {
     "three_point": {
         "description": "Classic three-point lighting: key, fill, and rim lights",
         "lights": [
             {"name": "KeyLight", "type": "Directional Light", "rotation": [-45, -30, 0]},
-            {"name": "FillLight", "type": "Point Light", "position": [-10, -5, 8]},
-            {"name": "RimLight", "type": "Spot Light", "position": [5, 10, 10], "rotation": [45, 0, 0]},
+            {"name": "FillLight", "type": "Light", "light_type": "point", "position": [-10, -5, 8]},
+            {"name": "RimLight", "type": "Light", "light_type": "spot", "position": [5, 10, 10], "rotation": [45, 0, 0]},
         ],
     },
     "outdoor": {
@@ -27,9 +30,9 @@ LIGHTING_PRESETS: Dict[str, dict] = {
     "indoor": {
         "description": "Soft indoor lighting with multiple point lights",
         "lights": [
-            {"name": "CeilingLight1", "type": "Point Light", "position": [0, 0, 5]},
-            {"name": "CeilingLight2", "type": "Point Light", "position": [8, 8, 5]},
-            {"name": "CeilingLight3", "type": "Point Light", "position": [-8, -8, 5]},
+            {"name": "CeilingLight1", "type": "Light", "light_type": "point", "position": [0, 0, 5]},
+            {"name": "CeilingLight2", "type": "Light", "light_type": "point", "position": [8, 8, 5]},
+            {"name": "CeilingLight3", "type": "Light", "light_type": "point", "position": [-8, -8, 5]},
         ],
     },
 }
@@ -61,7 +64,10 @@ def create_lighting(preset: str = "three_point") -> str:
         if rot:
             builder.with_rotation(rot[0], rot[1], rot[2])
 
-        builder.with_component(light["type"])
+        if light["type"] == "Light":
+            builder.with_light(light["light_type"])
+        else:
+            builder.with_component(light["type"])
 
         result = json.loads(builder.build())
         created.append(result.get("data", {}))

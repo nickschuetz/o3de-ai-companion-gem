@@ -150,6 +150,10 @@ are listed at the top of the [API reference](api-reference.md)):
 each component type to the editor's component id in its JSON-safe form: the
 sanitized proxy name shown above on current engines, where the pair is a
 `PythonProxyObject` without a numeric form, or an integer on older builds.
+Every component asked for is in `component_ids` or the call failed: a type the
+editor does not know is `not_found` with nothing created, and a component the
+editor accepted but could not activate is listed in `component_warnings` with
+its reason (see the [API reference](api-reference.md)).
 
 ### Undo/Rollback
 

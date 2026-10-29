@@ -23,6 +23,8 @@ set(FILES
     Source/Animation/AnimGraphCommandText.cpp
     Source/Assets/AssetReadiness.h
     Source/Assets/AssetReadiness.cpp
+    Source/Components/ComponentState.h
+    Source/Components/ComponentState.cpp
     Source/Network/AgentServer.h
     Source/Network/AgentServer.cpp
     Source/Network/RequestParsing.h

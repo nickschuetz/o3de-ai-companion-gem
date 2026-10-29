@@ -60,13 +60,28 @@ def _stub_azlmbr(calls, on_set=None):
             if on_set is not None:
                 return on_set(args[1], args[2])
             return _Outcome()
+        if event == "IsComponentEnabled":
+            return True
         raise AssertionError(f"unexpected EditorComponentAPIBus event {event!r}")
 
+    alive = set()
+
     def tools_bus(call_type, event, *args):
+        calls.append((event, args))
         if event == "CreateNewEntity":
+            alive.add(4242)
             return 4242
         if event == "AddDirtyEntity":
             return None
+        if event == "EntityExists":
+            return args[0] in alive
+        if event == "DeleteEntityById":
+            alive.discard(args[0])
+            return None
+        if event == "BeginUndoBatch":
+            return None
+        if event == "EndUndoBatch":
+            return True
         raise AssertionError(f"unexpected ToolsApplicationRequestBus event {event!r}")
 
     def quiet_bus(call_type, event, *args):
@@ -115,6 +130,8 @@ def _stub_azlmbr(calls, on_set=None):
     math = types.ModuleType("azlmbr.math")
     math.Vector3 = lambda x, y, z: ("Vector3", x, y, z)
     math.Uuid = lambda: "null-uuid"
+    math.Uuid_CreateString = lambda text: f"uuid:{text}"
+    math.Quaternion_CreateFromEulerAnglesDegrees = lambda euler: ("Quaternion", euler)
     asset = types.ModuleType("azlmbr.asset")
     asset.AssetCatalogRequestBus = quiet_bus  # GetAssetIdByPath -> None: no asset set
     root = types.ModuleType("azlmbr")
@@ -395,8 +412,8 @@ class TestPhysicsPropertiesInEditor(unittest.TestCase):
         self.assertEqual(len(result["data"]["property_warnings"]), 1)
         self.assertIn("RuntimeError: binding rejected the value", result["data"]["property_warnings"][0])
 
-    def test_physics_component_that_failed_to_add_is_skipped(self):
-        """No pair for the component means nothing to set, and no warning."""
+    def test_physics_component_that_failed_to_add_fails_the_build(self):
+        """An add the editor refuses is an engine_error, and the entity is deleted."""
         calls = []
         modules = _stub_azlmbr(calls)
         real_bus = modules["azlmbr.editor"].EditorComponentAPIBus
@@ -406,15 +423,19 @@ class TestPhysicsPropertiesInEditor(unittest.TestCase):
             # AddComponentsOfType; fail both for the rigid body.
             if event in ("AddComponentOfType", "AddComponentsOfType") and "Rigid Body" in str(args[1]):
                 calls.append((event, args))
-                return _Outcome(ok=False)
+                return _Outcome(ok=False, err="the editor said no")
             return real_bus(call_type, event, *args)
 
         modules["azlmbr.editor"].EditorComponentAPIBus = component_bus
         with mock.patch.dict(sys.modules, modules):
             result = json.loads(EntityBuilder("Ghost").with_physics(mass=80).with_collider("box").build())
-        self.assertEqual(result["status"], "ok", result)
-        self.assertEqual(_property_sets(calls), [("pair:PhysX Primitive Collider", COLLIDER_SHAPE_PATH, 1)])
-        self.assertNotIn("property_warnings", result["data"])
+        self.assertEqual(result["status"], "error", result)
+        self.assertEqual(result["code"], "engine_error")
+        self.assertIn("could not add component 'PhysX Dynamic Rigid Body': the editor said no", result["message"])
+        self.assertTrue(result["rolled_back"])
+        self.assertEqual(result["details"]["leftover_entities_deleted"], 1)
+        self.assertIn(("DeleteEntityById", (4242,)), calls)
+        self.assertEqual(_property_sets(calls), [])
 
 
 class TestPhysicsPropertiesThroughTemplates(unittest.TestCase):
@@ -452,6 +473,199 @@ class TestPhysicsPropertiesThroughTemplates(unittest.TestCase):
             ("pair:PhysX Dynamic Rigid Body", RIGID_BODY_MASS_PATH, 1.0),
             ("pair:PhysX Primitive Collider", COLLIDER_SHAPE_PATH, 1),
         ])
+
+
+NON_UNIFORM_SCALE_TYPE_ID = "{2933FB4F-B3DA-4CD1-8106-F37300730777}"
+
+
+class TestComponentAddReporting(unittest.TestCase):
+    """A build never reports success without a component it was asked for.
+
+    The editor's name lookup answers the null UUID for a component its Add
+    Component menu does not list, and AddComponentOfType reports success for
+    a component it then cannot activate. Both used to pass silently.
+    """
+
+    def _stub_with_unknown(self, calls, unknown):
+        modules = _stub_azlmbr(calls)
+        real_bus = modules["azlmbr.editor"].EditorComponentAPIBus
+
+        def component_bus(call_type, event, *args):
+            if event == "FindComponentTypeIdsByEntityType":
+                calls.append((event, args))
+                return [
+                    "{00000000-0000-0000-0000-000000000000}" if name in unknown else f"tid:{name}"
+                    for name in args[0]
+                ]
+            return real_bus(call_type, event, *args)
+
+        modules["azlmbr.editor"].EditorComponentAPIBus = component_bus
+        return modules
+
+    def test_unknown_name_fails_before_the_entity_exists(self):
+        calls = []
+        with mock.patch.dict(sys.modules, self._stub_with_unknown(calls, {"Camera", "Network Binding"})):
+            result = json.loads(
+                EntityBuilder("Ghost").with_mesh().with_component("Camera").with_component("Network Binding").build())
+        self.assertEqual(result["status"], "error", result)
+        self.assertEqual(result["code"], "not_found")
+        self.assertIn("'Camera', 'Network Binding'", result["message"])
+        self.assertIn("type UUID", result["message"])
+        self.assertTrue(result["rolled_back"])
+        self.assertEqual(result["details"]["leftover_entities_deleted"], 0)
+        self.assertNotIn("CreateNewEntity", [event for event, _ in calls])
+
+    def test_unknown_name_inside_a_batch_is_the_batch_error(self):
+        from ai_companion.safety.rollback import with_undo_batch
+
+        @with_undo_batch("Build in batch")
+        def build():
+            return EntityBuilder("Ghost").with_component("Camera").build()
+
+        calls = []
+        with mock.patch.dict(sys.modules, self._stub_with_unknown(calls, {"Camera"})):
+            result = json.loads(build())
+        self.assertEqual(result["status"], "error", result)
+        self.assertEqual(result["code"], "not_found")
+        self.assertEqual(result["details"]["operation"], "Build in batch")
+        self.assertTrue(result["rolled_back"])
+
+    def test_type_uuid_is_added_without_a_name_lookup(self):
+        calls = []
+        with mock.patch.dict(sys.modules, _stub_azlmbr(calls)):
+            result = json.loads(
+                EntityBuilder("Scaled").with_component(NON_UNIFORM_SCALE_TYPE_ID.lower().strip("{}")).build())
+        self.assertEqual(result["status"], "ok", result)
+        self.assertIn(NON_UNIFORM_SCALE_TYPE_ID, result["data"]["component_ids"])
+        self.assertNotIn("FindComponentTypeIdsByEntityType", [event for event, _ in calls])
+        self.assertIn(("AddComponentOfType", (4242, f"uuid:{NON_UNIFORM_SCALE_TYPE_ID}")), calls)
+
+    def test_uuid_helpers(self):
+        from ai_companion.utils.component_registry import (
+            is_component_type_uuid, normalize_component_type_uuid)
+        self.assertTrue(is_component_type_uuid(NON_UNIFORM_SCALE_TYPE_ID))
+        self.assertTrue(is_component_type_uuid(" 2933fb4f-b3da-4cd1-8106-f37300730777 "))
+        self.assertFalse(is_component_type_uuid("Mesh"))
+        self.assertFalse(is_component_type_uuid("{2933FB4F-B3DA-4CD1-8106-F3730073077}"))
+        self.assertFalse(is_component_type_uuid(None))
+        self.assertEqual(
+            normalize_component_type_uuid("2933fb4f-b3da-4cd1-8106-f37300730777"), NON_UNIFORM_SCALE_TYPE_ID)
+        with self.assertRaises(ValueError):
+            normalize_component_type_uuid("Mesh")
+
+    def _stub_with_inactive(self, calls, inactive, state_json=None, gem_bus=True):
+        modules = _stub_azlmbr(calls)
+        real_bus = modules["azlmbr.editor"].EditorComponentAPIBus
+
+        def component_bus(call_type, event, *args):
+            if event == "IsComponentEnabled":
+                calls.append((event, args))
+                return args[0] not in inactive
+            return real_bus(call_type, event, *args)
+
+        def gem_request_bus(call_type, event, *args):
+            calls.append((event, args))
+            if event == "GetComponentState":
+                return _Outcome(state_json)
+            return _Outcome()  # CommitEntityToPrefab
+
+        modules["azlmbr.editor"].EditorComponentAPIBus = component_bus
+        if gem_bus:
+            modules["azlmbr.editor"].AiCompanionEditorRequestBus = gem_request_bus
+        return modules
+
+    def test_inactive_component_is_reported_with_the_editor_reason(self):
+        calls = []
+        state = {
+            "name": "Sphere Shape", "state": "pending",
+            "summary": 'disabled: incompatible with "Box Shape"',
+            "incompatible_with": ["Box Shape"], "waiting_on_pending": [],
+            "missing_required_services": [], "incompatible_services": [], "warnings": [],
+        }
+        with mock.patch.dict(sys.modules, self._stub_with_inactive(calls, {"pair:Sphere Shape"}, json.dumps(state))):
+            result = json.loads(
+                EntityBuilder("Shapes").with_component("Box Shape").with_component("Sphere Shape").build())
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(sorted(result["data"]["component_ids"]), ["Box Shape", "Sphere Shape"])
+        self.assertEqual(
+            result["data"]["component_warnings"],
+            ['Sphere Shape: added but disabled: incompatible with "Box Shape"'])
+        self.assertEqual(result["data"]["disabled_components"], {"Sphere Shape": state})
+        self.assertEqual([args for event, args in calls if event == "GetComponentState"], [("pair:Sphere Shape",)])
+        self.assertEqual(len([1 for event, _ in calls if event == "IsComponentEnabled"]), 2)
+
+    def test_inactive_component_without_the_gem_event_is_still_reported(self):
+        calls = []
+        with mock.patch.dict(sys.modules, self._stub_with_inactive(calls, {"pair:Sphere Shape"}, gem_bus=False)):
+            result = json.loads(
+                EntityBuilder("Shapes").with_component("Box Shape").with_component("Sphere Shape").build())
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(len(result["data"]["component_warnings"]), 1)
+        self.assertIn("Sphere Shape: added but disabled (reason unavailable", result["data"]["component_warnings"][0])
+        self.assertEqual(result["data"]["disabled_components"]["Sphere Shape"]["state"], "disabled")
+
+    def test_active_components_add_no_warning_fields(self):
+        calls = []
+        with mock.patch.dict(sys.modules, self._stub_with_inactive(calls, set())):
+            result = json.loads(EntityBuilder("Shapes").with_component("Box Shape").build())
+        self.assertEqual(result["status"], "ok", result)
+        self.assertNotIn("component_warnings", result["data"])
+        self.assertNotIn("disabled_components", result["data"])
+
+
+class TestRegistryNamesTheEditorKnows(unittest.TestCase):
+    """Registry names must be ones a 26.10 editor finds; probed live on 2026-10-28.
+
+    Atom has one "Light" component (its "Light type" picks point, spot and the
+    shape-driven kinds) and "Decal", not the pre-Atom "Point Light", "Spot
+    Light", "Area Light" and "Decal (Atom)"; Transform is on every entity and
+    not in the Add Component menu. Before the builder reported unresolved
+    names, the lighting presets' point and spot lights were silently dropped.
+    """
+
+    def test_pre_atom_light_and_decal_names_are_aliases(self):
+        from ai_companion.utils.component_registry import resolve_component
+        for old in ("Point Light", "Spot Light", "Area Light", "PointLight", "Local Light"):
+            with self.subTest(name=old):
+                self.assertEqual(resolve_component(old), ("Light", None))
+        self.assertEqual(resolve_component("Decal (Atom)"), ("Decal", None))
+        self.assertEqual(resolve_component("Directional Light"), ("Directional Light", None))
+
+    def test_transform_cannot_be_added(self):
+        with self.assertRaises(ValueError) as ctx:
+            EntityBuilder("Test").with_component("Transform")
+        self.assertIn("cannot be added", str(ctx.exception))
+
+    def test_with_light_applies_the_light_type_on_build(self):
+        from ai_companion.builders.entity_builder import LIGHT_TYPE_PATH, LIGHT_TYPES
+        calls = []
+        with mock.patch.dict(sys.modules, _stub_azlmbr(calls)):
+            result = json.loads(EntityBuilder("Lamp").with_light("spot").build())
+        self.assertEqual(result["status"], "ok", result)
+        self.assertIn("Light", result["data"]["component_ids"])
+        self.assertEqual(_property_sets(calls), [("pair:Light", LIGHT_TYPE_PATH, LIGHT_TYPES["spot"])])
+        self.assertEqual(result["data"]["applied_properties"], {"Light": {LIGHT_TYPE_PATH: 7}})
+        with self.assertRaises(ValueError):
+            EntityBuilder("Lamp").with_light("laser")
+
+    def test_lighting_presets_build_real_lights(self):
+        from ai_companion.builders.entity_builder import LIGHT_TYPE_PATH
+        from ai_companion.builders.lighting_builder import LIGHTING_PRESETS, create_lighting
+        for preset, config in LIGHTING_PRESETS.items():
+            with self.subTest(preset=preset):
+                calls = []
+                with mock.patch.dict(sys.modules, _stub_azlmbr(calls)):
+                    result = json.loads(create_lighting(preset))
+                self.assertEqual(result["status"], "ok", result)
+                lights = result["data"]["lights"]
+                self.assertEqual([l["name"] for l in lights], [l["name"] for l in config["lights"]])
+                for built, spec in zip(lights, config["lights"]):
+                    self.assertIn(spec["type"], built["component_ids"], built)
+                expected_sets = [
+                    ("pair:Light", LIGHT_TYPE_PATH, {"point": 6, "spot": 7}[spec["light_type"]])
+                    for spec in config["lights"] if spec["type"] == "Light"
+                ]
+                self.assertEqual(_property_sets(calls), expected_sets)
 
 
 if __name__ == "__main__":

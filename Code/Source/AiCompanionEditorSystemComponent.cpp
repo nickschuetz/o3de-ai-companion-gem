@@ -10,6 +10,7 @@
 #include "Animation/AnimGraphAuthoring.h"
 #include "Animation/AnimGraphInspector.h"
 #include "Assets/AssetReadiness.h"
+#include "Components/ComponentState.h"
 #include "Introspection/BusSchema.h"
 #include "Network/RequestError.h"
 #include "Snapshot/SceneSnapshotProvider.h"
@@ -33,10 +34,14 @@
 #include <AzCore/Math/Transform.h>
 #include <AzToolsFramework/API/EditorAssetSystemAPI.h>
 #include <AzToolsFramework/API/EditorPythonRunnerRequestsBus.h>
+#include <AzToolsFramework/API/EntityCompositionRequestBus.h>
 #include <AzToolsFramework/API/ToolsApplicationAPI.h>
 #include <AzToolsFramework/Entity/EditorEntityAPIBus.h>
+#include <AzToolsFramework/Entity/EditorEntityHelpers.h>
 #include <AzToolsFramework/Prefab/PrefabPublicInterface.h>
 #include <AzToolsFramework/PropertyTreeEditor/PropertyTreeEditor.h>
+#include <AzToolsFramework/ToolsComponents/EditorDisabledCompositionBus.h>
+#include <AzToolsFramework/ToolsComponents/EditorPendingCompositionBus.h>
 #include <AzToolsFramework/ToolsComponents/GenericComponentWrapper.h>
 #include <AzToolsFramework/ToolsComponents/TransformComponent.h>
 
@@ -78,6 +83,7 @@ namespace AiCompanion
                 ->Attribute(AZ::Script::Attributes::Module, "editor")
                 ->Attribute(AZ::Script::Attributes::ExcludeFrom, AZ::Script::Attributes::ExcludeFlags::All)
                 ->Event("SetComponentPropertyUnwrapped", &AiCompanionEditorRequestBus::Events::SetComponentPropertyUnwrapped)
+                ->Event("GetComponentState", &AiCompanionEditorRequestBus::Events::GetComponentState)
                 ->Event("CommitEntityToPrefab", &AiCompanionEditorRequestBus::Events::CommitEntityToPrefab)
                 ->Event(
                     "SetScale",
@@ -534,6 +540,78 @@ namespace AiCompanion
             return AZ::Failure(outcome.GetError());
         }
         return AZ::Success();
+    }
+
+    AZ::Outcome<AZStd::string, AZStd::string> AiCompanionEditorSystemComponent::GetComponentState(AZ::EntityComponentIdPair pair)
+    {
+        AZ::Entity* entity = nullptr;
+        AZ::ComponentApplicationBus::BroadcastResult(entity, &AZ::ComponentApplicationRequests::FindEntity, pair.GetEntityId());
+        if (entity == nullptr)
+        {
+            return AZ::Failure(AZStd::string("entity not found"));
+        }
+
+        // Entity::FindComponent sees only the active list; a pending or
+        // disabled component lives on the entity's composition components.
+        AZ::Entity::ComponentArrayType allComponents;
+        AzToolsFramework::GetAllComponentsForEntity(entity, allComponents);
+        AZ::Component* component = nullptr;
+        for (AZ::Component* candidate : allComponents)
+        {
+            if (candidate != nullptr && candidate->GetId() == pair.GetComponentId())
+            {
+                component = candidate;
+                break;
+            }
+        }
+        if (component == nullptr)
+        {
+            return AZ::Failure(AZStd::string("component not found on entity"));
+        }
+
+        const AZ::Entity::ComponentArrayType& activeComponents = entity->GetComponents();
+        const bool active = AZStd::find(activeComponents.begin(), activeComponents.end(), component) != activeComponents.end();
+        bool pending = false;
+        AzToolsFramework::EditorPendingCompositionRequestBus::EventResult(
+            pending, entity->GetId(), &AzToolsFramework::EditorPendingCompositionRequests::IsComponentPending, component);
+        bool disabled = false;
+        AzToolsFramework::EditorDisabledCompositionRequestBus::EventResult(
+            disabled, entity->GetId(), &AzToolsFramework::EditorDisabledCompositionRequests::IsComponentDisabled, component);
+
+        ComponentState::Info info;
+        info.m_name = AzToolsFramework::GetFriendlyComponentName(component);
+        info.m_state = ComponentState::StateWord(active, pending, disabled);
+
+        if (pending)
+        {
+            // The same query the Entity Inspector's "disabled because it is
+            // incompatible with ..." notice is built from.
+            AzToolsFramework::EntityCompositionRequests::PendingComponentInfo pendingInfo;
+            AzToolsFramework::EntityCompositionRequestBus::BroadcastResult(
+                pendingInfo, &AzToolsFramework::EntityCompositionRequests::GetPendingComponentInfo, component);
+            for (const AZ::Component* sibling : pendingInfo.m_validComponentsThatAreIncompatible)
+            {
+                info.m_incompatibleWith.push_back(AzToolsFramework::GetFriendlyComponentName(sibling));
+            }
+            for (const AZ::Component* provider : pendingInfo.m_pendingComponentsWithRequiredServices)
+            {
+                info.m_waitingOnPending.push_back(AzToolsFramework::GetFriendlyComponentName(provider));
+            }
+            for (const AZ::ComponentServiceType& service : pendingInfo.m_missingRequiredServices)
+            {
+                info.m_missingRequiredServices.push_back(ComponentState::ServiceCrcWord(static_cast<AZ::u32>(service)));
+            }
+            for (const AZ::ComponentServiceType& service : pendingInfo.m_incompatibleServices)
+            {
+                info.m_incompatibleServices.push_back(ComponentState::ServiceCrcWord(static_cast<AZ::u32>(service)));
+            }
+            for (const AZStd::string& warning : pendingInfo.m_warnings)
+            {
+                info.m_warnings.push_back(warning);
+            }
+        }
+
+        return AZ::Success(ComponentState::BuildComponentStateJson(info));
     }
 
     AZStd::string AiCompanionEditorSystemComponent::GetBusSchema(AZStd::string busName)

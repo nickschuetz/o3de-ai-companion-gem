@@ -60,7 +60,7 @@ flowchart TB
             RP["RequestParsing"]
             RSP["ResponseBuilding<br/>RequestError codes"]
             SysComp["AiCompanionSystemComponent<br/>AiCompanionRequestBus: scene reads"]
-            EdComp["AiCompanionEditorSystemComponent<br/>AiCompanionEditorRequestBus: native mutations,<br/>CommitEntityToPrefab, GetBusSchema,<br/>anim graph reads and writes; drains the queue"]
+            EdComp["AiCompanionEditorSystemComponent<br/>AiCompanionEditorRequestBus: native mutations,<br/>CommitEntityToPrefab, GetBusSchema, GetComponentState,<br/>anim graph reads and writes; drains the queue"]
             SSP["SceneSnapshotProvider"]
             IV["InputValidator<br/>incl. protected entity names"]
             BS["BusSchema<br/>live BehaviorContext reflection"]
@@ -153,7 +153,7 @@ network server.
 | Component | Purpose |
 |-----------|---------|
 | **AiCompanionSystemComponent** | EBus handler connecting Python API to C++ scene operations (`AiCompanionRequestBus`, exported to editor Python as `azlmbr.ai_companion`) |
-| **AiCompanionEditorSystemComponent** | Editor-side handler (`AiCompanionEditorRequestBus`): the validated native mutations (`CreateEntity`, `SetTransform`, `DeleteEntity`, each in its own undo batch, refusing missing entities, the level root and the protected system entities), `CommitEntityToPrefab` (records an entity in the level template immediately, so multi-entity calls persist), `GetBusSchema`, the anim graph reads and writes (delegated to AnimGraphInspector and AnimGraphAuthoring), the `SetComponentPropertyUnwrapped` workaround, the AgentServer's lifetime and main-thread queue pump (`SystemTickBus` plus a Qt timer), and Agent Mode's sidecar poll and dialog filter |
+| **AiCompanionEditorSystemComponent** | Editor-side handler (`AiCompanionEditorRequestBus`): the validated native mutations (`CreateEntity`, `SetTransform`, `DeleteEntity`, each in its own undo batch, refusing missing entities, the level root and the protected system entities), `CommitEntityToPrefab` (records an entity in the level template immediately, so multi-entity calls persist), `GetBusSchema`, the anim graph reads and writes (delegated to AnimGraphInspector and AnimGraphAuthoring), the `SetComponentPropertyUnwrapped` workaround, `GetComponentState` (whether a component the editor accepted is active, pending or disabled, and why, from the composition buses; the words and reply shape in `Components/ComponentState`), the AgentServer's lifetime and main-thread queue pump (`SystemTickBus` plus a Qt timer), and Agent Mode's sidecar poll and dialog filter |
 | **SceneSnapshotProvider** | Fast entity traversal and JSON serialization of scene state, whole scene or one entity |
 | **InputValidator** | C++ counterpart to the Python validators: entity names, positions, component types, asset paths and the protected entity names (`IsProtectedEntityName`) |
 | **RequestParsing** | Parses request arguments (entity ids as numbers or strings, Vector3 arrays within the position bound, anim graph ids) for the native request types |

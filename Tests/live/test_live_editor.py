@@ -571,6 +571,140 @@ class TestTemplatesAndRollback(LiveEditorTest):
         self.assertFalse(added & self._entity_ids())
 
 
+class TestComponentAddReporting(LiveEditorTest):
+    """A build never reports success without a component it was asked for.
+
+    Observed on 26.10.0 during o3de#20248 testing: FindComponentTypeIdsByEntityType
+    answers the null UUID for a component the Add Component menu does not list
+    (Non-uniform Scale has no AppearsInAddComponentMenu attribute), and
+    AddComponentOfType reports success for a Sphere Shape on an entity with a
+    Box Shape and parks it in the pending list. The builder now fails the first
+    and reports the second with the editor's own reason.
+    """
+
+    NON_UNIFORM_SCALE_TYPE_ID = "{2933FB4F-B3DA-4CD1-8106-F37300730777}"
+
+    def _entity_ids(self) -> set[int]:
+        snapshot = json.loads(self.client.request("get_scene_snapshot")["output"])
+        return {int(e["id"]) for e in snapshot["entities"]}
+
+    def _delete(self, entity_id: int) -> None:
+        self.client.run(
+            "import azlmbr.bus as bus, azlmbr.editor as editor, azlmbr.entity as entity\n"
+            "found = [e for e in entity.SearchBus(bus.Broadcast, 'SearchEntities', entity.SearchFilter())\n"
+            f"         if str(e.ToString()).strip('[]') == '{entity_id}']\n"
+            "editor.ToolsApplicationRequestBus(bus.Broadcast, 'DeleteEntities', found)\n"
+        )
+
+    def test_incompatible_component_is_reported_with_the_editor_reason(self):
+        before = self._entity_ids()
+        result = self.client.api(
+            'build_entity("LiveShapes").with_component("Box Shape").with_component("Sphere Shape").build()')
+        self.assertEqual(result["status"], "ok", result)
+        new_id = _entity_number(result["data"]["entity_id"])
+        self.assertIn(new_id, self._entity_ids() - before)
+        try:
+            data = result["data"]
+            self.assertEqual(sorted(data["component_ids"]), ["Box Shape", "Sphere Shape"])
+            self.assertEqual(len(data["component_warnings"]), 1, data)
+            self.assertIn("Sphere Shape: added but disabled: incompatible with \"Box Shape\"", data["component_warnings"][0])
+            sphere = data["disabled_components"]["Sphere Shape"]
+            self.assertEqual(sphere["state"], "pending", sphere)
+            self.assertEqual(sphere["name"], "Sphere Shape", sphere)
+            self.assertEqual(sphere["incompatible_with"], ["Box Shape"], sphere)
+            print(f"[component-adds] incompatible add reported as: {sphere}")
+        finally:
+            self._delete(new_id)
+
+    def test_type_uuid_adds_a_component_the_menu_does_not_list(self):
+        # The name lookup cannot find Non-uniform Scale, so the only route is
+        # its type id; the add is checked through get_entity, which reports the
+        # component's value once it is active.
+        before = self._entity_ids()
+        result = self.client.api(
+            f'build_entity("LiveNus").with_component("{self.NON_UNIFORM_SCALE_TYPE_ID}").build()')
+        self.assertEqual(result["status"], "ok", result)
+        new_id = _entity_number(result["data"]["entity_id"])
+        self.assertIn(new_id, self._entity_ids() - before)
+        try:
+            self.assertIn(self.NON_UNIFORM_SCALE_TYPE_ID, result["data"]["component_ids"], result)
+            self.assertNotIn("component_warnings", result["data"], result)
+            looked_up = self.client.request("get_entity", entity_id=new_id)
+            self.assertEqual(looked_up["status"], "ok", looked_up)
+            entity = json.loads(looked_up["output"])
+            self.assertEqual(entity["non_uniform_scale"], [1.0, 1.0, 1.0], entity)
+        finally:
+            self._delete(new_id)
+
+    def test_unknown_name_fails_before_the_entity_exists(self):
+        # A registry name the editor's Add Component menu does not list for a
+        # game entity on this project; the candidates come from gems a sandbox
+        # project usually has off. Skip when the project knows them all.
+        candidates = ["Network Binding", "Audio Trigger", "UI Canvas Asset Ref"]
+        found = self.client.run(
+            "import azlmbr.bus as bus, azlmbr.editor as editor, azlmbr.entity as entity\n"
+            f"names = {candidates!r}\n"
+            "ids = editor.EditorComponentAPIBus(bus.Broadcast, 'FindComponentTypeIdsByEntityType', names, entity.EntityType().Game)\n"
+            "print([n for n, t in zip(names, ids) if '00000000-0000-0000-0000-000000000000' in str(t)])\n"
+        ).strip().splitlines()[-1]
+        unknown = json.loads(found.replace("'", '"'))
+        if not unknown:
+            self.skipTest(f"the project knows every candidate component: {candidates}")
+        before = self._entity_ids()
+        result = self.client.api(
+            f'build_entity("LiveMissing").with_mesh().with_component({unknown[0]!r}).build()')
+        self.assertEqual(result["status"], "error", result)
+        self.assertEqual(result["code"], "not_found", result)
+        self.assertIn(repr(unknown[0]), result["message"])
+        self.assertIn("type UUID", result["message"])
+        self.assertTrue(result["rolled_back"])
+        self.assertEqual(self._entity_ids(), before)
+        print(f"[component-adds] unknown to this editor: {unknown}")
+
+    def test_lighting_rig_lights_are_real_components(self):
+        # Before the builder reported unresolved names, "Point Light" and
+        # "Spot Light" (pre-Atom names) were dropped and the rig's fill and
+        # rim lights were empty entities. Atom's component is "Light" with a
+        # "Light type"; every rig entity must carry its light, active, with
+        # the type applied.
+        before = self._entity_ids()
+        result = self.client.api('setup_lighting("three_point")')
+        self.assertEqual(result["status"], "ok", result)
+        created = [_entity_number(light["entity_id"]) for light in result["data"]["lights"]]
+        try:
+            self.assertEqual(len(created), 3, result)
+            self.assertTrue(set(created) <= self._entity_ids() - before)
+            by_name = {light["name"]: light for light in result["data"]["lights"]}
+            self.assertIn("Directional Light", by_name["KeyLight"]["component_ids"])
+            for name, light_type in (("FillLight", 6), ("RimLight", 7)):
+                light = by_name[name]
+                self.assertIn("Light", light["component_ids"], light)
+                self.assertNotIn("component_warnings", light, light)
+                self.assertEqual(
+                    light["applied_properties"], {"Light": {"Controller|Configuration|Light type": light_type}}, light)
+                self.assertNotIn("property_warnings", light, light)
+            print(f"[component-adds] lighting rig: {by_name}")
+        finally:
+            rolled = self.client.api("rollback_last_batch()")
+            for entity_id in created:
+                if entity_id in self._entity_ids():
+                    self._delete(entity_id)
+            self.assertEqual(rolled["status"], "ok", rolled)
+
+    def test_refused_add_rolls_the_entity_back(self):
+        # A UUID that is not a component: AddComponentOfType fails, and a raw
+        # build() outside any undo batch must delete the entity it created.
+        before = self._entity_ids()
+        result = self.client.api(
+            'build_entity("LiveBadType").with_component("{00000000-0000-0000-0000-000000000001}").build()')
+        self.assertEqual(result["status"], "error", result)
+        self.assertEqual(result["code"], "engine_error", result)
+        self.assertIn("could not add component", result["message"])
+        self.assertTrue(result["rolled_back"])
+        self.assertEqual(result["details"]["leftover_entities_deleted"], 1, result)
+        self.assertEqual(self._entity_ids(), before)
+
+
 class TestMultiEntityPersistence(LiveEditorTest):
     """Every entity of a multi-entity call must keep its configuration.
 

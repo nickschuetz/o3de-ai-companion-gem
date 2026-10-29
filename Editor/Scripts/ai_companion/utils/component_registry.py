@@ -4,7 +4,35 @@
 """Component name registry for O3DE. Maps human-readable names to component
 metadata and provides fuzzy matching to prevent mistyped component names."""
 
+import re
 from typing import Dict, List, Optional, Tuple
+
+
+class ComponentNotFoundError(LookupError):
+    """A component the registry knows is not available in the running editor.
+
+    Raised by ``EntityBuilder`` before it creates anything, so the build
+    leaves no entity behind; ``with_undo_batch`` reports it as ``not_found``.
+    """
+
+
+# A component type id as O3DE prints it, with or without the braces.
+_TYPE_UUID_PATTERN = re.compile(
+    r"^\{?([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\}?$"
+)
+
+
+def is_component_type_uuid(text: object) -> bool:
+    """Whether ``text`` is a component type UUID rather than a name."""
+    return isinstance(text, str) and _TYPE_UUID_PATTERN.match(text.strip()) is not None
+
+
+def normalize_component_type_uuid(text: str) -> str:
+    """The UUID in the form O3DE prints: braces and uppercase hex digits."""
+    match = _TYPE_UUID_PATTERN.match(text.strip())
+    if match is None:
+        raise ValueError(f"not a component type UUID: {text!r}")
+    return "{" + match.group(1).upper() + "}"
 
 # Component catalog organized by category
 # Each entry: canonical_name -> {category, aliases, description}
@@ -12,7 +40,8 @@ COMPONENT_CATALOG: Dict[str, Dict] = {
     # --- Core ---
     "Transform": {
         "category": "Core",
-        "description": "Provides position, rotation, and scale for an entity.",
+        "description": "Provides position, rotation, and scale for an entity. Every entity has one; it cannot be added.",
+        "addable": False,
     },
     "Tag": {
         "category": "Core",
@@ -33,30 +62,30 @@ COMPONENT_CATALOG: Dict[str, Dict] = {
         "aliases": ["MaterialComponent"],
         "description": "Assigns a material to a mesh.",
     },
-    "Decal (Atom)": {
+    "Decal": {
         "category": "Rendering",
+        "aliases": ["Decal (Atom)", "DecalComponent"],
         "description": "Projects a decal onto surfaces.",
     },
     # --- Lighting ---
+    # Atom has one "Light" component for every local light; its "Light type"
+    # property picks point, spot, capsule, quad or polygon. The pre-Atom names
+    # stay as aliases; EntityBuilder.with_light sets the type.
     "Directional Light": {
         "category": "Lighting",
         "aliases": ["DirectionalLight"],
         "description": "Sun-like directional light source.",
     },
-    "Point Light": {
+    "Light": {
         "category": "Lighting",
-        "aliases": ["PointLight"],
-        "description": "Omnidirectional point light source.",
-    },
-    "Spot Light": {
-        "category": "Lighting",
-        "aliases": ["SpotLight"],
-        "description": "Focused cone-shaped light source.",
-    },
-    "Area Light": {
-        "category": "Lighting",
-        "aliases": ["AreaLight"],
-        "description": "Area-based light source.",
+        "aliases": [
+            "Point Light", "PointLight", "Spot Light", "SpotLight",
+            "Area Light", "AreaLight", "Local Light",
+        ],
+        "description": (
+            "Local light (point, spot, capsule, quad or polygon, chosen by its "
+            "'Light type' property; EntityBuilder.with_light sets it)."
+        ),
     },
     "Global Skylight (IBL)": {
         "category": "Lighting",
@@ -216,6 +245,15 @@ def resolve_component(name: str) -> Tuple[Optional[str], Optional[str]]:
         return None, f"Unknown component '{name}'. Did you mean: {suggestions}?"
 
     return None, f"Unknown component '{name}'. Use get_component_catalog() to see available components."
+
+
+def is_addable(canonical: str) -> bool:
+    """Whether a catalog component can be added to an entity.
+
+    ``Transform`` is on every entity and absent from the editor's Add
+    Component menu, so asking for it is a mistake worth refusing up front.
+    """
+    return COMPONENT_CATALOG.get(canonical, {}).get("addable", True)
 
 
 def list_components(category: Optional[str] = None) -> List[Dict]:
